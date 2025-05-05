@@ -1,6 +1,7 @@
 workspace "nn-glsl-core"
     configurations { "Debug", "Release" }
 	architecture "x86_64"
+    startproject "nn-glsl-core"
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
