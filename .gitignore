@@ -1,0 +1,69 @@
+# --- Build Artifacts ---
+.vs/
+build/
+bin/
+bin-*
+obj/
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+
+# --- Premake-generated files ---
+Makefile
+makefile
+*.make
+*.workspace
+*.project
+*.sln
+*.vcxproj*
+*.codelite
+*.codeblocks
+*.gmake*
+*.txt
+
+# --- CMake cache (if used alongside Premake) ---
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# --- Compiled Shader Binaries (optional) ---
+*.spv
+*.glsl.tmp
+*.shaderbin
+
+# --- IDE Files ---
+*.user
+*.suo
+*.VC.db
+*.DS_Store
+.vscode/
+.idea/
+
+# --- Logs & Temp ---
+*.log
+*.tmp
+*.bak
+*.swp
+*.swn
+
+# --- Git Submodules ---
+# (Don't ignore actual submodule dirs, but avoid their build cruft)
+**/external/**/build/
+**/external/**/bin/
+
+# --- Misc ---
+*.iml
+*.class
+*.pyc
+__pycache__/
+
+# Optional: ignore premake5 binary if you keep it locally
+premake5
+
+# Optional: ignore generated output shaders
+shaders/*.compiled
