@@ -64,6 +64,7 @@ __pycache__/
 
 # Optional: ignore premake5 binary if you keep it locally
 !premake5
+!premake5.exe
 
 # Optional: ignore generated output shaders
 shaders/*.compiled
