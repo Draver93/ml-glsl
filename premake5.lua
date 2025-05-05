@@ -5,7 +5,6 @@ workspace "nn-glsl-core"
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
 dofile("external/glfw-premake5.lua")
-dofile("external/glad-premake5.lua")
 
 project "nn-glsl-core"
     kind "ConsoleApp"
@@ -16,7 +15,7 @@ project "nn-glsl-core"
     staticruntime "On"
     dependson { "glfw" }
 
-    files { "src/**.h", "src/**.cpp" }
+    files { "src/**.h", "src/**.cpp", "external/glad/src/glad.c" }
     includedirs {
         "external/glfw/include",
         "external/glad/include",
@@ -37,14 +36,15 @@ project "nn-glsl-core"
 
     filter "system:windows"
         defines { "WINDOWS" }
+        files { "external/glad/src/glad_wgl.c" }
         links {
             "glfw",
-            "glad",
             "opengl32"
         }
 
     filter "system:linux"
         defines { "LINUX" }
+        files { "external/glad/src/glad_glx.c" }
         links {
             "GL",         -- OpenGL
             "dl",
@@ -54,7 +54,6 @@ project "nn-glsl-core"
             "Xi",
             "Xxf86vm",
             "Xcursor",
-            "glad",
             "glfw"        -- if installed via package manager
          }
    

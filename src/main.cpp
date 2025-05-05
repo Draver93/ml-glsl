@@ -1,40 +1,61 @@
-#include <iostream>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/string_cast.hpp>
+#define GLAD_GLX 0  // Disable GLX support for Windows
+extern "C" {
+#include <glad/glad.h>
+}
+
+#include <GLFW/glfw3.h>
+#include <iostream>
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    glViewport(0, 0, width, height);
+}
 
 int main() {
     // Initialize GLFW
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW\n";
+        std::cerr << "GLFW initialization failed!" << std::endl;
         return -1;
     }
 
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    GLFWwindow* window = glfwCreateWindow(1, 1, "", nullptr, nullptr);
+    // Create GLFW windowed mode window and its OpenGL context
+    GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL with GLFW & GLAD", nullptr, nullptr);
     if (!window) {
-        std::cerr << "Failed to create GLFW window\n";
+        std::cerr << "GLFW window creation failed!" << std::endl;
         glfwTerminate();
         return -1;
     }
 
+    // Make the window's context current
     glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
-    // Basic GLM test: create a transformation matrix
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(1.0f, 2.0f, 3.0f));
-    std::cout << "GLM matrix:\n" << glm::to_string(model) << "\n";
+    // Initialize GLAD to load OpenGL functions
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to initialize GLAD!" << std::endl;
+        return -1;
+    }
+
+    // Set OpenGL viewport size
+    glViewport(0, 0, 800, 600);
 
     // Render loop
     while (!glfwWindowShouldClose(window)) {
-        glClear(GL_COLOR_BUFFER_BIT);
-        glfwSwapBuffers(window);
+        // Process events
         glfwPollEvents();
+
+        // Render
+        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Swap buffers
+        glfwSwapBuffers(window);
     }
 
+    // Cleanup and close the window
     glfwDestroyWindow(window);
     glfwTerminate();
+
     return 0;
 }
