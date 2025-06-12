@@ -6,6 +6,10 @@ A high-performance neural network implementation leveraging OpenGL compute shade
 
 This project implements a fully GPU-accelerated neural network using OpenGL compute shaders. Unlike traditional CPU-based implementations or CUDA-specific solutions, this approach uses OpenGL for cross-platform GPU computing, making it accessible across different graphics hardware vendors.
 
+<p align="center">
+<img src="example.png" alt="Cube" width="100%">
+</p>
+
 ### Key Features
 
 - **Pure GPU Implementation**: All neural network operations (forward pass, backpropagation, weight updates) run on GPU
