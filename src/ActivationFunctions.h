@@ -15,8 +15,8 @@ namespace NNGL {
     };
     
     struct ActivationFunction {
-        std::function<float(float)> func; // should now expect pre-activation
-        std::function<float(float)> dfunc; // should now expect pre-activation
+        std::function<float(float)> func; 
+        std::function<float(float)> dfunc;
         std::function<float(int, int)> weight_initializer;    // weight initializer: (in_size, out_size)
     };
 

@@ -25,18 +25,18 @@ namespace NNGL {
 
 	void NeuralNetwork::bindTrainingData(const std::vector<float>& inputBatch, const std::vector<float>& targetBatch) {
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-		GLint input_buffer_size;
-		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &input_buffer_size);
-		if (inputBatch.size() * sizeof(float) > input_buffer_size)
-			throw std::runtime_error("Input buffer overflow! Trying to upload " + std::to_string(inputBatch.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(input_buffer_size) + " bytes");
+		GLint inputBufferSize;
+		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &inputBufferSize);
+		if (inputBatch.size() * sizeof(float) > inputBufferSize)
+			throw std::runtime_error("Input buffer overflow! Trying to upload " + std::to_string(inputBatch.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(inputBufferSize) + " bytes");
 		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, inputBatch.size() * sizeof(float), inputBatch.data());
 
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
-		GLint target_buffer_size;
-		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &target_buffer_size);
-		if (targetBatch.size() * sizeof(float) > target_buffer_size)
-			throw std::runtime_error("Target buffer overflow! Trying to upload " + std::to_string(targetBatch.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(target_buffer_size) + " bytes");
+		GLint targetBufferSize;
+		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &targetBufferSize);
+		if (targetBatch.size() * sizeof(float) > targetBufferSize)
+			throw std::runtime_error("Target buffer overflow! Trying to upload " + std::to_string(targetBatch.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(targetBufferSize) + " bytes");
 		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, targetBatch.size() * sizeof(float), targetBatch.data());
 
 
@@ -240,34 +240,15 @@ namespace NNGL {
                     float inputs[2] = { a / 3.14159f, b / 3.14159f };
                     float expected = std::sin(a) * std::sin(b);
 
-                    // Upload test input
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-                    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(inputs), inputs);
-
-                    // Run forward pass with single sample
-                    GLuint current_input = m_InputBuffer;
-                    for (size_t i = 0; i < m_Layers.size(); i++) {
-                        glUseProgram(m_ForwardPassCompute->get());
-
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, current_input);
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_Layers[i]->m_WeightBuffer);
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, m_Layers[i]->m_BiasBuffer);
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, (i == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[i]->m_ActivationBuffer);
-
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "input_size"), m_Layers[i]->getSize().x);
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "output_size"), m_Layers[i]->getSize().y);
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "batch_size"), 1);
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "activation_type"), m_Layers[i]->m_ActivationFnType);
-
-                        glDispatchCompute(1, 1, 1);
-                        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-                        current_input = (i == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[i]->m_ActivationBuffer;
-                    }
+                    // Reuse forwardPass() for the actual computation
+                    std::vector<float> inputVec(inputs, inputs + 2);
+                    std::vector<float> targetVec(1);
+                    bindTrainingData(inputVec, targetVec);
+                    forwardPass();
 
                     // Read result
                     float result;
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
                     float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                     if (mapped) {
                         result = mapped[0];
@@ -294,55 +275,19 @@ namespace NNGL {
                 float a = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
                 float b = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
 
+                float inputs[2] = { a / 3.14159f, b / 3.14159f };
+                float expected = std::sin(a) * std::sin(b);
+
                 std::cout << "Testing with random values: a=" << a << ", b=" << b << std::endl;
 
-                // Simulate the test command
-                std::cin.putback(' ');
-                std::cin.putback(std::to_string(b).back());
-                for (int i = std::to_string(b).length() - 2; i >= 0; i--) {
-                    std::cin.putback(std::to_string(b)[i]);
-                }
-                std::cin.putback(' ');
-                std::cin.putback(std::to_string(a).back());
-                for (int i = std::to_string(a).length() - 2; i >= 0; i--) {
-                    std::cin.putback(std::to_string(a)[i]);
-                }
-
-                // Use stringstream instead
-                std::stringstream ss;
-                ss << a << " " << b;
-                float test_a, test_b;
-                ss >> test_a >> test_b;
-
-                // Run the same test logic
-                float inputs[2] = { test_a / 3.14159f, test_b / 3.14159f };
-                float expected = std::sin(test_a) * std::sin(test_b);
-
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-                glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(inputs), inputs);
-
-                GLuint current_input = m_InputBuffer;
-                for (size_t i = 0; i < m_Layers.size(); i++) {
-                    glUseProgram(m_ForwardPassCompute->get());
-
-                    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, current_input);
-                    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_Layers[i]->m_WeightBuffer);
-                    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, m_Layers[i]->m_BiasBuffer);
-                    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, (i == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[i]->m_ActivationBuffer);
-
-                    glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "input_size"), m_Layers[i]->getSize().x);
-                    glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "output_size"), m_Layers[i]->getSize().y);
-                    glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "batch_size"), 1);
-                    glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "activation_type"), m_Layers[i]->m_ActivationFnType);
-
-                    glDispatchCompute(1, 1, 1);
-                    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-                    current_input = (i == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[i]->m_ActivationBuffer;
-                }
+                // Reuse forwardPass() for the actual computation
+                std::vector<float> inputVec(inputs, inputs + 2);
+                std::vector<float> targetVec(1); 
+                bindTrainingData(inputVec, targetVec);
+                forwardPass();
 
                 float result;
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
                 float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                 if (mapped) {
                     result = mapped[0];
@@ -374,31 +319,14 @@ namespace NNGL {
                         float inputs[2] = { a / 3.14159f, b / 3.14159f };
                         float expected = std::sin(a) * std::sin(b);
 
-                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-                        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(inputs), inputs);
-
-                        GLuint current_input = m_InputBuffer;
-                        for (size_t j = 0; j < m_Layers.size(); j++) {
-                            glUseProgram(m_ForwardPassCompute->get());
-
-                            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, current_input);
-                            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_Layers[j]->m_WeightBuffer);
-                            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, m_Layers[j]->m_BiasBuffer);
-                            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, (j == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[j]->m_ActivationBuffer);
-
-                            glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "input_size"), m_Layers[j]->getSize().x);
-                            glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "output_size"), m_Layers[j]->getSize().y);
-                            glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "batch_size"), 1);
-                            glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "activation_type"), m_Layers[j]->m_ActivationFnType);
-
-                            glDispatchCompute(1, 1, 1);
-                            if (j == m_Layers.size() - 1) glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
-                            current_input = (j == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[j]->m_ActivationBuffer;
-                        }
+                        // Reuse forwardPass() for the actual computation
+                        std::vector<float> inputVec(inputs, inputs + 2);
+                        std::vector<float> targetVec(1);
+                        bindTrainingData(inputVec, targetVec);
+                        forwardPass();
 
                         float result;
-                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
+                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
                         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                         if (mapped) {
                             result = mapped[0];
@@ -435,26 +363,11 @@ namespace NNGL {
                     float b = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
                     float inputs[2] = { a / 3.14159f, b / 3.14159f };
 
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-                    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(inputs), inputs);
-
-                    GLuint current_input = m_InputBuffer;
-                    for (size_t j = 0; j < m_Layers.size(); j++) {
-                        glUseProgram(m_ForwardPassCompute->get());
-
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, current_input);
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, m_Layers[j]->m_WeightBuffer);
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, m_Layers[j]->m_BiasBuffer);
-                        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, (j == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[j]->m_ActivationBuffer);
-
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "input_size"), m_Layers[j]->getSize().x);
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "output_size"), m_Layers[j]->getSize().y);
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "batch_size"), 1);
-                        glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "activation_type"), m_Layers[j]->m_ActivationFnType);
-
-                        glDispatchCompute(1, 1, 1);
-                        current_input = (j == m_Layers.size() - 1) ? m_TargetBuffer : m_Layers[j]->m_ActivationBuffer;
-                    }
+                    // Reuse forwardPass() for the actual computation
+                    std::vector<float> inputVec(inputs, inputs + 2);
+                    std::vector<float> targetVec(1);
+                    bindTrainingData(inputVec, targetVec);
+                    forwardPass();
                 }
 
                 glFinish(); // Wait for all GPU operations to complete
