@@ -1,0 +1,27 @@
+#version 430
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0, std430) restrict readonly buffer DeltaBuffer { float deltas[]; };
+layout(binding = 1, std430) restrict buffer BiasBuffer { float biases[]; };
+
+uniform int output_size;
+uniform int batch_size;
+uniform float learning_rate;
+
+void main() {
+    uint output_idx = gl_GlobalInvocationID.x;
+    
+    if (output_idx >= output_size) return;
+    
+    float bias_gradient = 0.0;
+    
+    // Accumulate bias gradients across batch
+    for (int b = 0; b < batch_size; b++) {
+        bias_gradient += deltas[b * output_size + output_idx];
+    }
+    
+    // Average gradient and update bias
+    bias_gradient /= float(batch_size);
+    biases[output_idx] -= learning_rate * bias_gradient;
+}

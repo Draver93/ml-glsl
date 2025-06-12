@@ -1,0 +1,42 @@
+#version 430
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0, std430) restrict readonly buffer InputBuffer { float input_data[]; };
+layout(binding = 1, std430) restrict readonly buffer WeightBuffer { float weights[]; };
+layout(binding = 2, std430) restrict readonly buffer BiasBuffer { float biases[]; };
+
+layout(binding = 3, std430) restrict writeonly buffer OutputBuffer { float output_data[]; };
+layout(binding = 4, std430) restrict writeonly buffer PreActivationBuffer { float preactivation_data[]; };
+
+uniform int input_size;
+uniform int output_size;
+uniform int batch_size;
+uniform int activation_type;
+
+float activate(float x, int type) {
+    switch(type) {
+        case 0: return tanh(x); // tanh
+        case 1: return max(0.0, x); // relu
+        case 2: return max(0.01 * x, x); // leaky relu
+        case 3: return 1.0 / (1.0 + exp(-x)); // sigmoid
+        case 4: return x; // identity
+        default: return x;
+    }
+}
+
+void main() {
+    uint batch_idx = gl_GlobalInvocationID.x / output_size;
+    uint neuron_idx = gl_GlobalInvocationID.x % output_size;
+    
+    if (batch_idx >= batch_size || neuron_idx >= output_size) return;
+    
+    float sum = biases[neuron_idx];
+    
+    for (int i = 0; i < input_size; i++)
+        sum += input_data[batch_idx * input_size + i] * weights[i * output_size + neuron_idx];
+    
+    uint idx = batch_idx * output_size + neuron_idx;
+    preactivation_data[idx] = sum;  // Store pre-activation
+    output_data[idx] = activate(sum, activation_type);  // Store post-activation
+}

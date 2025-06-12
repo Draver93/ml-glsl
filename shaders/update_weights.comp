@@ -1,0 +1,33 @@
+#version 430
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(binding = 0, std430) restrict readonly buffer InputBuffer { float inputs[]; };
+layout(binding = 1, std430) restrict readonly buffer DeltaBuffer { float deltas[]; };
+layout(binding = 2, std430) restrict buffer WeightBuffer { float weights[]; };
+
+uniform int input_size;
+uniform int output_size;
+uniform int batch_size;
+uniform float learning_rate;
+
+void main() {
+    uint input_idx = gl_GlobalInvocationID.x;
+    uint output_idx = gl_GlobalInvocationID.y;
+    
+    if (input_idx >= input_size || output_idx >= output_size) return;
+    
+    float weight_gradient = 0.0;
+    
+    // Accumulate gradients across batch
+    for (int b = 0; b < batch_size; b++) {
+        float input_val = inputs[b * input_size + input_idx];
+        float delta_val = deltas[b * output_size + output_idx];
+        
+        weight_gradient += input_val * delta_val;
+    }
+    
+    // Average gradient and update weight
+    weight_gradient /= float(batch_size);
+    weights[input_idx * output_size + output_idx] -= learning_rate * weight_gradient;
+}
