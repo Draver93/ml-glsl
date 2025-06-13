@@ -9,25 +9,42 @@
 namespace NNGL {
 	class NeuralNetwork {
 	public:
-		NeuralNetwork();
+		NeuralNetwork(int batchSize = 16) 
+			: m_BatchSize(batchSize) {};
+
 		~NeuralNetwork();
+
 	public:
-		void addLayer(std::unique_ptr<Layer> layer);
-		void train(const std::vector<float>& input_batch, const std::vector<float>& target_batch, float learningRate = 0.01f);
+		void addLayer(int width, int height, ActivationFnType type);
+		void train(float learningRate = 0.01f);
 		void run();
 		void load();
 		void save();
 
+		using BatchProvider = std::function<void(
+			std::vector<float>& batchInputs,    // Pre-allocated input buffer
+			std::vector<float>& batchTargets,   // Pre-allocated target buffer
+			int batchSize                       // Current batch size
+			)>;
+		void onTestBatch(const BatchProvider& provider) { m_TestBatchProvider = provider; }
+		void onTrainBatch(const BatchProvider& provider) { m_TrainBatchProvider = provider; }
+
 	private:
 		void init();
 
-		void bindTrainingData(const std::vector<float>& input_batch, const std::vector<float>& target_batch);
+		void bindTrainingData();
 		void forwardPass();
 		void targetLayerLossCalc();
 		void hiddenLayersLossCalc();
 		void weightsAndBiasesUpdate(float learningRate);
 
 	private:
+		int m_BatchSize;
+		BatchProvider m_TestBatchProvider;
+		BatchProvider m_TrainBatchProvider;
+
+		std::vector<float> m_InputVector;
+		std::vector<float> m_TargetVector;
 		GLuint m_InputBuffer = 0;
 		GLuint m_TargetBuffer = 0;
 

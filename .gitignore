@@ -1,6 +1,7 @@
 # --- Build Artifacts ---
 .vs/
 build/
+mnist/
 bin/
 bin-*
 obj/

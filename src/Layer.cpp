@@ -8,7 +8,6 @@ namespace NNGL {
 	Layer::Layer(int width, int height, int batchSize, ActivationFnType type) {
         m_Width = width;
         m_Height = height;
-        m_BatchSize = batchSize;
         m_ActivationFnType = type;
 
         // Create buffers
@@ -34,13 +33,13 @@ namespace NNGL {
 
         // Initialize activation and delta buffers
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ActivationBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PreactivationBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_DeltaBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}

@@ -15,15 +15,16 @@ namespace NNGL {
 	class NeuralNetwork;
 
 	class Layer {
-	public:
+	private:
 		Layer(int width, int height, int batchSize, ActivationFnType type);
-		~Layer();
 
 	public:
+		~Layer();
+
 		glm::uvec2 getSize() { return { m_Width , m_Height }; }
-		int getBatchSize() { return m_BatchSize; }
 		void printHeatmap();
 		void displayLayer(const std::string& layer_name);
+
 	private:
 		GLuint m_WeightBuffer;
 		GLuint m_BiasBuffer;
@@ -33,7 +34,6 @@ namespace NNGL {
 
 		int m_Width; // aka input size
 		int m_Height; // output size
-		int m_BatchSize;
 
 		ActivationFnType m_ActivationFnType;
 

@@ -8,36 +8,33 @@
 #include <tuple>
 
 namespace NNGL {
-	NeuralNetwork::NeuralNetwork() {
-	}
-
 	NeuralNetwork::~NeuralNetwork() {
         if(m_InputBuffer) glDeleteBuffers(1, &m_InputBuffer);
         if(m_TargetBuffer) glDeleteBuffers(1, &m_TargetBuffer);
 	}
 
-	void NeuralNetwork::addLayer(std::unique_ptr<Layer> layer) {
-		if (!m_Layers.empty() && m_Layers.back()->getSize().y != layer->getSize().x )
+	void NeuralNetwork::addLayer(int width, int height,  ActivationFnType type) {
+		if (!m_Layers.empty() && m_Layers.back()->getSize().y != width)
 			throw std::runtime_error("Trying to chain layers with incompatible dementions: last height != new width");
 
-		m_Layers.push_back(std::move(layer));
+		m_Layers.push_back(std::unique_ptr<NNGL::Layer>( new NNGL::Layer(width, height, m_BatchSize, type) ));
 	}
 
-	void NeuralNetwork::bindTrainingData(const std::vector<float>& inputBatch, const std::vector<float>& targetBatch) {
+	void NeuralNetwork::bindTrainingData() {
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
 		GLint inputBufferSize;
 		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &inputBufferSize);
-		if (inputBatch.size() * sizeof(float) > inputBufferSize)
-			throw std::runtime_error("Input buffer overflow! Trying to upload " + std::to_string(inputBatch.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(inputBufferSize) + " bytes");
-		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, inputBatch.size() * sizeof(float), inputBatch.data());
+		if (m_InputVector.size() * sizeof(float) > inputBufferSize)
+			throw std::runtime_error("Input buffer overflow! Trying to upload " + std::to_string(m_InputVector.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(inputBufferSize) + " bytes");
+		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_InputVector.size() * sizeof(float), m_InputVector.data());
 
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
 		GLint targetBufferSize;
 		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &targetBufferSize);
-		if (targetBatch.size() * sizeof(float) > targetBufferSize)
-			throw std::runtime_error("Target buffer overflow! Trying to upload " + std::to_string(targetBatch.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(targetBufferSize) + " bytes");
-		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, targetBatch.size() * sizeof(float), targetBatch.data());
+		if (m_TargetVector.size() * sizeof(float) > targetBufferSize)
+			throw std::runtime_error("Target buffer overflow! Trying to upload " + std::to_string(m_TargetVector.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(targetBufferSize) + " bytes");
+		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_TargetVector.size() * sizeof(float), m_TargetVector.data());
 
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -56,12 +53,12 @@ namespace NNGL {
 
 			glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "input_size"), layer->getSize().x);
 			glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "output_size"), layer->getSize().y);
-			glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "batch_size"), layer->getBatchSize());
+			glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "batch_size"), m_BatchSize);
 			glUniform1i(glGetUniformLocation(m_ForwardPassCompute->get(), "activation_type"), layer->m_ActivationFnType);
 
 			// Safe workgroup calculation with bounds checking
-			int workgroups_x = std::min((int)ceil(layer->getBatchSize() * layer->getSize().x / 16.0f), 65535);
-			int workgroups_y = std::min((int)ceil(layer->getBatchSize() * layer->getSize().y / 16.0f), 65535);
+			int workgroups_x = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
+			int workgroups_y = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
 			glDispatchCompute(workgroups_x, workgroups_y, 1);
 			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -81,10 +78,10 @@ namespace NNGL {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, m_Layers.back()->m_DeltaBuffer);
 
 		glUniform1i(glGetUniformLocation(m_OutputDeltaCompute->get(), "output_size"), m_Layers.back()->getSize().y);
-		glUniform1i(glGetUniformLocation(m_OutputDeltaCompute->get(), "batch_size"), m_Layers.back()->getBatchSize());
+		glUniform1i(glGetUniformLocation(m_OutputDeltaCompute->get(), "batch_size"), m_BatchSize);
 		glUniform1i(glGetUniformLocation(m_OutputDeltaCompute->get(), "activation_type"), m_Layers.back()->m_ActivationFnType);
 
-		int output_workgroups = std::min((int)ceil((m_Layers.back()->getBatchSize() * m_Layers.back()->getSize().y + 31) / 32), 65535);
+		int output_workgroups = std::min((int)ceil((m_BatchSize * m_Layers.back()->getSize().y + 31) / 32), 65535);
 		glDispatchCompute(output_workgroups, 1, 1);
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -105,12 +102,12 @@ namespace NNGL {
 
 			glUniform1i(glGetUniformLocation(m_HiddenDeltasCompute->get(), "current_size"), m_Layers[i]->getSize().y);
 			glUniform1i(glGetUniformLocation(m_HiddenDeltasCompute->get(), "next_size"), m_Layers[i + 1]->getSize().y);
-			glUniform1i(glGetUniformLocation(m_HiddenDeltasCompute->get(), "batch_size"), m_Layers[i]->getBatchSize());
+			glUniform1i(glGetUniformLocation(m_HiddenDeltasCompute->get(), "batch_size"), m_BatchSize);
 			glUniform1i(glGetUniformLocation(m_HiddenDeltasCompute->get(), "activation_type"), m_Layers[i]->m_ActivationFnType);
 
 			// Safe workgroup calculation
-			int workgroups_x = std::min((int)ceil(m_Layers[i]->getBatchSize() * m_Layers[i]->getSize().x / 16.0f), 65535);
-			int workgroups_y = std::min((int)ceil(m_Layers[i]->getBatchSize() * m_Layers[i]->getSize().y / 16.0f), 65535);
+			int workgroups_x = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().x / 16.0f), 65535);
+			int workgroups_y = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().y / 16.0f), 65535);
 			glDispatchCompute(workgroups_x, workgroups_y, 1);
 			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		}
@@ -131,11 +128,11 @@ namespace NNGL {
 
 			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "input_size"), layer->getSize().x);
 			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "output_size"), layer->getSize().y);
-			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "batch_size"), layer->getBatchSize());
+			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "batch_size"), m_BatchSize);
 			glUniform1f(glGetUniformLocation(m_WeightsCompute->get(), "learning_rate"), learningRate);
 
-			int workgroups_x = std::min((int)ceil(layer->getBatchSize() * layer->getSize().x / 16.0f), 65535);
-			int workgroups_y = std::min((int)ceil(layer->getBatchSize() * layer->getSize().y / 16.0f), 65535);
+			int workgroups_x = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
+			int workgroups_y = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
 			glDispatchCompute(workgroups_x, workgroups_y, 1);
 			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -149,10 +146,10 @@ namespace NNGL {
 			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, layer->m_BiasBuffer);
 
 			glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "output_size"), layer->getSize().y);
-			glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "batch_size"), layer->getBatchSize());
+			glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "batch_size"), m_BatchSize);
 			glUniform1f(glGetUniformLocation(m_BiasesCompute->get(), "learning_rate"), learningRate);
 
-			int bias_workgroups = std::min((int)ceil((layer->getBatchSize() * layer->getSize().y + 31) / 32), 65535);
+			int bias_workgroups = std::min((int)ceil((m_BatchSize * layer->getSize().y + 31) / 32), 65535);
 			glDispatchCompute(bias_workgroups, 1, 1);
 			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
@@ -163,29 +160,26 @@ namespace NNGL {
 		}
 	}
 
-	void NeuralNetwork::train(const std::vector<float>& inputBatch, const std::vector<float>& targetBatch, float learningRate) {
-		if (m_Layers.size() < 3) throw std::runtime_error("3 layers minimum");
+    void NeuralNetwork::train(float learningRate) {
+        if (m_Layers.size() < 3) throw std::runtime_error("3 layers minimum");
 
-		if (inputBatch.size() != m_Layers.front()->getSize().x * m_Layers.front()->getBatchSize())
-			throw std::runtime_error("Wrong input_batch size! Should be: " + std::to_string(m_Layers.front()->getSize().x * m_Layers.front()->getBatchSize()));
+        if (!m_TrainBatchProvider) throw std::runtime_error("Please specify onTrainBatch callback");
 
-		if (targetBatch.size() != m_Layers.back()->getSize().y * m_Layers.back()->getBatchSize())
-			throw std::runtime_error("Wrong input_batch size! Should be: " + std::to_string(m_Layers.back()->getSize().y * m_Layers.back()->getBatchSize()));
+        if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
 
-		if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
+        m_TrainBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
 
+        bindTrainingData();
 
-		bindTrainingData(inputBatch, targetBatch);
+        forwardPass();
 
-		forwardPass();
+        targetLayerLossCalc();
 
-		targetLayerLossCalc();
+        hiddenLayersLossCalc();
 
-		hiddenLayersLossCalc();
+        weightsAndBiasesUpdate(learningRate);
 
-		weightsAndBiasesUpdate(learningRate);
-
-	}
+    }
 
 	void NeuralNetwork::init()
 	{
@@ -194,14 +188,20 @@ namespace NNGL {
 		if (m_InputBuffer != 0) glDeleteBuffers(1, &m_InputBuffer);
 		if (m_TargetBuffer != 0) glDeleteBuffers(1, &m_TargetBuffer);
 
+        m_InputVector.clear();
+        m_InputVector.resize(m_Layers.front()->getSize().x * m_BatchSize);
+
+        m_TargetVector.clear();
+        m_TargetVector.resize(m_Layers.back()->getSize().y * m_BatchSize);
+
 		glGenBuffers(1, &m_InputBuffer);
 		glGenBuffers(1, &m_TargetBuffer);
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, m_Layers.front()->getBatchSize() * m_Layers.front()->getSize().x * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * m_Layers.front()->getSize().x * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->getSize().y * m_Layers.back()->getBatchSize() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->getSize().y * m_BatchSize * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
 		if (!m_ForwardPassCompute)	m_ForwardPassCompute = std::make_unique<Shader>("shaders/forward_pass.comp");
 		if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = std::make_unique<Shader>("shaders/delta_loss.comp");
@@ -215,15 +215,16 @@ namespace NNGL {
 	void NeuralNetwork::run() {
 
         std::cout << "\n=== Neural Network Testing Interface ===" << std::endl;
-        std::cout << "Network trained to compute: sin(a) * sin(b)" << std::endl;
         std::cout << "Commands:" << std::endl;
-        std::cout << "  test <a> <b>     - Test with specific values (angles in radians)" << std::endl;
-        std::cout << "  random           - Test with random values" << std::endl;
+        std::cout << "  test             - Test with random batch" << std::endl;
         std::cout << "  batch <n>        - Test n random samples" << std::endl;
         std::cout << "  benchmark        - Performance benchmark" << std::endl;
         std::cout << "  quit             - Exit" << std::endl;
         std::cout << "  layer <i>        - Print layer" << std::endl;
         std::cout << "=====================================\n" << std::endl;
+
+        int origBatchSize = m_BatchSize;
+        m_BatchSize = 1;
 
         std::string command;
         while (true) {
@@ -234,73 +235,76 @@ namespace NNGL {
                 break;
             }
             else if (command == "test") {
-                float a, b;
-                if (std::cin >> a >> b) {
-                    // Normalize inputs to [-1, 1] range
-                    float inputs[2] = { a / 3.14159f, b / 3.14159f };
-                    float expected = std::sin(a) * std::sin(b);
-
-                    // Reuse forwardPass() for the actual computation
-                    std::vector<float> inputVec(inputs, inputs + 2);
-                    std::vector<float> targetVec(1);
-                    bindTrainingData(inputVec, targetVec);
-                    forwardPass();
-
-                    // Read result
-                    float result;
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
-                    float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                    if (mapped) {
-                        result = mapped[0];
-                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                    }
-
-                    float error = std::abs(result - expected);
-                    float error_percent = (expected != 0) ? (error / std::abs(expected)) * 100.0f : error * 100.0f;
-
-                    std::cout << std::fixed << std::setprecision(6);
-                    std::cout << "Input: a=" << a << ", b=" << b << std::endl;
-                    std::cout << "Expected: " << expected << std::endl;
-                    std::cout << "Got:      " << result << std::endl;
-                    std::cout << "Error:    " << error << " (" << error_percent << "%)" << std::endl;
-                    std::cout << std::defaultfloat << std::endl;
-                }
-                else {
-                    std::cout << "Usage: test <a> <b> (where a and b are angles in radians)" << std::endl;
-                    std::cin.clear();
-                    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-                }
-            }
-            else if (command == "random") {
-                float a = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
-                float b = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
-
-                float inputs[2] = { a / 3.14159f, b / 3.14159f };
-                float expected = std::sin(a) * std::sin(b);
-
-                std::cout << "Testing with random values: a=" << a << ", b=" << b << std::endl;
-
-                // Reuse forwardPass() for the actual computation
-                std::vector<float> inputVec(inputs, inputs + 2);
-                std::vector<float> targetVec(1); 
-                bindTrainingData(inputVec, targetVec);
+                // Generate random batch of 1
+                m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
+                bindTrainingData();
                 forwardPass();
 
-                float result;
+                // Read results from GPU
+                int outputSize = m_Layers.back()->getSize().y;
+                std::vector<float> results(outputSize);
+                std::vector<float> expected(outputSize);
+
                 glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
                 float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                 if (mapped) {
-                    result = mapped[0];
+                    for (int i = 0; i < outputSize; i++) {
+                        results[i] = mapped[i];
+                    }
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 }
 
-                float error = std::abs(result - expected);
-                float error_percent = (expected != 0) ? (error / std::abs(expected)) * 100.0f : error * 100.0f;
+                // Get expected values
+                for (int i = 0; i < outputSize; i++) {
+                    expected[i] = m_TargetVector[i];
+                }
 
+                // Display results
                 std::cout << std::fixed << std::setprecision(6);
-                std::cout << "Expected: " << expected << std::endl;
-                std::cout << "Got:      " << result << std::endl;
-                std::cout << "Error:    " << error << " (" << error_percent << "%)" << std::endl;
+
+                if (outputSize == 1) {
+                    // Single output (regression)
+                    float error = std::abs(results[0] - expected[0]);
+                    float error_percent = (expected[0] != 0) ? (error / std::abs(expected[0])) * 100.0f : error * 100.0f;
+
+                    std::cout << "Expected: " << expected[0] << std::endl;
+                    std::cout << "Got:      " << results[0] << std::endl;
+                    std::cout << "Error:    " << error << " (" << error_percent << "%)" << std::endl;
+
+                }
+                else {
+                    // Multiple outputs (classification or multi-output regression)
+                    std::cout << "Expected: [";
+                    for (int i = 0; i < outputSize; i++) {
+                        std::cout << expected[i] << (i < outputSize - 1 ? ", " : "");
+                    }
+                    std::cout << "]" << std::endl;
+
+                    std::cout << "Got:      [";
+                    for (int i = 0; i < outputSize; i++) {
+                        std::cout << results[i] << (i < outputSize - 1 ? ", " : "");
+                    }
+                    std::cout << "]" << std::endl;
+
+                    // For classification, show predicted vs expected class
+                    if (outputSize > 2) {  // Likely classification
+                        int predictedClass = std::max_element(results.begin(), results.end()) - results.begin();
+                        int expectedClass = std::max_element(expected.begin(), expected.end()) - expected.begin();
+
+                        std::cout << "Predicted class: " << predictedClass << " (confidence: " << results[predictedClass] << ")" << std::endl;
+                        std::cout << "Expected class:  " << expectedClass << " - " << (predictedClass == expectedClass ? "CORRECT" : "WRONG") << std::endl;
+                    }
+
+                    // Calculate mean squared error
+                    float mse = 0.0f;
+                    for (int i = 0; i < outputSize; i++) {
+                        float diff = results[i] - expected[i];
+                        mse += diff * diff;
+                    }
+                    mse /= outputSize;
+                    std::cout << "MSE: " << mse << std::endl;
+                }
+
                 std::cout << std::defaultfloat << std::endl;
             }
             else if (command == "batch") {
@@ -312,38 +316,79 @@ namespace NNGL {
                     float max_error = 0.0f;
                     float min_error = std::numeric_limits<float>::max();
 
+                    int outputSize = m_Layers.back()->getSize().y;
+                    int correct_predictions = 0;
+
                     for (int i = 0; i < n; i++) {
-                        float a = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
-                        float b = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
-
-                        float inputs[2] = { a / 3.14159f, b / 3.14159f };
-                        float expected = std::sin(a) * std::sin(b);
-
-                        // Reuse forwardPass() for the actual computation
-                        std::vector<float> inputVec(inputs, inputs + 2);
-                        std::vector<float> targetVec(1);
-                        bindTrainingData(inputVec, targetVec);
+                        m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
+                        bindTrainingData();
                         forwardPass();
 
-                        float result;
+                        std::vector<float> results(outputSize);
+                        std::vector<float> expected(outputSize);
+
                         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
                         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                         if (mapped) {
-                            result = mapped[0];
+                            for (int j = 0; j < outputSize; j++) {
+                                results[j] = mapped[j];
+                            }
                             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                         }
 
-                        float error = std::abs(result - expected);
-                        total_error += error;
-                        max_error = std::max(max_error, error);
-                        min_error = std::min(min_error, error);
+                        for (int j = 0; j < outputSize; j++) {
+                            expected[j] = m_TargetVector[j];
+                        }
+
+                        if (outputSize == 1) {
+                            // Single output - calculate absolute error
+                            float error = std::abs(results[0] - expected[0]);
+                            total_error += error;
+                            max_error = std::max(max_error, error);
+                            min_error = std::min(min_error, error);
+                        }
+                        else {
+                            // Multiple outputs - calculate MSE and check classification accuracy
+                            float mse = 0.0f;
+                            for (int j = 0; j < outputSize; j++) {
+                                float diff = results[j] - expected[j];
+                                mse += diff * diff;
+                            }
+                            mse /= outputSize;
+                            total_error += mse;
+                            max_error = std::max(max_error, mse);
+                            min_error = std::min(min_error, mse);
+
+                            // Check classification accuracy (if likely classification)
+                            if (outputSize > 2) {
+                                int predictedClass = std::max_element(results.begin(), results.end()) - results.begin();
+                                int expectedClass = std::max_element(expected.begin(), expected.end()) - expected.begin();
+                                if (predictedClass == expectedClass) {
+                                    correct_predictions++;
+                                }
+                            }
+                        }
                     }
 
                     std::cout << std::fixed << std::setprecision(6);
                     std::cout << "Results for " << n << " samples:" << std::endl;
-                    std::cout << "Average error: " << (total_error / n) << std::endl;
-                    std::cout << "Min error:     " << min_error << std::endl;
-                    std::cout << "Max error:     " << max_error << std::endl;
+
+                    if (outputSize == 1) {
+                        std::cout << "Average error: " << (total_error / n) << std::endl;
+                        std::cout << "Min error:     " << min_error << std::endl;
+                        std::cout << "Max error:     " << max_error << std::endl;
+                    }
+                    else {
+                        std::cout << "Average MSE:   " << (total_error / n) << std::endl;
+                        std::cout << "Min MSE:       " << min_error << std::endl;
+                        std::cout << "Max MSE:       " << max_error << std::endl;
+
+                        if (outputSize > 2) {
+                            float accuracy = (float)correct_predictions / n * 100.0f;
+                            std::cout << "Accuracy:      " << accuracy << "% (" << correct_predictions << "/" << n << " correct)" << std::endl;
+                        }
+                    }
+
                     std::cout << std::defaultfloat << std::endl;
                 }
                 else {
@@ -359,14 +404,8 @@ namespace NNGL {
                 auto start_time = std::chrono::high_resolution_clock::now();
 
                 for (int i = 0; i < benchmark_samples; i++) {
-                    float a = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
-                    float b = 3.14159f * ((float)rand() / RAND_MAX) * 2.0f - 3.14159f;
-                    float inputs[2] = { a / 3.14159f, b / 3.14159f };
-
-                    // Reuse forwardPass() for the actual computation
-                    std::vector<float> inputVec(inputs, inputs + 2);
-                    std::vector<float> targetVec(1);
-                    bindTrainingData(inputVec, targetVec);
+                    m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
+                    bindTrainingData();
                     forwardPass();
                 }
 
@@ -386,12 +425,10 @@ namespace NNGL {
             }
             else if (command == "help" || command == "h") {
                 std::cout << "Available commands:" << std::endl;
-                std::cout << "  test <a> <b>     - Test with specific values (angles in radians)" << std::endl;
-                std::cout << "  random           - Test with random values" << std::endl;
-                std::cout << "  layer            - Show layer by id" << std::endl;
-                std::cout << "  layer            - Show layer by id" << std::endl;
+                std::cout << "  test             - Test with random sample" << std::endl;
                 std::cout << "  batch <n>        - Test n random samples (1-1000)" << std::endl;
                 std::cout << "  benchmark        - Performance benchmark (10k samples)" << std::endl;
+                std::cout << "  layer <i>        - Show layer info" << std::endl;
                 std::cout << "  help             - Show this help" << std::endl;
                 std::cout << "  quit             - Exit" << std::endl;
             }
@@ -410,5 +447,7 @@ namespace NNGL {
 
             std::cin.clear();
         }
+
+        m_BatchSize = origBatchSize;
 	}
 }
