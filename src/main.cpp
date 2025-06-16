@@ -20,12 +20,33 @@
 #include "ActivationFunctions.h"
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
-
+#include "Tokenizer.h"
 
 
 #include <vector>
 #include <cstdint>
 #include <cmath>
+
+uint32_t hash32(const std::string& str) {
+    const uint32_t FNV_PRIME = 0x01000193; //   16777619
+    const uint32_t OFFSET_BASIS = 0x811C9DC5; // 2166136261
+
+    uint32_t hash = OFFSET_BASIS;
+    for (char c : str) {
+        hash ^= static_cast<uint8_t>(c);
+        hash *= FNV_PRIME;
+    }
+    return hash;
+}
+
+std::vector<float> tokenToInputVector(const std::string& token) {
+    uint32_t h = hash32(token);  // example: 0x9E3779B9
+    std::vector<float> vec(32);
+    for (int i = 0; i < 32; ++i) {
+        vec[i] = ((h >> (i % 32)) & 1) ? 1.0f : 0.0f;  // crude binary split
+    }
+    return vec;
+}
 
 // Helper to read little-endian integers from file
 template<typename T>
@@ -234,22 +255,23 @@ void print2DImage(const std::vector < float > & image, int width, int height) {
 void digit_recognition() {
     // Network setup - simplified for testing
     const int inputSize = 784;
-    const int hiddenSize = 20;
+    const int hiddenSize = 128;
     const int outputSize = 10;
 
-    const int batchSize = 64;
+    const int batchSize = 8;
     const int steps = 1000000;
 
     NNGL::NeuralNetwork nn(batchSize);
 
     nn.addLayer(inputSize, hiddenSize, NNGL::ActivationFnType::RELU);
-    nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::RELU);
+    nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::TANH);
+    nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::SIGMOID);
     nn.addLayer(hiddenSize, outputSize, NNGL::ActivationFnType::IDENTITY);
 
     std::vector<std::vector<uint8_t>> trainImages = NNGL::MNIST::loadImages("mnist/train-images.idx3-ubyte");
     std::vector<uint8_t> trainLabels = NNGL::MNIST::loadLabels("mnist/train-labels.idx1-ubyte");
 
-    print2DImage(trainImages[52], 28, 28);
+    //print2DImage(trainImages[52], 28, 28);
 
     // Load test data
     std::vector<std::vector<uint8_t>> testImages = NNGL::MNIST::loadImages("mnist/t10k-images.idx3-ubyte");
@@ -287,7 +309,7 @@ void digit_recognition() {
     testImages.push_back(bmp);
     testLabels.push_back(9);*/
 
-    print2DImage(testImages[0], 28, 28);
+    //print2DImage(testImages[0], 28, 28);
 
     // Track current position in dataset
     // Separate indices for train and test
@@ -321,7 +343,7 @@ void digit_recognition() {
             batchTargets[targetOffset + label] = 1.0f;
         }
         // Update train index for next batch
-        trainIndex = (trainIndex + batchSize) % totalTrainSamples;
+        trainIndex = (trainIndex + batchSize) % totalTrainSamples; //(totalTrainSamples - batchSize) * ((float)rand() / RAND_MAX); 
     });
 
     nn.onTestBatch([&](std::vector<float>& batchInputs, std::vector<float>& batchTargets, int batchSize) {
@@ -351,16 +373,15 @@ void digit_recognition() {
         testIndex = (testIndex + batchSize) % totalTestSamples;
     });
 
-
-
-    float learningRate = 0.03f;
     int stepsLeft = steps / batchSize;
 
-    float initialLR = 0.03f;
+    float initialLR = 0.0001f;
+    float learningRate = initialLR;
     float decayRate = 0.98f;
-    int decaySteps = steps / 10;
+    int decaySteps = steps / 1000; 
 
     while (stepsLeft > 0) {
+
         nn.train(learningRate);
 
         // Periodic GPU synchronization and cleanup
@@ -371,13 +392,13 @@ void digit_recognition() {
         }
 
         // Status updates and weight display
-        if (stepsLeft % (10000 / batchSize) == 0) {
+        if (stepsLeft % (10000) == 0) {
             resetCursor();
-            /*for (int i = 1; i < nn.m_Layers.size(); i++) {
-                nn.m_Layers[i]->printHeatmap();
-                std::cout << std::endl;
-            }*/
-            std::cout << "\nStep: " << (steps / batchSize - stepsLeft) * batchSize << " LR: " << learningRate << std::endl;
+            //for (int i = 1; i < nn.m_Layers.size(); i++) nn.m_Layers[i]->printHeatmap();
+
+            float accurracy = nn.test(100);
+
+            std::cout << "\nStep: " << (steps / batchSize - stepsLeft) * batchSize << " LR: " << learningRate << " Prediction: " << accurracy << "; " <<  std::endl;
         }
 
         // Learning rate decay
@@ -465,9 +486,33 @@ void sin_multiplication() {
     nn.run();
 }
 
+void rnn() {
+
+}
+
 int main() {
     srand(time(nullptr));
+    
 
+    //new tokenizer
+    // take a byte convert it in vector of 8 float where each float is bit 1.0f or 0.0f
+    // feed it to ???
+    /*NNGL::Trie trie;
+
+    if (0) {
+        trie.bulk_insert_from_file("english3.txt");
+        trie.bulk_insert_from_file("pg76287.txt");
+        //trie.prune_stddev_threshold(1.0); // Keep tokens >= (mean - 1×stddev)
+        trie.save_tokens("tokens2.txt");
+    }
+    else trie.load_tokens("tokens2.txt");
+
+    trie.prune_stddev_threshold(1.0);
+
+    auto result2 = trie.tokenize("Hi my name is");
+    std::vector<int> tokens;
+    for (auto& it : result2) tokens.push_back(trie.get_token_id(it));*/
+    
     // Initialize GLFW
     if (!glfwInit()) { std::cerr << "GLFW initialization failed!" << std::endl; return -1; }
 

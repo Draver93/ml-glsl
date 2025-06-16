@@ -10,34 +10,41 @@ namespace NNGL {
         m_Height = height;
         m_ActivationFnType = type;
 
-        // Create buffers
-        glGenBuffers(1, &m_WeightBuffer);
-        glGenBuffers(1, &m_BiasBuffer);
-        glGenBuffers(1, &m_ActivationBuffer);
-        glGenBuffers(1, &m_PreactivationBuffer);
-        glGenBuffers(1, &m_DeltaBuffer);
-
         // Initialize weights
         std::vector<float> weights(m_Width * m_Height);
         for (auto& w : weights) w = NNGL::activationFunctions[type].weight_initializer(m_Width, m_Height);
 
+        glGenBuffers(1, &m_WeightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_WeightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, weights.size() * sizeof(float), weights.data(), GL_DYNAMIC_DRAW);
+
+        // for ADAM calc
+        glGenBuffers(1, &m_MBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_MBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, weights.size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+
+        glGenBuffers(1, &m_VBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_VBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, weights.size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
         // Initialize biases
         std::vector<float> biases(m_Height);
         for (auto& b : biases) b = NNGL::activationFunctions[type].weight_initializer(m_Width, m_Height);
 
+        glGenBuffers(1, &m_BiasBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_BiasBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, biases.size() * sizeof(float), biases.data(), GL_DYNAMIC_DRAW);
 
         // Initialize activation and delta buffers
+        glGenBuffers(1, &m_ActivationBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ActivationBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
+        glGenBuffers(1, &m_PreactivationBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PreactivationBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
+        glGenBuffers(1, &m_DeltaBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_DeltaBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
@@ -97,6 +104,7 @@ namespace NNGL {
         }
 
         std::cout << "\033[0m\n";
+        std::cout << std::endl;
     }
 
     void Layer::displayLayer(const std::string& layer_name) {

@@ -5,7 +5,6 @@ layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(binding = 0, std430) restrict readonly buffer OutputBuffer { float outputs[]; };
 layout(binding = 1, std430) restrict readonly buffer TargetBuffer { float targets[]; };
 layout(binding = 2, std430) restrict readonly buffer PreActivationBuffer { float preactivations[]; };
-
 layout(binding = 3, std430) restrict writeonly buffer DeltaBuffer { float deltas[]; };
 
 uniform int output_size;

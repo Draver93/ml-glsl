@@ -118,46 +118,60 @@ namespace NNGL {
 
 	// Update weights and biases for all layers
 	void NeuralNetwork::weightsAndBiasesUpdate(float learningRate) {
-		GLuint current_input = m_InputBuffer;
-		for (auto &layer : m_Layers) {
-			glUseProgram(m_WeightsCompute->get());
+        GLuint current_input = m_InputBuffer;
 
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, current_input);
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, layer->m_DeltaBuffer);
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, layer->m_WeightBuffer);
+        for (auto& layer : m_Layers) {
+            // --- WEIGHTS UPDATE WITH ADAM ---
+            glUseProgram(m_WeightsCompute->get());
 
-			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "input_size"), layer->getSize().x);
-			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "output_size"), layer->getSize().y);
-			glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "batch_size"), m_BatchSize);
-			glUniform1f(glGetUniformLocation(m_WeightsCompute->get(), "learning_rate"), learningRate);
+            // Bind input, delta, weights, and moment buffers
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, current_input);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, layer->m_DeltaBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, layer->m_WeightBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, layer->m_MBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, layer->m_VBuffer);
 
-			int workgroups_x = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
-			int workgroups_y = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
-			glDispatchCompute(workgroups_x, workgroups_y, 1);
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            // Upload uniform variables
+            glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "input_size"), layer->getSize().x);
+            glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "output_size"), layer->getSize().y);
+            glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "batch_size"), m_BatchSize);
+            glUniform1f(glGetUniformLocation(m_WeightsCompute->get(), "learning_rate"), learningRate);
+            glUniform1f(glGetUniformLocation(m_WeightsCompute->get(), "beta1"), 0.9f);
+            glUniform1f(glGetUniformLocation(m_WeightsCompute->get(), "beta2"), 0.999f);
+            glUniform1i(glGetUniformLocation(m_WeightsCompute->get(), "timestep"), m_Timestep);
 
-			// Unbind weight update buffers
-			for (int j = 0; j < 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+            // Dispatch compute for weight updates
+            int workgroups_x = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
+            int workgroups_y = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
+            glDispatchCompute(workgroups_x, workgroups_y, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-			// Update biases
-			glUseProgram(m_BiasesCompute->get());
+            // Unbind weight update buffers
+            for (int j = 0; j < 5; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
 
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, layer->m_DeltaBuffer);
-			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, layer->m_BiasBuffer);
+            // --- BIASES UPDATE (Simple Gradient Descent) ---
+            glUseProgram(m_BiasesCompute->get());
 
-			glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "output_size"), layer->getSize().y);
-			glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "batch_size"), m_BatchSize);
-			glUniform1f(glGetUniformLocation(m_BiasesCompute->get(), "learning_rate"), learningRate);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, layer->m_DeltaBuffer);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, layer->m_BiasBuffer);
 
-			int bias_workgroups = std::min((int)ceil((m_BatchSize * layer->getSize().y + 31) / 32), 65535);
-			glDispatchCompute(bias_workgroups, 1, 1);
-			glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "output_size"), layer->getSize().y);
+            glUniform1i(glGetUniformLocation(m_BiasesCompute->get(), "batch_size"), m_BatchSize);
+            glUniform1f(glGetUniformLocation(m_BiasesCompute->get(), "learning_rate"), learningRate);
 
-			// Unbind bias update buffers
-			for (int j = 0; j < 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+            int bias_workgroups = std::min((int)ceil((m_BatchSize * layer->getSize().y + 31) / 32), 65535);
+            glDispatchCompute(bias_workgroups, 1, 1);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-			current_input = layer->m_ActivationBuffer;
-		}
+            // Unbind bias update buffers
+            for (int j = 0; j < 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+
+            // Update input for next layer
+            current_input = layer->m_ActivationBuffer;
+        }
+
+        // Increment timestep for Adam bias correction
+        m_Timestep++;
 	}
 
     void NeuralNetwork::train(float learningRate) {
@@ -211,6 +225,57 @@ namespace NNGL {
 
 	}
     
+float NeuralNetwork::test(int samplesToTest, bool do_softmax) {
+
+    if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
+
+    int origBatchSize = m_BatchSize;
+    m_BatchSize = 1;
+
+    float totalRegressionError = 0.0f;
+    float confidenceSum = 0.0f;  // sum of probabilities assigned to true classes
+    int classificationSamples = 0;
+
+    if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
+
+    for (int i = 0; i < samplesToTest; ++i) {
+        m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
+        bindTrainingData();
+        forwardPass();
+
+        int outputSize = m_Layers.back()->getSize().y;
+        std::vector<float> results(outputSize);
+        std::vector<float> expected(outputSize);
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        if (mapped) {
+            for (int j = 0; j < outputSize; ++j) {
+                results[j] = mapped[j];
+            }
+            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        }
+
+        for (int j = 0; j < outputSize; ++j)
+            expected[j] = m_TargetVector[j];
+
+        if(do_softmax) results = softmax(results);
+
+        int trueClass = std::distance(expected.begin(), std::max_element(expected.begin(), expected.end()));
+        int resultClass = std::distance(results.begin(), std::max_element(results.begin(), results.end()));
+
+        // Accumulate probability assigned to the true class
+        if(trueClass == resultClass)confidenceSum += 1;
+        classificationSamples++;
+    }
+
+    m_BatchSize = origBatchSize;
+
+    // Mean confidence over all classification samples, as % (0-100)
+    float meanConfidence = (classificationSamples > 0) ? (confidenceSum / classificationSamples) * 100.0f : 0.0f;
+    return meanConfidence;
+}
+
     // Interactive Testing CLI
 	void NeuralNetwork::run() {
 
@@ -253,6 +318,7 @@ namespace NNGL {
                     }
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 }
+                results = softmax(results);
 
                 // Get expected values
                 for (int i = 0; i < outputSize; i++) {
@@ -335,6 +401,7 @@ namespace NNGL {
                             }
                             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                         }
+                        results = softmax(results);
 
                         for (int j = 0; j < outputSize; j++) {
                             expected[j] = m_TargetVector[j];

@@ -1,9 +1,26 @@
 #pragma once
 
 #include <functional>
+#include <algorithm>
 
 namespace NNGL {
+    static std::vector<float> softmax(const std::vector<float>& input) {
+        std::vector<float> output(input.size());
 
+        float maxInput = *std::max_element(input.begin(), input.end());
+
+        float sumExp = 0.0f;
+        for (size_t i = 0; i < input.size(); ++i) {
+            output[i] = std::exp(input[i] - maxInput);
+            sumExp += output[i];
+        }
+
+        for (size_t i = 0; i < output.size(); ++i) {
+            output[i] /= sumExp;
+        }
+
+        return output;
+    }
 
     enum ActivationFnType {
         TANH = 0,

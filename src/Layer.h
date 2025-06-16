@@ -32,6 +32,10 @@ namespace NNGL {
 		GLuint m_PreactivationBuffer;
 		GLuint m_DeltaBuffer;
 
+		GLuint m_MBuffer;
+		GLuint m_VBuffer;
+
+
 		int m_Width; // aka input size
 		int m_Height; // output size
 

@@ -4,17 +4,26 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(binding = 0, std430) restrict readonly buffer InputBuffer { float inputs[]; };
 layout(binding = 1, std430) restrict readonly buffer DeltaBuffer { float deltas[]; };
+
 layout(binding = 2, std430) restrict buffer WeightBuffer { float weights[]; };
+layout(binding = 3, std430) restrict buffer MBuffer { float m[]; };
+layout(binding = 4, std430) restrict buffer VBuffer { float v[]; };
 
 uniform int input_size;
 uniform int output_size;
 uniform int batch_size;
+uniform float beta1;
+uniform float beta2;
+uniform int timestep;
 uniform float learning_rate;
+
+const float epsilon = 1e-8;
 
 void main() {
     uint input_idx = gl_GlobalInvocationID.x;
     uint output_idx = gl_GlobalInvocationID.y;
-    
+    uint idx = input_idx * output_size + output_idx;
+
     if (input_idx >= input_size || output_idx >= output_size) return;
     
     float weight_gradient = 0.0;
@@ -26,8 +35,17 @@ void main() {
         
         weight_gradient += input_val * delta_val;
     }
-    
+
     // Average gradient and update weight
     weight_gradient /= float(batch_size);
-    weights[input_idx * output_size + output_idx] -= learning_rate * weight_gradient;
+
+    m[idx] = beta1 * m[idx] + (1.0 - beta1) * weight_gradient;
+    v[idx] = beta2 * v[idx] + (1.0 - beta2) * weight_gradient * weight_gradient;
+
+    // Bias correction (optional)
+    float m_hat = m[idx] / (1.0 - pow(beta1, timestep + 1));
+    float v_hat = v[idx] / (1.0 - pow(beta2, timestep + 1));
+
+    weights[idx] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon); //ADAM
+    //weights[idx] -= learning_rate * weight_gradient; SGD
 }
