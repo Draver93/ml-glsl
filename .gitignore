@@ -13,6 +13,7 @@ obj/
 *.dll
 *.so
 *.bmp
+*.dat
 *.dylib
 
 # --- Premake-generated files ---

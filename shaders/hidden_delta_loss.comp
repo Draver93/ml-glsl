@@ -2,10 +2,10 @@
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
-layout(binding = 0, std430) restrict readonly buffer PreActivationBuffer { float preactivations[]; };
-layout(binding = 1, std430) restrict readonly buffer NextDeltaBuffer { float next_deltas[]; };
-layout(binding = 2, std430) restrict readonly buffer WeightBuffer { float weights[]; };
-layout(binding = 3, std430) restrict writeonly buffer DeltaBuffer { float deltas[]; };
+layout(std430) restrict readonly buffer PreActivationBuffer { float preactivations[]; };
+layout(std430) restrict readonly buffer NextDeltaBuffer { float next_deltas[]; };
+layout(std430) restrict readonly buffer WeightBuffer { float weights[]; };
+layout(std430) restrict writeonly buffer DeltaBuffer { float deltas[]; };
 
 uniform int current_size;
 uniform int next_size;

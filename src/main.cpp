@@ -21,6 +21,7 @@
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
 #include "Tokenizer.h"
+#include "BPE.h"
 
 
 #include <vector>
@@ -255,17 +256,18 @@ void print2DImage(const std::vector < float > & image, int width, int height) {
 void digit_recognition() {
     // Network setup - simplified for testing
     const int inputSize = 784;
-    const int hiddenSize = 128;
+    const int hiddenSize = 64;
     const int outputSize = 10;
 
     const int batchSize = 8;
-    const int steps = 1000000;
+    const int steps = 2000000;
 
     NNGL::NeuralNetwork nn(batchSize);
 
-    nn.addLayer(inputSize, hiddenSize, NNGL::ActivationFnType::RELU);
+    nn.addLayer(inputSize, hiddenSize, NNGL::ActivationFnType::SIGMOID);
+    nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::RELU);
+    nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::RELU);
     nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::TANH);
-    nn.addLayer(hiddenSize, hiddenSize, NNGL::ActivationFnType::SIGMOID);
     nn.addLayer(hiddenSize, outputSize, NNGL::ActivationFnType::IDENTITY);
 
     std::vector<std::vector<uint8_t>> trainImages = NNGL::MNIST::loadImages("mnist/train-images.idx3-ubyte");
@@ -396,7 +398,7 @@ void digit_recognition() {
             resetCursor();
             //for (int i = 1; i < nn.m_Layers.size(); i++) nn.m_Layers[i]->printHeatmap();
 
-            float accurracy = nn.test(100);
+            float accurracy = nn.eval(100);
 
             std::cout << "\nStep: " << (steps / batchSize - stepsLeft) * batchSize << " LR: " << learningRate << " Prediction: " << accurracy << "; " <<  std::endl;
         }
@@ -493,6 +495,21 @@ void rnn() {
 int main() {
     srand(time(nullptr));
     
+
+   NNGL::BytePairEncoding bpe(1000);
+    bpe.load("bpe_tokens.dat");
+    //bpe.train("english3.txt");
+    //bpe.train("pg76287.txt");
+    //bpe.save("bpe_tokens.dat");
+
+    std::string word = "This doesn't make any sense";
+    auto encoded = bpe.encode(word);
+
+    std::cout << "Encoded '" << word << "': ";
+    for (const auto& token : encoded) {
+        std::cout << token << " ";
+    }
+    std::cout << std::endl;
 
     //new tokenizer
     // take a byte convert it in vector of 8 float where each float is bit 1.0f or 0.0f

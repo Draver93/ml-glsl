@@ -11,14 +11,14 @@ namespace NNGL {
 	public:
 		NeuralNetwork(int batchSize = 16) 
 			:	m_BatchSize(batchSize),
-				m_Timestep(0){};
+				m_ADAM_Timestep(0){};
 
 		~NeuralNetwork();
 
 	public:
 		void addLayer(int width, int height, ActivationFnType type);
 		void train(float learningRate = 0.01f);
-		float test(int samplesToTest, bool do_softmax = false);
+		float eval(int samplesToTest, bool do_softmax = false);
 		void run();
 		void load();
 		void save();
@@ -41,7 +41,7 @@ namespace NNGL {
 		void weightsAndBiasesUpdate(float learningRate);
 
 	private:
-		int m_Timestep;
+		int m_ADAM_Timestep;
 		int m_BatchSize;
 		BatchProvider m_TestBatchProvider;
 		BatchProvider m_TrainBatchProvider;

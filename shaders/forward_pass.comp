@@ -2,12 +2,12 @@
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
-layout(binding = 0, std430) restrict readonly buffer InputBuffer { float input_data[]; };
-layout(binding = 1, std430) restrict readonly buffer WeightBuffer { float weights[]; };
-layout(binding = 2, std430) restrict readonly buffer BiasBuffer { float biases[]; };
+layout(std430) restrict readonly buffer InputBuffer { float input_data[]; };
+layout(std430) restrict readonly buffer WeightBuffer { float weights[]; };
+layout(std430) restrict readonly buffer BiasBuffer { float biases[]; };
 
-layout(binding = 3, std430) restrict writeonly buffer OutputBuffer { float output_data[]; };
-layout(binding = 4, std430) restrict writeonly buffer PreActivationBuffer { float preactivation_data[]; };
+layout(std430) restrict writeonly buffer OutputBuffer { float output_data[]; };
+layout(std430) restrict writeonly buffer PreActivationBuffer { float preactivation_data[]; };
 
 uniform int input_size;
 uniform int output_size;

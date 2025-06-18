@@ -13,8 +13,16 @@ namespace NNGL {
 	public:
 		Shader(const std::string& filepath);
 		~Shader();
-		GLuint get();
+
+
+		void bindBuffer(GLuint binding_point, const std::string& name, GLuint buffer);
+		void setUniform(const std::string& name, float value);
+		void setUniform(const std::string& name, int value);
+
+		void dispatch(GLuint x, GLuint y = 1, GLuint z = 1);
+
 	private:
+		GLuint get();
 		GLuint m_Program;
 	};
 }
