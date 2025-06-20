@@ -18,10 +18,12 @@
 #include <glm/glm.hpp>
 
 #include "ActivationFunctions.h"
+#include "SelfAttention.h"
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
 #include "Tokenizer.h"
 #include "BPE.h"
+#include "BPEVM.h"
 
 
 #include <vector>
@@ -488,29 +490,69 @@ void sin_multiplication() {
     nn.run();
 }
 
-void rnn() {
 
+void clean_word(std::string& word) {
+    word.erase(std::remove_if(word.begin(), word.end(),
+        [](unsigned char c) { return std::ispunct(c); }), word.end());
+    std::transform(word.begin(), word.end(), word.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+}
+void transformer() {
+    //d_model	256–512
+    //vocab_size	10000–20000
+    //seq_len	64–256(max ~512)
+    //batch size	1–4
+    //# heads	4–8
+    //layers	2–6
+    NNGL::BytePairEncodingVectorMapper bpe_vm(128, 100);
+
+    // Example 1: Training from a corpus with checkpoint support
+    std::cout << "=== Training from corpus with checkpoints ===" << std::endl;
+
+    std::vector<std::string> corpus = {
+        "the quick brown fox jumps over the lazy dog",
+        "hello world this is a test",
+        "machine learning is fascinating",
+        "natural language processing requires tokenization",
+        "byte pair encoding is a subword tokenization method",
+        "vector embeddings capture semantic relationships",
+        "training neural networks requires large datasets"
+    };
+
+    try {
+        if (!bpe_vm.load("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint")) {
+            bpe_vm.train("pg76287.txt", "my_model_checkpoint");
+            bpe_vm.train("english3.txt", "my_model_checkpoint");
+            bpe_vm.train("pg76287.txt", "my_model_checkpoint");
+            bpe_vm.train("english3.txt", "my_model_checkpoint");
+            bpe_vm.train(corpus, "my_model_checkpoint");
+
+            bpe_vm.reduceVocabulary(10000, NNGL::VocabReductionStrategy::REMOVE_SHORTEST);
+            bpe_vm.save("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint");
+
+            // Train with periodic checkpointing (saves every 500 merges)
+            std::cout << "Training completed!" << std::endl;
+            std::cout << "Total tokens: " << bpe_vm.getAllTokens().size() << std::endl;
+            std::cout << "Current merges: " << bpe_vm.getCurrentMerges() << std::endl;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Training error: " << e.what() << std::endl;
+    }
+
+    int d_model = 256;
+    int seq_len = 64;
+    std::string test = "the quick brown fox jumps over the lazy dog";
+    auto result = bpe_vm.encodeToVectors(test);
+    std::shared_ptr<NNGL::Matrix> m = std::make_shared<NNGL::Matrix>(result);
+
+    std::shared_ptr<NNGL::SelfAttention> head = std::make_shared<NNGL::SelfAttention>(d_model, 2, result.size());
+    head->forward(m);
 }
 
 int main() {
     srand(time(nullptr));
     
-
-   NNGL::BytePairEncoding bpe(1000);
-    bpe.load("bpe_tokens.dat");
-    //bpe.train("english3.txt");
-    //bpe.train("pg76287.txt");
-    //bpe.save("bpe_tokens.dat");
-
-    std::string word = "This doesn't make any sense";
-    auto encoded = bpe.encode(word);
-
-    std::cout << "Encoded '" << word << "': ";
-    for (const auto& token : encoded) {
-        std::cout << token << " ";
-    }
-    std::cout << std::endl;
-
     //new tokenizer
     // take a byte convert it in vector of 8 float where each float is bit 1.0f or 0.0f
     // feed it to ???
@@ -549,8 +591,8 @@ int main() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr << "Failed to initialize GLAD!" << std::endl; return -1; }
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-
-    digit_recognition();
+    transformer();
+    //digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;
 

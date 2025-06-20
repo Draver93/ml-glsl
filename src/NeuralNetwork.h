@@ -51,7 +51,7 @@ namespace NNGL {
 		GLuint m_InputBuffer = 0;
 		GLuint m_TargetBuffer = 0;
 
-		std::unique_ptr<Shader> 
+		std::shared_ptr<Shader> 
 			m_ForwardPassCompute,
 			m_OutputDeltaCompute,
 			m_HiddenDeltasCompute,

@@ -209,15 +209,15 @@ namespace NNGL {
 		glBufferData(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->getSize().y * m_BatchSize * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
 
         //Neural Network run
-		if (!m_ForwardPassCompute)	m_ForwardPassCompute = std::make_unique<Shader>("shaders/forward_pass.comp");
+        if (!m_ForwardPassCompute)	m_ForwardPassCompute = ShaderManager::getInstance().getShader("shaders/forward_pass.comp");
 
         //Backpropagation delta calc
-		if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = std::make_unique<Shader>("shaders/output_delta_loss.comp");
-		if (!m_HiddenDeltasCompute) m_HiddenDeltasCompute = std::make_unique<Shader>("shaders/hidden_delta_loss.comp");
+		if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = ShaderManager::getInstance().getShader("shaders/output_delta_loss.comp");
+		if (!m_HiddenDeltasCompute) m_HiddenDeltasCompute = ShaderManager::getInstance().getShader("shaders/hidden_delta_loss.comp");
 
         //Backpropagation weights/biases update by delta
-		if (!m_WeightsCompute)		m_WeightsCompute = std::make_unique<Shader>("shaders/update_weights.comp");
-		if (!m_BiasesCompute)		m_BiasesCompute = std::make_unique<Shader>("shaders/update_biases.comp");
+		if (!m_WeightsCompute)		m_WeightsCompute = ShaderManager::getInstance().getShader("shaders/update_weights.comp");
+		if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
 	}
     
 float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {

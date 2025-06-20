@@ -1,51 +1,91 @@
 #pragma once
 #include <iostream>
+#include <random>
 #include <unordered_map>
+#include "Matrix.h"
+#include "BPE.h"
 
-namespace NNGL {
-    struct TrieNode {
-        TrieNode() = default;
-        ~TrieNode();
+/*namespace NNGL {
 
-        std::unordered_map<char, TrieNode*> children;
-        bool isEndOfWord = false;
-        int tokenId = -1;
-        int frequency = 0;
-    };
-
-    class Trie {
+    class TokenVectorMapper {
     public:
-        Trie();
-        ~Trie();
+        explicit TokenVectorMapper(int vector_dim = 128) noexcept
+            : vector_dim_(vector_dim), rng_(std::random_device{}()) {}
 
-        void insert(const std::string& word);
-        int get_token_id(const std::string& token) const;
-        std::string get_token_by_id(int id) const;
+        // Initialize embeddings from BPE instance
+        void initializeFromBPE(const BytePairEncoding& bpe);
 
-        bool search(const std::string& word) const;
-        bool startsWith(const std::string& prefix) const;
+        // Initialize embeddings for tokens from set
+        void initializeFromTokens(const std::set<std::string>& tokens);
 
-        void prune();
-        void prune_stddev_threshold(double n_stddev);
+        // Add a single token with random initialization
+        void addToken(const std::string& token);
 
-        void bulk_insert_from_file(const std::string& filename);
+        // Add a token with specific vector
+        void addToken(const std::string& token, const std::vector<float>& vector);
 
-        std::vector<std::string> tokenize(const std::string& line) const;
+        // Get vector for a token
+        std::vector<float> getVector(const std::string& token) const;
 
-        void clear();
+        // Get vector by reference (for modifications)
+        std::vector<float>& getVectorRef(const std::string& token);
 
-        void save_tokens(const std::string& filename) const;
-        void load_tokens(const std::string& filename);
+        // Check if token exists
+        bool hasToken(const std::string& token) const noexcept;
+
+        // Get all tokens
+        std::vector<std::string> getTokens() const;
+
+        // Get embedding dimension
+        int getVectorDim() const noexcept { return vector_dim_; }
+
+        // Get vocabulary size
+        int getVocabSize() const noexcept { return token_vectors_.size(); }
+
+        // Save embeddings to file (separate from BPE)
+        bool saveEmbeddings(const std::string& filename) const;
+
+        // Load embeddings from file
+        bool loadEmbeddings(const std::string& filename);
+
+        // Combined save: BPE + embeddings
+        bool saveWithBPE(const BytePairEncoding& bpe, const std::string& bpe_filename,
+            const std::string& embeddings_filename) const;
+
+        // Combined load: BPE + embeddings
+        bool loadWithBPE(BytePairEncoding& bpe, const std::string& bpe_filename,
+            const std::string& embeddings_filename);
+
+        // Update vector for existing token
+        bool updateVector(const std::string& token, const std::vector<float>& new_vector);
+
+        // Get similarity between two tokens (cosine similarity)
+        float getSimilarity(const std::string& token1, const std::string& token2) const;
+
+        // Find most similar tokens to a given token
+        std::vector<std::pair<std::string, float>> findSimilar(const std::string& token, int top_k = 5) const;
+
+        // Encode a word using BPE and get vectors
+        std::vector<std::vector<float>> encodeToVectors(const BytePairEncoding& bpe, const std::string& word) const;
 
     private:
-        TrieNode* root;
-        int nextTokenId;
+        int vector_dim_;
+        std::unordered_map<std::string, std::vector<float>> token_vectors_;
+        mutable std::mt19937 rng_;
 
-        bool find_token_by_id(TrieNode* node, int id, std::string& current, std::string& result) const;
-        bool pruneHelper(TrieNode* node);
-        void collectFrequencies(std::vector<std::pair<std::string, int>>& out) const;
-        void collectFrequenciesHelper(TrieNode* node, const std::string& path, std::vector<std::pair<std::string, int>>& out) const;
-        bool set_frequency(const std::string& word, int freq);
+        // Initialize a random vector
+        std::vector<float> initRandomVector() const;
+
+        // Normalize vector (for cosine similarity)
+        static void normalizeVector(std::vector<float>& vec);
+
+        // Calculate dot product
+        static float dotProduct(const std::vector<float>& a, const std::vector<float>& b);
+
+        // Calculate vector magnitude
+        static float magnitude(const std::vector<float>& vec);
     };
-}
+
+
+}*/
 

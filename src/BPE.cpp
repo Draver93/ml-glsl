@@ -8,18 +8,15 @@
 
 namespace NNGL {
 
-    // PairHash Implementation
-    template <typename T1, typename T2>
+    /*template <typename T1, typename T2>
     std::size_t PairHash::operator()(const std::pair<T1, T2>& p) const noexcept {
         size_t h1 = std::hash<T1>{}(p.first);
         size_t h2 = std::hash<T2>{}(p.second);
         return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
     }
 
-    // Explicit template instantiation for std::pair<std::string, std::string>
     template std::size_t PairHash::operator() < std::string, std::string > (const std::pair<std::string, std::string>&) const noexcept;
 
-    // VectorStringHash Implementation
     size_t VectorStringHash::operator()(const std::vector<std::string>& vec) const noexcept {
         size_t seed = 0;
         for (const auto& s : vec) {
@@ -28,12 +25,9 @@ namespace NNGL {
         return seed;
     }
 
-    // VectorStringEqual Implementation
     bool VectorStringEqual::operator()(const std::vector<std::string>& lhs, const std::vector<std::string>& rhs) const noexcept {
         return lhs == rhs;
     }
-
-    // BytePairEncoding Implementation
 
     BytePairEncoding::BytePairEncoding(int max_merges) noexcept
         : max_merges_(max_merges) {}
@@ -47,6 +41,8 @@ namespace NNGL {
 
     void BytePairEncoding::build_vocab(const std::vector<std::string>& corpus) {
         vocab_.clear();
+        //base_tokens_.clear();
+
         for (auto word : corpus) {
             clean_word(word);
             if (word.empty()) continue;
@@ -54,7 +50,9 @@ namespace NNGL {
             std::vector<std::string> tokens;
             tokens.reserve(word.size());
             for (char c : word) {
-                tokens.emplace_back(1, c);
+                std::string char_token(1, c);
+                tokens.push_back(char_token);
+                base_tokens_.insert(char_token); // Track base tokens
             }
             ++vocab_[std::move(tokens)];
         }
@@ -159,10 +157,18 @@ namespace NNGL {
     bool BytePairEncoding::save(const std::string& filename) const {
         std::ofstream out(filename, std::ios::binary);
         if (!out) {
-            //throw std::runtime_error("Could not open file for writing: " + filename);
             return false;
         }
 
+        // Write base tokens first
+        uint32_t num_base_tokens = static_cast<uint32_t>(base_tokens_.size());
+        out.write(reinterpret_cast<const char*>(&num_base_tokens), sizeof(num_base_tokens));
+
+        for (const auto& token : base_tokens_) {
+            write_string(out, token);
+        }
+
+        // Write merges
         uint32_t num_merges = static_cast<uint32_t>(merges_.size());
         out.write(reinterpret_cast<const char*>(&num_merges), sizeof(num_merges));
 
@@ -170,16 +176,27 @@ namespace NNGL {
             write_string(out, first);
             write_string(out, second);
         }
-        return true;
+
+        return out.good();
     }
 
     bool BytePairEncoding::load(const std::string& filename) {
         std::ifstream in(filename, std::ios::binary);
         if (!in) {
-            //throw std::runtime_error("Could not open file for reading: " + filename);
             return false;
         }
 
+        // Read base tokens
+        uint32_t num_base_tokens = 0;
+        in.read(reinterpret_cast<char*>(&num_base_tokens), sizeof(num_base_tokens));
+
+        base_tokens_.clear();
+        for (uint32_t i = 0; i < num_base_tokens; ++i) {
+            std::string token = read_string(in);
+            base_tokens_.insert(std::move(token));
+        }
+
+        // Read merges
         uint32_t num_merges = 0;
         in.read(reinterpret_cast<char*>(&num_merges), sizeof(num_merges));
 
@@ -191,7 +208,8 @@ namespace NNGL {
             std::string second = read_string(in);
             merges_.emplace_back(std::move(first), std::move(second));
         }
-        return true;
+
+        return in.good();
     }
 
     void BytePairEncoding::write_string(std::ofstream& out, const std::string& str) {
@@ -220,4 +238,17 @@ namespace NNGL {
         return tokens;
     }
 
+    std::set<std::string> BytePairEncoding::getAllTokens() const {
+        std::set<std::string> all_tokens;
+
+        // Add base tokens (learned during training)
+        all_tokens.insert(base_tokens_.begin(), base_tokens_.end());
+
+        // Add merged tokens from merges
+        for (const auto& [first, second] : merges_) {
+            all_tokens.insert(first + second);
+        }
+
+        return all_tokens;
+    }*/
 }  // namespace NNGL
