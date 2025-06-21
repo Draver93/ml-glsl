@@ -28,6 +28,9 @@ namespace NNGL {
         m_GradWeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
         m_GradWeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
 
+        int m_NumHeads = 1; // single head
+        // Allocate output buffer: [seq_len, m_NumHeads * head_dim]
+        m_OutputMat = std::make_shared<Matrix>(seqLen, m_NumHeads * m_HeadDim);
 
         // Output: [seq_len, head_dim]
         m_OutQueryMat = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
@@ -43,7 +46,7 @@ namespace NNGL {
         m_WeightsUpdatePassCompute = ShaderManager::getInstance().getShader("shaders/self_attention_weights_update.comp");
     }
 
-    void SelfAttention::forward(const std::shared_ptr<Matrix> &input) {
+    std::shared_ptr<Matrix> SelfAttention::forward(const std::shared_ptr<Matrix> &input) {
         {
             input->uploadToGPU();
 
@@ -63,30 +66,26 @@ namespace NNGL {
             int workgroups_x = (input->rows * m_HeadDim + 31) / 32;
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
-            //m_OutValueMat->print();
-            //m_OutValueMat->downloadFromGPU();
-            //m_OutValueMat->print();
+            m_OutValueMat->print();
+            m_OutValueMat->downloadFromGPU();
+            m_OutValueMat->print();
             // Unbind
             for (int i = 0; i <= 6; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
         {
-            int m_NumHeads = 1; // single head
             input->uploadToGPU();
-
-            // Allocate output buffer: [seq_len, m_NumHeads * head_dim]
-            auto outputMat = std::make_shared<Matrix>(input->rows, m_NumHeads * m_HeadDim);
-            outputMat->allocateBufferGPU();
 
             // Bind buffers
             m_ForwardPassScoreCompute->bindBuffer(0, "BufferQ", m_OutQueryMat->buffer);  // Q
             m_ForwardPassScoreCompute->bindBuffer(1, "BufferK", m_OutKeyMat->buffer);    // K
             m_ForwardPassScoreCompute->bindBuffer(2, "BufferV", m_OutValueMat->buffer);  // V
 
-            m_ForwardPassScoreCompute->bindBuffer(3, "BufferOutput", outputMat->buffer);
+            m_ForwardPassScoreCompute->bindBuffer(3, "BufferOutput", m_OutputMat->buffer);
 
             // Set uniforms
             m_ForwardPassScoreCompute->setUniform("seq_len", input->rows);
             m_ForwardPassScoreCompute->setUniform("head_dim", m_HeadDim);
+            m_ForwardPassScoreCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
             float inv_sqrt_head_dim = 1.0f / std::sqrt(static_cast<float>(m_HeadDim));
             m_ForwardPassScoreCompute->setUniform("inv_sqrt_head_dim", inv_sqrt_head_dim);
 
@@ -96,12 +95,13 @@ namespace NNGL {
             m_ForwardPassScoreCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             // Download results and print
-            outputMat->downloadFromGPU();
-            outputMat->print();
+            m_OutputMat->downloadFromGPU();
+            m_OutputMat->print();
 
             // Unbind all buffers
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
+        return m_OutputMat;
     }
  
     // gradOutput one of concat heads gradients

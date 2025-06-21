@@ -9,6 +9,24 @@ namespace NNGL {
         allocateBufferGPU();
     }
 
+    Matrix::Matrix(int r, int c, const float* data) : rows(r), cols(c) {
+        if (r <= 0 || c <= 0) {
+            throw std::invalid_argument("Matrix dimensions must be positive");
+        }
+        if (data == nullptr) {
+            throw std::invalid_argument("Data pointer cannot be null");
+        }
+
+        // Reserve and resize the flat vector
+        flatVec.reserve(rows * cols);
+        flatVec.resize(rows * cols);
+
+        // Direct copy since both input and storage are column-major
+        std::copy(data, data + (rows * cols), flatVec.begin());
+
+        allocateBufferGPU();
+    }
+
     Matrix::Matrix(const std::vector<std::vector<float>>& vec2d) {
         if (vec2d.empty()) {
             rows = cols = 0;
@@ -81,6 +99,17 @@ namespace NNGL {
             for (int j = 0; j < cols; ++j)
                 std::cout << (*this)(i, j) << ' ';
             std::cout << '\n';
+        }
+        std::cout << '\n';
+    }
+
+    void Matrix::add(const Matrix& other) {
+        if (rows != other.rows || cols != other.cols) {
+            throw std::runtime_error("Matrix dimensions must match for addition");
+        }
+
+        for (size_t i = 0; i < flatVec.size(); ++i) {
+            flatVec[i] += other.flatVec[i];
         }
     }
 

@@ -34,8 +34,9 @@ namespace NNGL {
         m_OutputBatchMat = nullptr;
 	}
 
-	void NeuralNetwork::forwardPass() {
-		GLuint current_input = m_InputBatchMat->buffer;
+	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
+        inputBatchMat->uploadToGPU();
+		GLuint current_input = inputBatchMat->buffer;
 		for (auto &layer : m_Layers) {
 
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", current_input);
@@ -61,7 +62,8 @@ namespace NNGL {
 		for (int j = 0; j < 5; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
 	}
 
-	void NeuralNetwork::targetLayerLossCalc() {
+	void NeuralNetwork::targetLayerLossCalc(std::shared_ptr<Matrix>& outputBatchMat) {
+        outputBatchMat->uploadToGPU();
 
         m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationBuffer);
         m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", m_OutputBatchMat->buffer);
@@ -106,6 +108,7 @@ namespace NNGL {
 
 	// Update weights and biases for all layers
 	void NeuralNetwork::weightsAndBiasesUpdate(float learningRate) {
+        m_InputBatchMat->uploadToGPU();
         GLuint current_input = m_InputBatchMat->buffer;
 
         for (auto& layer : m_Layers) {
@@ -171,11 +174,10 @@ namespace NNGL {
         }
 
         m_TrainBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
-        m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
 
-        forwardPass();
+        forwardPass(m_InputBatchMat);
 
-        targetLayerLossCalc();
+        targetLayerLossCalc(m_OutputBatchMat);
 
         hiddenLayersLossCalc();
 
@@ -183,60 +185,77 @@ namespace NNGL {
 
     }
 
-float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
+    float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
 
-    //if we changed layers on the fly 
-    if (!m_InputBatchMat || !m_OutputBatchMat) {
-        m_InputBatchMat = std::make_shared<Matrix>(m_Layers.front()->getSize().x, m_BatchSize);
-        m_OutputBatchMat = std::make_shared<Matrix>(m_Layers.back()->getSize().y, m_BatchSize);
+        //if we changed layers on the fly 
+        if (!m_InputBatchMat || !m_OutputBatchMat) {
+            m_InputBatchMat = std::make_shared<Matrix>(m_Layers.front()->getSize().x, m_BatchSize);
+            m_OutputBatchMat = std::make_shared<Matrix>(m_Layers.back()->getSize().y, m_BatchSize);
+        }
+
+        int origBatchSize = m_BatchSize;
+        m_BatchSize = 1;
+
+        float totalRegressionError = 0.0f;
+        float confidenceSum = 0.0f;  // sum of probabilities assigned to true classes
+        int classificationSamples = 0;
+
+        for (int i = 0; i < samplesToTest; ++i) {
+
+            m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+            forwardPass(m_InputBatchMat);
+
+            int outputSize = m_Layers.back()->getSize().y;
+            std::vector<float> results(outputSize);
+            std::vector<float> expected(outputSize);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+            float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (mapped) {
+                for (int j = 0; j < outputSize; ++j) {
+                    results[j] = mapped[j];
+                }
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+
+            for (int j = 0; j < outputSize; ++j)
+                expected[j] = (*m_OutputBatchMat)(j, 0);
+
+            if(do_softmax) results = softmax(results);
+
+            int trueClass = std::distance(expected.begin(), std::max_element(expected.begin(), expected.end()));
+            int resultClass = std::distance(results.begin(), std::max_element(results.begin(), results.end()));
+
+            // Accumulate probability assigned to the true class
+            if(trueClass == resultClass)confidenceSum += 1;
+            classificationSamples++;
+        }
+
+        m_BatchSize = origBatchSize;
+
+        // Mean confidence over all classification samples, as % (0-100)
+        float meanConfidence = (classificationSamples > 0) ? (confidenceSum / classificationSamples) * 100.0f : 0.0f;
+        return meanConfidence;
     }
 
-    int origBatchSize = m_BatchSize;
-    m_BatchSize = 1;
+    std::shared_ptr<Matrix> NeuralNetwork::forward(std::shared_ptr<Matrix> inputMat) {
 
-    float totalRegressionError = 0.0f;
-    float confidenceSum = 0.0f;  // sum of probabilities assigned to true classes
-    int classificationSamples = 0;
+        forwardPass(inputMat);
 
-    for (int i = 0; i < samplesToTest; ++i) {
-
-        m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
-        m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
-
-        forwardPass();
-
+        std::shared_ptr<Matrix> outputMat;
         int outputSize = m_Layers.back()->getSize().y * m_BatchSize;
         std::vector<float> results(outputSize);
-        std::vector<float> expected(outputSize);
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (mapped) {
-            for (int j = 0; j < outputSize; ++j) {
-                results[j] = mapped[j];
-            }
+            outputMat = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         }
+        else throw std::runtime_error("data failed to map");
 
-        for (int j = 0; j < outputSize; ++j)
-            expected[j] = (*m_OutputBatchMat)(j, 0);
-
-        if(do_softmax) results = softmax(results);
-
-        int trueClass = std::distance(expected.begin(), std::max_element(expected.begin(), expected.end()));
-        int resultClass = std::distance(results.begin(), std::max_element(results.begin(), results.end()));
-
-        // Accumulate probability assigned to the true class
-        if(trueClass == resultClass)confidenceSum += 1;
-        classificationSamples++;
+        return outputMat; 
     }
-
-    m_BatchSize = origBatchSize;
-
-    // Mean confidence over all classification samples, as % (0-100)
-    float meanConfidence = (classificationSamples > 0) ? (confidenceSum / classificationSamples) * 100.0f : 0.0f;
-    return meanConfidence;
-}
 
     // Interactive Testing CLI
 	void NeuralNetwork::run() {
@@ -264,9 +283,7 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
             else if (command == "test") {
                 // Generate random batch of 1
                 m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
-                m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
-
-                forwardPass();
+                forwardPass(m_InputBatchMat);
 
                 // Read results from GPU
                 int outputSize = m_Layers.back()->getSize().y;
@@ -350,8 +367,7 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
 
                     for (int i = 0; i < n; i++) {
                         m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
-                        m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
-                        forwardPass();
+                        forwardPass(m_InputBatchMat);
 
                         std::vector<float> results(outputSize);
                         std::vector<float> expected(outputSize);
@@ -435,8 +451,7 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
 
                 for (int i = 0; i < benchmark_samples; i++) {
                     m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
-                    m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
-                    forwardPass();
+                    forwardPass(m_InputBatchMat);
                 }
 
                 glFinish(); // Wait for all GPU operations to complete

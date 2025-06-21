@@ -9,7 +9,7 @@ namespace NNGL {
 		SelfAttention(int modelDimensions, int headDimensions, int seqLen, bool mask = false);
         ~SelfAttention() {};
 
-        void forward(const std::shared_ptr<Matrix>& input);
+        std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input);
         void backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input);
         void updateWeights(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& gradOutput, float learningRate);
 
@@ -39,6 +39,8 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_OutValueMat;
         std::shared_ptr<Matrix> m_GradKeyValueMat;
         std::shared_ptr<Matrix> m_GradWeightValueMat;
+
+        std::shared_ptr<Matrix> m_OutputMat;
 	};
 
 }

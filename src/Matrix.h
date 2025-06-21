@@ -15,12 +15,14 @@ namespace NNGL {
         Matrix() = delete;
         Matrix(int row, int column, float fill = 0.0f);
         Matrix(const std::vector<std::vector<float>>& vec2d);
+        Matrix(int r, int c, const float* data);
 
         float& operator()(int r, int c);
         float operator()(int r, int c) const;
 
         void randomize(float min = -1.0f, float max = 1.0f);
         Matrix multiply(const Matrix& B) const;
+        void add(const Matrix& other);
         void print() const;
 
         float* raw();

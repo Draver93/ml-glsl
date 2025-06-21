@@ -27,7 +27,7 @@ void main() {
     float v = 0.0;
 
     for (int i = 0; i < input_dim; i++) {
-        float input_val = input_data[seq_idx * input_dim + i];
+        float input_val = input_data[i * seq_len + seq_idx];
         q += input_val * weights_q[i * head_dim + head_idx];
         k += input_val * weights_k[i * head_dim + head_idx];
         v += input_val * weights_v[i * head_dim + head_idx];

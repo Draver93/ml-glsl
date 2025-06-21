@@ -19,6 +19,7 @@
 
 #include "ActivationFunctions.h"
 #include "SelfAttention.h"
+#include "Transformer.h"
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
 #include "BPEVM.h"
@@ -485,50 +486,39 @@ void transformer() {
     //batch size	1–4
     //# heads	4–8
     //layers	2–6
-    NNGL::BytePairEncodingVectorMapper bpe_vm(128, 100);
-
-    // Example 1: Training from a corpus with checkpoint support
-    std::cout << "=== Training from corpus with checkpoints ===" << std::endl;
-
-    std::vector<std::string> corpus = {
-        "the quick brown fox jumps over the lazy dog",
-        "hello world this is a test",
-        "machine learning is fascinating",
-        "natural language processing requires tokenization",
-        "byte pair encoding is a subword tokenization method",
-        "vector embeddings capture semantic relationships",
-        "training neural networks requires large datasets"
-    };
-
-    try {
-        if (!bpe_vm.load("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint")) {
-            bpe_vm.train("pg76287.txt", "my_model_checkpoint");
-            bpe_vm.train("english3.txt", "my_model_checkpoint");
-            bpe_vm.train("pg76287.txt", "my_model_checkpoint");
-            bpe_vm.train("english3.txt", "my_model_checkpoint");
-            bpe_vm.train(corpus, "my_model_checkpoint");
-
-            bpe_vm.reduceVocabulary(10000, NNGL::VocabReductionStrategy::REMOVE_SHORTEST);
-            bpe_vm.save("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint");
-
-            // Train with periodic checkpointing (saves every 500 merges)
-            std::cout << "Training completed!" << std::endl;
-            std::cout << "Total tokens: " << bpe_vm.getAllTokens().size() << std::endl;
-            std::cout << "Current merges: " << bpe_vm.getCurrentMerges() << std::endl;
-        }
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Training error: " << e.what() << std::endl;
-    }
-
-    int d_model = 256;
+    int d_model = 128; //token vector size
+    int d_hidden = d_model * 4; //ffn hidden layer size
+    int d_head = d_model; //size of attention head
     int seq_len = 64;
+
+    NNGL::BytePairEncodingVectorMapper bpe_vm(d_model, 100);
+
+    if (!bpe_vm.load("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint")) {
+        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
+        bpe_vm.train("english3.txt", "my_model_checkpoint");
+        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
+        bpe_vm.train("english3.txt", "my_model_checkpoint");
+
+        bpe_vm.reduceVocabulary(10000, NNGL::VocabReductionStrategy::REMOVE_SHORTEST);
+        bpe_vm.save("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint");
+
+        // Train with periodic checkpointing (saves every 500 merges)
+        std::cout << "Training completed!" << std::endl;
+        std::cout << "Total tokens: " << bpe_vm.getAllTokens().size() << std::endl;
+        std::cout << "Current merges: " << bpe_vm.getCurrentMerges() << std::endl;
+    }
+  
     std::string test = "the quick brown fox jumps over the lazy dog";
     auto result = bpe_vm.encodeToVectors(test);
+    while (result.size() != seq_len) result.push_back(result.back());
+
     std::shared_ptr<NNGL::Matrix> m = std::make_shared<NNGL::Matrix>(result);
 
-    std::shared_ptr<NNGL::SelfAttention> head = std::make_shared<NNGL::SelfAttention>(d_model, 2, result.size());
-    head->forward(m);
+    std::shared_ptr<NNGL::EncoderBlock> encoder = std::make_shared<NNGL::EncoderBlock>(d_model, d_hidden, seq_len);
+    encoder->forward(m);
+
+   // std::shared_ptr<NNGL::SelfAttention> head = std::make_shared<NNGL::SelfAttention>(d_model, 2, result.size());
+   // head->forward(m);
 }
 
 int main() {
@@ -572,8 +562,8 @@ int main() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr << "Failed to initialize GLAD!" << std::endl; return -1; }
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    //transformer();
-    digit_recognition();
+    transformer();
+    //digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;
 
