@@ -5,7 +5,7 @@
 
 namespace NNGL {
     Matrix::Matrix(int r, int c, float fill) : 
-        rows(r), cols(c), data(r* c, fill) {
+        rows(r), cols(c), flatVec(r * c, fill) {
         allocateBufferGPU();
     }
 
@@ -14,7 +14,6 @@ namespace NNGL {
             rows = cols = 0;
             return;
         }
-
         rows = vec2d.size();
         cols = vec2d[0].size();
 
@@ -25,23 +24,30 @@ namespace NNGL {
             }
         }
 
-        // Reserve space and copy data row by row
-        data.reserve(rows * cols);
-        for (const auto& row : vec2d) {
-            data.insert(data.end(), row.begin(), row.end());
+        // Reserve space
+        flatVec.reserve(rows * cols);
+        flatVec.resize(rows * cols);
+
+        // Copy data in COLUMN-MAJOR order
+        // For each column, copy all row values for that column
+        for (int c = 0; c < cols; ++c) {        // For each column
+            for (int r = 0; r < rows; ++r) {    // For each row in that column
+                flatVec[c * rows + r] = vec2d[r][c];  // Column-major indexing
+            }
         }
+
         allocateBufferGPU();
     }
 
-    // Access element (row, col)
+    // Column-major indexing: data stored as [col0_all_rows, col1_all_rows, ...]
     float& Matrix::operator()(int r, int c) {
         if (r >= rows || c >= cols) throw std::out_of_range("Matrix index out of bounds");
-        return data[r * cols + c];
+        return flatVec[c * rows + r];  // Column-major: column_index * num_rows + row_index
     }
 
     float Matrix::operator()(int r, int c) const {
         if (r >= rows || c >= cols) throw std::out_of_range("Matrix index out of bounds");
-        return data[r * cols + c];
+        return flatVec[c * rows + r];
     }
 
     // Fill with random (for example init weights)
@@ -49,7 +55,7 @@ namespace NNGL {
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dist(min, max);
-        for (auto& val : data)
+        for (auto& val : flatVec)
             val = dist(gen);
     }
 
@@ -79,11 +85,11 @@ namespace NNGL {
     }
 
     // Return raw pointer (useful for GPU upload)
-    float* Matrix::raw() { return data.data(); }
-    const float* Matrix::raw() const { return data.data(); }
+    float* Matrix::raw() { return flatVec.data(); }
+    const float* Matrix::raw() const { return flatVec.data(); }
 
     // Total size in bytes
-    size_t Matrix::byteSize() const { return data.size() * sizeof(float); }
+    size_t Matrix::byteSize() const { return flatVec.size() * sizeof(float); }
 
     void Matrix::allocateBufferGPU() {
         if (buffer != 0) glDeleteBuffers(1, &buffer);
@@ -96,14 +102,14 @@ namespace NNGL {
     void Matrix::uploadToGPU() {
         if (buffer == 0) allocateBufferGPU();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
-        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), data.data());
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), flatVec.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
     void Matrix::downloadFromGPU() {
         if (buffer == 0) return;
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
-        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), data.data());
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), flatVec.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 

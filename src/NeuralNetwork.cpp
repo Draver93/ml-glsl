@@ -8,40 +8,34 @@
 #include <tuple>
 
 namespace NNGL {
-	NeuralNetwork::~NeuralNetwork() {
-        if(m_InputBuffer) glDeleteBuffers(1, &m_InputBuffer);
-        if(m_TargetBuffer) glDeleteBuffers(1, &m_TargetBuffer);
-	}
+    NeuralNetwork::NeuralNetwork(int batchSize) : m_BatchSize(batchSize), m_ADAM_Timestep(0) {
+        //Neural Network run
+        if (!m_ForwardPassCompute)	m_ForwardPassCompute = ShaderManager::getInstance().getShader("shaders/forward_pass.comp");
+
+        //Backpropagation delta calc
+        if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = ShaderManager::getInstance().getShader("shaders/output_delta_loss.comp");
+        if (!m_HiddenDeltasCompute) m_HiddenDeltasCompute = ShaderManager::getInstance().getShader("shaders/hidden_delta_loss.comp");
+
+        //Backpropagation weights/biases update by delta
+        if (!m_WeightsCompute)		m_WeightsCompute = ShaderManager::getInstance().getShader("shaders/update_weights.comp");
+        if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
+    };
+
+	NeuralNetwork::~NeuralNetwork() {}
 
 	void NeuralNetwork::addLayer(int width, int height,  ActivationFnType type) {
 		if (!m_Layers.empty() && m_Layers.back()->getSize().y != width)
 			throw std::runtime_error("Trying to chain layers with incompatible dementions: last height != new width");
 
 		m_Layers.push_back(std::unique_ptr<NNGL::Layer>( new NNGL::Layer(width, height, m_BatchSize, type) ));
-	}
 
-	void NeuralNetwork::bindTrainingData() {
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-		GLint inputBufferSize;
-		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &inputBufferSize);
-		if (m_InputVector.size() * sizeof(float) > inputBufferSize)
-			throw std::runtime_error("Input buffer overflow! Trying to upload " + std::to_string(m_InputVector.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(inputBufferSize) + " bytes");
-		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_InputVector.size() * sizeof(float), m_InputVector.data());
-
-
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
-		GLint targetBufferSize;
-		glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &targetBufferSize);
-		if (m_TargetVector.size() * sizeof(float) > targetBufferSize)
-			throw std::runtime_error("Target buffer overflow! Trying to upload " + std::to_string(m_TargetVector.size() * sizeof(float)) + " bytes to buffer of size " + std::to_string(targetBufferSize) + " bytes");
-		glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, m_TargetVector.size() * sizeof(float), m_TargetVector.data());
-
-
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        //we changed layer structure so we need to update mat's
+        m_InputBatchMat = nullptr;
+        m_OutputBatchMat = nullptr;
 	}
 
 	void NeuralNetwork::forwardPass() {
-		GLuint current_input = m_InputBuffer;
+		GLuint current_input = m_InputBatchMat->buffer;
 		for (auto &layer : m_Layers) {
 
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", current_input);
@@ -70,7 +64,7 @@ namespace NNGL {
 	void NeuralNetwork::targetLayerLossCalc() {
 
         m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationBuffer);
-        m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", m_TargetBuffer);
+        m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", m_OutputBatchMat->buffer);
         m_OutputDeltaCompute->bindBuffer(2, "PreActivationBuffer", m_Layers.back()->m_PreactivationBuffer);
         m_OutputDeltaCompute->bindBuffer(3, "DeltaBuffer", m_Layers.back()->m_DeltaBuffer);
 
@@ -112,7 +106,7 @@ namespace NNGL {
 
 	// Update weights and biases for all layers
 	void NeuralNetwork::weightsAndBiasesUpdate(float learningRate) {
-        GLuint current_input = m_InputBuffer;
+        GLuint current_input = m_InputBatchMat->buffer;
 
         for (auto& layer : m_Layers) {
 
@@ -170,11 +164,14 @@ namespace NNGL {
 
         if (!m_TrainBatchProvider) throw std::runtime_error("Please specify onTrainBatch callback");
 
-        if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
+        //if we changed layers on the fly 
+        if (!m_InputBatchMat || !m_OutputBatchMat) {
+            m_InputBatchMat = std::make_shared<Matrix>(m_Layers.front()->getSize().x, m_BatchSize);
+            m_OutputBatchMat = std::make_shared<Matrix>(m_Layers.back()->getSize().y, m_BatchSize);
+        }
 
-        m_TrainBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
-
-        bindTrainingData();
+        m_TrainBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+        m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
 
         forwardPass();
 
@@ -186,43 +183,13 @@ namespace NNGL {
 
     }
 
-	void NeuralNetwork::init()
-	{
-		if (m_Layers.size() < 3) throw std::runtime_error("3 layers minimum");
-
-		if (m_InputBuffer != 0) glDeleteBuffers(1, &m_InputBuffer);
-		if (m_TargetBuffer != 0) glDeleteBuffers(1, &m_TargetBuffer);
-
-        m_InputVector.clear();
-        m_InputVector.resize(m_Layers.front()->getSize().x * m_BatchSize);
-
-        m_TargetVector.clear();
-        m_TargetVector.resize(m_Layers.back()->getSize().y * m_BatchSize);
-
-		glGenBuffers(1, &m_InputBuffer);
-		glGenBuffers(1, &m_TargetBuffer);
-
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputBuffer);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * m_Layers.front()->getSize().x * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_TargetBuffer);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->getSize().y * m_BatchSize * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-
-        //Neural Network run
-        if (!m_ForwardPassCompute)	m_ForwardPassCompute = ShaderManager::getInstance().getShader("shaders/forward_pass.comp");
-
-        //Backpropagation delta calc
-		if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = ShaderManager::getInstance().getShader("shaders/output_delta_loss.comp");
-		if (!m_HiddenDeltasCompute) m_HiddenDeltasCompute = ShaderManager::getInstance().getShader("shaders/hidden_delta_loss.comp");
-
-        //Backpropagation weights/biases update by delta
-		if (!m_WeightsCompute)		m_WeightsCompute = ShaderManager::getInstance().getShader("shaders/update_weights.comp");
-		if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
-	}
-    
 float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
 
-    if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
+    //if we changed layers on the fly 
+    if (!m_InputBatchMat || !m_OutputBatchMat) {
+        m_InputBatchMat = std::make_shared<Matrix>(m_Layers.front()->getSize().x, m_BatchSize);
+        m_OutputBatchMat = std::make_shared<Matrix>(m_Layers.back()->getSize().y, m_BatchSize);
+    }
 
     int origBatchSize = m_BatchSize;
     m_BatchSize = 1;
@@ -231,14 +198,14 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
     float confidenceSum = 0.0f;  // sum of probabilities assigned to true classes
     int classificationSamples = 0;
 
-    if (m_InputBuffer == 0 || m_TargetBuffer == 0) init();
-
     for (int i = 0; i < samplesToTest; ++i) {
-        m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
-        bindTrainingData();
+
+        m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+        m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
+
         forwardPass();
 
-        int outputSize = m_Layers.back()->getSize().y;
+        int outputSize = m_Layers.back()->getSize().y * m_BatchSize;
         std::vector<float> results(outputSize);
         std::vector<float> expected(outputSize);
 
@@ -252,7 +219,7 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
         }
 
         for (int j = 0; j < outputSize; ++j)
-            expected[j] = m_TargetVector[j];
+            expected[j] = (*m_OutputBatchMat)(j, 0);
 
         if(do_softmax) results = softmax(results);
 
@@ -296,8 +263,9 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
             }
             else if (command == "test") {
                 // Generate random batch of 1
-                m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
-                bindTrainingData();
+                m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+                m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
+
                 forwardPass();
 
                 // Read results from GPU
@@ -317,7 +285,7 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
 
                 // Get expected values
                 for (int i = 0; i < outputSize; i++) {
-                    expected[i] = m_TargetVector[i];
+                    expected[i] = m_OutputBatchMat->flatVec[i];
                 }
 
                 // Display results
@@ -381,8 +349,8 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
                     int correct_predictions = 0;
 
                     for (int i = 0; i < n; i++) {
-                        m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
-                        bindTrainingData();
+                        m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+                        m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
                         forwardPass();
 
                         std::vector<float> results(outputSize);
@@ -399,7 +367,7 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
                         results = softmax(results);
 
                         for (int j = 0; j < outputSize; j++) {
-                            expected[j] = m_TargetVector[j];
+                            expected[j] = m_OutputBatchMat->flatVec[j];
                         }
 
                         if (outputSize == 1) {
@@ -466,8 +434,8 @@ float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
                 auto start_time = std::chrono::high_resolution_clock::now();
 
                 for (int i = 0; i < benchmark_samples; i++) {
-                    m_TestBatchProvider(m_InputVector, m_TargetVector, m_BatchSize);
-                    bindTrainingData();
+                    m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+                    m_InputBatchMat->uploadToGPU(); m_OutputBatchMat->uploadToGPU();
                     forwardPass();
                 }
 

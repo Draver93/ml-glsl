@@ -21,9 +21,8 @@
 #include "SelfAttention.h"
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
-#include "Tokenizer.h"
-#include "BPE.h"
 #include "BPEVM.h"
+#include "Matrix.h"
 
 
 #include <vector>
@@ -323,57 +322,39 @@ void digit_recognition() {
     const size_t totalTrainSamples = trainImages.size();
     const size_t totalTestSamples = testImages.size();
 
-    nn.onTrainBatch([&](std::vector<float>& batchInputs, std::vector<float>& batchTargets, int batchSize) {
-        for (int i = 0; i < batchSize; ++i) {
+    nn.onTrainBatch([&](std::shared_ptr<NNGL::Matrix>& batchInputs, std::shared_ptr<NNGL::Matrix>& batchTargets, int batchSize) {
+        batchTargets->clear();
+        for (int column = 0; column < batchSize; column++) {
             // Use training data with wraparound
-            size_t sampleIndex = (trainIndex + i) % totalTrainSamples;
+            size_t sampleIndex = (trainIndex + column) % totalTrainSamples;
 
             // Convert image from uint8_t to float and normalize (0-255 → 0-1)
             const auto& image = trainImages[sampleIndex];
-            size_t inputOffset = i * 784; // 28*28 = 784 pixels per image
-            for (size_t pixel = 0; pixel < 784; ++pixel) {
-                batchInputs[inputOffset + pixel] = static_cast<float>(image[pixel]) / 255.0f;
-            }
+            for (size_t pixel = 0; pixel < 784; ++pixel) 
+                (*batchInputs)(pixel, column) = static_cast<float>(image[pixel]) / 255.0f;
 
             // Convert label to one-hot encoding
             uint8_t label = trainLabels[sampleIndex];
-            size_t targetOffset = i * 10; // 10 classes (digits 0-9)
-
-            // Clear all classes first
-            for (size_t j = 0; j < 10; ++j) {
-                batchTargets[targetOffset + j] = 0.0f;
-            }
-            // Set the correct class to 1.0
-            batchTargets[targetOffset + label] = 1.0f;
+            (*batchTargets)(label, column) = 1.0f;
         }
-        // Update train index for next batch
-        trainIndex = (trainIndex + batchSize) % totalTrainSamples; //(totalTrainSamples - batchSize) * ((float)rand() / RAND_MAX); 
+        trainIndex = (trainIndex + batchSize) % totalTrainSamples;
     });
 
-    nn.onTestBatch([&](std::vector<float>& batchInputs, std::vector<float>& batchTargets, int batchSize) {
-        for (int i = 0; i < batchSize; ++i) {
-            // Use test data with wraparound
-            size_t sampleIndex = (testIndex + i) % totalTestSamples;
+    nn.onTestBatch([&](std::shared_ptr<NNGL::Matrix>& batchInputs, std::shared_ptr<NNGL::Matrix>& batchTargets, int batchSize) {
+        batchTargets->clear();
+        for (int column = 0; column < batchSize; column++) {
+            // Use training data with wraparound
+            size_t sampleIndex = (testIndex + column) % totalTestSamples;
 
             // Convert image from uint8_t to float and normalize (0-255 → 0-1)
             const auto& image = testImages[sampleIndex];
-            size_t inputOffset = i * 784; // 28*28 = 784 pixels per image
-            for (size_t pixel = 0; pixel < 784; ++pixel) {
-                batchInputs[inputOffset + pixel] = static_cast<float>(image[pixel]) / 255.0f;
-            }
+            for (size_t pixel = 0; pixel < 784; ++pixel)
+                (*batchInputs)(pixel, column) = static_cast<float>(image[pixel]) / 255.0f;
 
             // Convert label to one-hot encoding
             uint8_t label = testLabels[sampleIndex];
-            size_t targetOffset = i * 10; // 10 classes (digits 0-9)
-
-            // Clear all classes first
-            for (size_t j = 0; j < 10; ++j) {
-                batchTargets[targetOffset + j] = 0.0f;
-            }
-            // Set the correct class to 1.0
-            batchTargets[targetOffset + label] = 1.0f;
+            (*batchTargets)(label, column) = 1.0f;
         }
-        // Update test index for next batch
         testIndex = (testIndex + batchSize) % totalTestSamples;
     });
 
@@ -428,25 +409,25 @@ void sin_multiplication() {
 
     NNGL::NeuralNetwork nn(batchSize);
 
-    nn.onTrainBatch([&](std::vector<float>& batchInputs, std::vector<float>& batchTargets, int batchSize) {
-        for (int i = 0; i < batchSize; i++) {
+    nn.onTrainBatch([&](std::shared_ptr<NNGL::Matrix>& batchInputs, std::shared_ptr<NNGL::Matrix>& batchTargets, int batchSize) {
+        /*for (int i = 0; i < batchSize; i++) {
             float a = 3.14f * ((float)rand() / RAND_MAX) * 2.0f - 3.14f;
             float b_val = 3.14f * ((float)rand() / RAND_MAX) * 2.0f - 3.14f;
 
             batchInputs[i * 2 + 0] = a / 3.14f;
             batchInputs[i * 2 + 1] = b_val / 3.14f;
             batchTargets[i] = std::sin(a) * std::sin(b_val);
-        }    
+        } */   
     });
-    nn.onTestBatch([&](std::vector<float>& batchInputs, std::vector<float>& batchTargets, int batchSize) {
-        for (int i = 0; i < batchSize; i++) {
+    nn.onTestBatch([&](std::shared_ptr<NNGL::Matrix>& batchInputs, std::shared_ptr<NNGL::Matrix>& batchTargets, int batchSize) {
+        /*for (int i = 0; i < batchSize; i++) {
             float a = 3.14f * ((float)rand() / RAND_MAX) * 2.0f - 3.14f;
             float b_val = 3.14f * ((float)rand() / RAND_MAX) * 2.0f - 3.14f;
 
             batchInputs[i * 2 + 0] = a / 3.14f;
             batchInputs[i * 2 + 1] = b_val / 3.14f;
             batchTargets[i] = std::sin(a) * std::sin(b_val);
-        }
+        }*/
     });
 
     nn.addLayer(inputSize, 1, NNGL::ActivationFnType::TANH);
@@ -591,8 +572,8 @@ int main() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr << "Failed to initialize GLAD!" << std::endl; return -1; }
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    transformer();
-    //digit_recognition();
+    //transformer();
+    digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;
 

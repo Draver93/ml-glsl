@@ -2,6 +2,7 @@
 
 #include "Layer.h"
 #include "Shader.h"
+#include "Matrix.h"
 
 #include <vector>
 
@@ -9,10 +10,7 @@
 namespace NNGL {
 	class NeuralNetwork {
 	public:
-		NeuralNetwork(int batchSize = 16) 
-			:	m_BatchSize(batchSize),
-				m_ADAM_Timestep(0){};
-
+		NeuralNetwork(int batchSize = 16);
 		~NeuralNetwork();
 
 	public:
@@ -24,17 +22,14 @@ namespace NNGL {
 		void save();
 
 		using BatchProvider = std::function<void(
-			std::vector<float>& batchInputs,    // Pre-allocated input buffer
-			std::vector<float>& batchTargets,   // Pre-allocated target buffer
-			int batchSize                       // Current batch size
+			std::shared_ptr<Matrix>& batchInputMat,		// Pre-allocated input buffer
+			std::shared_ptr<Matrix>& batchOutputMat,	// Pre-allocated target buffer
+			int batchSize								// Current batch size can be equal or less mat dim
 			)>;
 		void onTestBatch(const BatchProvider& provider) { m_TestBatchProvider = provider; }
 		void onTrainBatch(const BatchProvider& provider) { m_TrainBatchProvider = provider; }
 
 	private:
-		void init();
-
-		void bindTrainingData();
 		void forwardPass();
 		void targetLayerLossCalc();
 		void hiddenLayersLossCalc();
@@ -46,10 +41,8 @@ namespace NNGL {
 		BatchProvider m_TestBatchProvider;
 		BatchProvider m_TrainBatchProvider;
 
-		std::vector<float> m_InputVector;
-		std::vector<float> m_TargetVector;
-		GLuint m_InputBuffer = 0;
-		GLuint m_TargetBuffer = 0;
+		std::shared_ptr<Matrix> m_InputBatchMat;
+		std::shared_ptr<Matrix> m_OutputBatchMat;
 
 		std::shared_ptr<Shader> 
 			m_ForwardPassCompute,
