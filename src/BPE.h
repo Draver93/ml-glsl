@@ -73,16 +73,21 @@ namespace NNGL {
     public:
         TrieNode root;
 
-        void insert(const std::string& sequence, std::shared_ptr<Token> token, size_t usageScore = 0) {
+        bool insert(const std::string& sequence, std::shared_ptr<Token> token, size_t usageScore = 0) {
             TrieNode* node = &root;
+            bool isNew = false;
+
             for (char c : sequence) {
                 if (!node->children[c]) {
                     node->children[c] = std::make_unique<TrieNode>();
+                    isNew = true;
                 }
                 node = node->children[c].get();
             }
             node->token = token;
             node->usageScore = usageScore;
+
+            return isNew;
         }
 
         std::pair<std::shared_ptr<Token>, size_t> match(const char* buffer, size_t length, size_t start) {
@@ -108,7 +113,7 @@ namespace NNGL {
             return { lastToken, matchLength };
         }
 
-        void reduce(size_t maxTokens) {
+        size_t reduce(size_t maxTokens) {
             // First, collect all nodes with tokens that represent multi-character sequences
             std::vector<TrieNode*> tokenNodes;
 
@@ -125,7 +130,7 @@ namespace NNGL {
             collect(&root);
 
             // If we don't have too many tokens, no need to reduce
-            if (tokenNodes.size() <= maxTokens) return;
+            if (tokenNodes.size() <= maxTokens) return tokenNodes.size();
 
             // Sort by usage score (ascending) to remove least used tokens first
             std::sort(tokenNodes.begin(), tokenNodes.end(),
@@ -165,6 +170,8 @@ namespace NNGL {
             };
 
             pruneEmptyBranches(&root);
+
+            return maxTokens;
         }
 
         void clear() {
@@ -180,7 +187,8 @@ namespace NNGL {
         void processChunk(const char* chunk, size_t chunkSize);
         void trainFromFiles(const std::vector<std::string>& files, bool append = false);
         std::vector<std::string> tokenizeInput(const char* input, size_t inputLen);
-        void reduceVocab(size_t maxSize) { m_TokenTrie.reduce(maxSize); };
+        void reduceVocab(size_t maxSize) { m_VocabSize = m_TokenTrie.reduce(maxSize); };
+        size_t getVocabSize() { std::lock_guard<std::mutex> lock(m_TrieMutex); return m_VocabSize; }
 
         void save(const std::string& filepath) const;
         void load(const std::string& filepath);
@@ -189,6 +197,8 @@ namespace NNGL {
         std::mutex m_TrieMutex;
         TokenTrie m_TokenTrie;
         size_t m_MergeLimit;
+
+        std::atomic<size_t> m_VocabSize{ 0 };
     };
 
 }

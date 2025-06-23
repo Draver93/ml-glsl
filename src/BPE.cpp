@@ -57,13 +57,17 @@ namespace NNGL {
         {
             std::lock_guard<std::mutex> lock(m_TrieMutex);
             for (const auto& t : uniqueTokens) {
-                m_TokenTrie.insert(t->getStr(), t);
+                bool isNewToken = m_TokenTrie.insert(t->getStr(), t);
+                if (isNewToken) { m_VocabSize++; }
             }
         }
     }
 
     void BPE::trainFromFiles(const std::vector<std::string>& filePaths, bool append) {
-        if (!append) m_TokenTrie.clear();
+        if (!append) {
+            m_TokenTrie.clear();
+            m_VocabSize = 0; // Reset vocab size when not appending
+        }
 
         std::vector<std::future<void>> futures;
         for (const auto& path : filePaths) {
@@ -105,8 +109,7 @@ namespace NNGL {
         std::ofstream file(filepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for writing: " + filepath);
 
-        std::function<void(const TrieNode*, const std::string&)> saveNode =
-            [&](const TrieNode* node, const std::string& prefix) {
+        std::function<void(const TrieNode*, const std::string&)> saveNode = [&](const TrieNode* node, const std::string& prefix) {
             if (node->token) {
                 size_t len = prefix.size();
                 file.write(reinterpret_cast<const char*>(&len), sizeof(len));
@@ -129,6 +132,7 @@ namespace NNGL {
 
         m_TokenTrie.root = TrieNode{};
 
+        m_VocabSize = 0;
         while (file) {
             size_t len;
             if (!file.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
@@ -145,6 +149,7 @@ namespace NNGL {
                 token = std::make_shared<Token>(token, nextChar);
             }
 
+            m_VocabSize++;
             m_TokenTrie.insert(tokenStr, token, usageScore);
         }
     }

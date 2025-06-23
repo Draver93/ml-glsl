@@ -497,10 +497,15 @@ void transformer() {
 
     std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
     std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(1024 * 10);
-    //bytePairEnc->trainFromFiles(filenames);
-    bytePairEnc->load("bpe.checkpoint");
+    bytePairEnc->trainFromFiles(filenames);
+    int voc_size = bytePairEnc->getVocabSize();
     bytePairEnc->reduceVocab(50000);
-    bytePairEnc->save("bpe_50k.checkpoint");
+    voc_size = bytePairEnc->getVocabSize();
+    bytePairEnc->save("bpe.checkpoint");
+
+    std::shared_ptr<NNGL::BPE> bytePairEnc2 = std::make_shared<NNGL::BPE>(1024 * 10);
+    bytePairEnc2->load("bpe.checkpoint");
+    voc_size = bytePairEnc2->getVocabSize();
 
     std::string test = "the quick brown fox jumps over the lazy dog";
     std::vector<std::string> tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
