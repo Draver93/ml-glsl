@@ -18,11 +18,12 @@
 #include <glm/glm.hpp>
 
 #include "ActivationFunctions.h"
-#include "SelfAttention.h"
+#include "AttentionBlock.h"
 #include "Transformer.h"
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
 #include "BPEVM.h"
+#include "BPE.h"
 #include "Matrix.h"
 
 
@@ -493,32 +494,50 @@ void transformer() {
 
     NNGL::BytePairEncodingVectorMapper bpe_vm(d_model, 100);
 
-    if (!bpe_vm.load("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint")) {
-        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
-        bpe_vm.train("english3.txt", "my_model_checkpoint");
-        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
-        bpe_vm.train("english3.txt", "my_model_checkpoint");
 
+    std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
+    std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(1024 * 10);
+    //bytePairEnc->trainFromFiles(filenames);
+    bytePairEnc->load("bpe.checkpoint");
+    bytePairEnc->reduceVocab(50000);
+    bytePairEnc->save("bpe_50k.checkpoint");
+
+    std::string test = "the quick brown fox jumps over the lazy dog";
+    std::vector<std::string> tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
+
+
+    /*if (!bpe_vm.load("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint")) {
+
+        bpe_vm.train("english3.txt", "my_model_checkpoint");
+        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
+        bpe_vm.train("english3.txt", "my_model_checkpoint");
+        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
         bpe_vm.reduceVocabulary(10000, NNGL::VocabReductionStrategy::REMOVE_SHORTEST);
+        bpe_vm.addToken("<SOS>");
+        bpe_vm.addToken("<EOS>");
+        bpe_vm.addToken("<PAD>");
+
         bpe_vm.save("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint");
 
         // Train with periodic checkpointing (saves every 500 merges)
         std::cout << "Training completed!" << std::endl;
         std::cout << "Total tokens: " << bpe_vm.getAllTokens().size() << std::endl;
         std::cout << "Current merges: " << bpe_vm.getCurrentMerges() << std::endl;
-    }
+    }*/
   
-    std::string test = "the quick brown fox jumps over the lazy dog";
-    auto result = bpe_vm.encodeToVectors(test);
-    while (result.size() != seq_len) result.push_back(result.back());
+    auto input = bpe_vm.encodeToVectors(test);
+    std::vector<float> pad_token = bpe_vm.getVector("<PAD>");
+    std::vector<float> sos_token = bpe_vm.getVector("<SOS>");
 
-    std::shared_ptr<NNGL::Matrix> m = std::make_shared<NNGL::Matrix>(result);
+    while (input.size() != seq_len) input.push_back(pad_token);
+    std::shared_ptr<NNGL::Matrix> encInputMat= std::make_shared<NNGL::Matrix>(input);
 
-    std::shared_ptr<NNGL::EncoderBlock> encoder = std::make_shared<NNGL::EncoderBlock>(d_model, d_hidden, seq_len);
-    encoder->forward(m);
+    input[0] = sos_token;
+    std::shared_ptr<NNGL::Matrix> decInputMat = std::make_shared<NNGL::Matrix>(input);
 
-   // std::shared_ptr<NNGL::SelfAttention> head = std::make_shared<NNGL::SelfAttention>(d_model, 2, result.size());
-   // head->forward(m);
+    std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(d_model, d_hidden, seq_len, bpe_vm.getAllTokens().size());
+    transformer->forward(decInputMat, decInputMat);
+
 }
 
 int main() {

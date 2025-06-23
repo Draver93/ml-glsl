@@ -71,6 +71,7 @@ namespace NNGL {
         // Getters
         int getVectorDim() const noexcept { return vector_dim_; }
         int getCurrentMerges() const noexcept { return static_cast<int>(merges_.size()); }
+        std::vector<TokenPair> getMerges() const noexcept { return merges_; }
         bool isTrained() const noexcept { return is_trained_; }
         bool reduceVocabulary(int max_tokens, VocabReductionStrategy strategy);
 
@@ -138,4 +139,6 @@ namespace NNGL {
         size_t getNumMerges() const;
         void printStatistics() const;
     };
+
+
 }  // namespace NNGL

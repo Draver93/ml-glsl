@@ -2,14 +2,17 @@
 
 layout(local_size_x = 32) in;
 
-layout(std430) readonly buffer InputBuffer { float input_data[]; };  // [seq_len * input_dim]
-layout(std430) readonly buffer WeightQ { float weights_q[]; };      // [input_dim * head_dim]
-layout(std430) readonly buffer WeightK { float weights_k[]; };
-layout(std430) readonly buffer WeightV { float weights_v[]; };
+// Shared inputs
+layout(std430) readonly buffer InputQ      { float input_q[]; };     // Q always from decoder input
+layout(std430) readonly buffer InputKV     { float input_kv[]; };    // K,V from same source — either encoder or decoder
 
-layout(std430) writeonly buffer OutputQ { float output_q[]; };      // [seq_len * head_dim]
-layout(std430) writeonly buffer OutputK { float output_k[]; };
-layout(std430) writeonly buffer OutputV { float output_v[]; };
+layout(std430) readonly buffer WeightQ     { float weights_q[]; };   // [input_dim * head_dim]
+layout(std430) readonly buffer WeightK     { float weights_k[]; };
+layout(std430) readonly buffer WeightV     { float weights_v[]; };
+
+layout(std430) writeonly buffer OutputQ    { float output_q[]; };    // [seq_len * head_dim]
+layout(std430) writeonly buffer OutputK    { float output_k[]; };
+layout(std430) writeonly buffer OutputV    { float output_v[]; };
 
 uniform int head_dim;
 uniform int input_dim;
@@ -27,10 +30,12 @@ void main() {
     float v = 0.0;
 
     for (int i = 0; i < input_dim; i++) {
-        float input_val = input_data[i * seq_len + seq_idx];
-        q += input_val * weights_q[i * head_dim + head_idx];
-        k += input_val * weights_k[i * head_dim + head_idx];
-        v += input_val * weights_v[i * head_dim + head_idx];
+        float q_in = input_q[i * seq_len + seq_idx];
+        float kv_in = input_kv[i * seq_len + seq_idx];
+
+        q += q_in * weights_q[i * head_dim + head_idx];
+        k += kv_in * weights_k[i * head_dim + head_idx];
+        v += kv_in * weights_v[i * head_dim + head_idx];
     }
 
     output_q[idx] = q;

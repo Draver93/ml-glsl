@@ -4,12 +4,13 @@
 #include "Matrix.h"
 
 namespace NNGL {
-	class SelfAttention {
+	class AttentionBlock {
 	public:
-		SelfAttention(int modelDimensions, int headDimensions, int seqLen, bool mask = false);
-        ~SelfAttention() {};
+		AttentionBlock(int modelDimensions, int headDimensions, int seqLen, bool mask = false);
+        ~AttentionBlock() {};
 
-        std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input);
+        //By spec input_kv we can replace kv for cross attention
+        std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv = nullptr);
         void backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input);
         void updateWeights(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& gradOutput, float learningRate);
 

@@ -1,7 +1,7 @@
-#include "SelfAttention.h"
+#include "AttentionBlock.h"
 
 namespace NNGL {
-    SelfAttention::SelfAttention(int modelDimensions, int headDimensions, int seqLen, bool mask)
+    AttentionBlock::AttentionBlock(int modelDimensions, int headDimensions, int seqLen, bool mask)
         : m_ModelDim(modelDimensions),  m_HeadDim(headDimensions),
         m_UseMask(mask), m_SeqLen(seqLen) {
 
@@ -46,11 +46,14 @@ namespace NNGL {
         m_WeightsUpdatePassCompute = ShaderManager::getInstance().getShader("shaders/self_attention_weights_update.comp");
     }
 
-    std::shared_ptr<Matrix> SelfAttention::forward(const std::shared_ptr<Matrix> &input) {
+    std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv) {
         {
             input->uploadToGPU();
+            if(input_kv) input_kv->uploadToGPU();
 
-            m_ForwardPassWeightsCompute->bindBuffer(0, "InputBuffer", input->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(0, "InputQ", input->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(0, "InputKV", input_kv ? input_kv->buffer : input->buffer);
+
             m_ForwardPassWeightsCompute->bindBuffer(1, "WeightQ", m_WeightQueryMat->buffer);
             m_ForwardPassWeightsCompute->bindBuffer(2, "WeightK", m_WeightKeyMat->buffer);
             m_ForwardPassWeightsCompute->bindBuffer(3, "WeightV", m_WeightValueMat->buffer);
@@ -105,7 +108,7 @@ namespace NNGL {
     }
  
     // gradOutput one of concat heads gradients
-    void SelfAttention::backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input) {
+    void AttentionBlock::backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input) {
 
         gradOutput->uploadToGPU();
         input->uploadToGPU();
@@ -165,7 +168,7 @@ namespace NNGL {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
 
-    void SelfAttention::updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, float learningRate) {
+    void AttentionBlock::updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, float learningRate) {
 
         weight->uploadToGPU();
         gradWeight->uploadToGPU();
