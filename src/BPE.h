@@ -70,6 +70,10 @@ namespace NNGL {
     };
 
     class TokenTrie {
+    private:
+        std::unordered_map<int, std::shared_ptr<Token>> idToToken;
+        std::unordered_map<std::shared_ptr<Token>, int, TokenHasher, TokenEqual> tokenToId;
+
     public:
         TrieNode root;
 
@@ -86,6 +90,14 @@ namespace NNGL {
             }
             node->token = token;
             node->usageScore = usageScore;
+
+            auto it = tokenToId.find(token);
+            if (it == tokenToId.end()) {
+                size_t id = tokenToId.size();
+                tokenToId[token] = id;
+                idToToken[id] = token;
+                return id;
+            }
 
             return isNew;
         }
@@ -113,10 +125,9 @@ namespace NNGL {
             return { lastToken, matchLength };
         }
 
-        size_t reduce(size_t maxTokens) {
+        void reduce(size_t maxTokens) {
             // First, collect all nodes with tokens that represent multi-character sequences
             std::vector<TrieNode*> tokenNodes;
-
             std::function<void(TrieNode*)> collect = [&](TrieNode* node) {
                 if (node->token && (node->token->lVal || node->token->rVal)) {
                     // Only consider multi-character tokens for removal
@@ -126,11 +137,10 @@ namespace NNGL {
                     collect(child.get());
                 }
             };
-
             collect(&root);
 
             // If we don't have too many tokens, no need to reduce
-            if (tokenNodes.size() <= maxTokens) return tokenNodes.size();
+            if (tokenNodes.size() <= maxTokens) return;
 
             // Sort by usage score (ascending) to remove least used tokens first
             std::sort(tokenNodes.begin(), tokenNodes.end(),
@@ -171,12 +181,46 @@ namespace NNGL {
 
             pruneEmptyBranches(&root);
 
-            return maxTokens;
+            tokenToId.clear();
+            idToToken.clear();
+            int nextId = 0;
+
+            std::function<void(TrieNode*)> rebuildMaps = [&](TrieNode* node) {
+                if (node->token) {
+                    if (tokenToId.find(node->token) == tokenToId.end()) {
+                        tokenToId[node->token] = nextId;
+                        idToToken[nextId] = node->token;
+                        ++nextId;
+                    }
+                }
+                for (auto& [_, child] : node->children)
+                    rebuildMaps(child.get());
+            };
+            rebuildMaps(&root);
         }
+
+        std::shared_ptr<Token> getTokenById(int id) const {
+            auto it = idToToken.find(id);
+            return it != idToToken.end() ? it->second : nullptr;
+        }
+
+        int getIdByToken(const std::shared_ptr<Token>& token) const {
+            auto it = tokenToId.find(token);
+            return it != tokenToId.end() ? it->second : -1;
+        }
+
+        std::string getStringById(int id) const {
+            auto token = getTokenById(id);
+            return token ? token->getStr() : "";
+        }
+
+        size_t getTokenCount() { return idToToken.size(); }
 
         void clear() {
             root.children.clear();
             root.token = nullptr;
+            idToToken.clear();
+            tokenToId.clear();
         }
     };
 
@@ -187,8 +231,9 @@ namespace NNGL {
         void processChunk(const char* chunk, size_t chunkSize);
         void trainFromFiles(const std::vector<std::string>& files, bool append = false);
         std::vector<std::string> tokenizeInput(const char* input, size_t inputLen);
-        void reduceVocab(size_t maxSize) { m_VocabSize = m_TokenTrie.reduce(maxSize); };
-        size_t getVocabSize() { std::lock_guard<std::mutex> lock(m_TrieMutex); return m_VocabSize; }
+        void reduceVocab(size_t maxSize) { m_TokenTrie.reduce(maxSize); };
+        size_t getVocabSize() { return m_TokenTrie.getTokenCount(); }
+        std::string getTokenById(int id) { return m_TokenTrie.getTokenById(id)->getStr(); }
 
         void save(const std::string& filepath) const;
         void load(const std::string& filepath);
@@ -197,8 +242,6 @@ namespace NNGL {
         std::mutex m_TrieMutex;
         TokenTrie m_TokenTrie;
         size_t m_MergeLimit;
-
-        std::atomic<size_t> m_VocabSize{ 0 };
     };
 
 }

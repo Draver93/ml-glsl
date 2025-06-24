@@ -56,17 +56,14 @@ namespace NNGL {
         std::unordered_set<std::shared_ptr<Token>, TokenHasher, TokenEqual> uniqueTokens(tokens.begin(), tokens.end());
         {
             std::lock_guard<std::mutex> lock(m_TrieMutex);
-            for (const auto& t : uniqueTokens) {
-                bool isNewToken = m_TokenTrie.insert(t->getStr(), t);
-                if (isNewToken) { m_VocabSize++; }
-            }
+            for (const auto& t : uniqueTokens) 
+                m_TokenTrie.insert(t->getStr(), t);
         }
     }
 
     void BPE::trainFromFiles(const std::vector<std::string>& filePaths, bool append) {
         if (!append) {
             m_TokenTrie.clear();
-            m_VocabSize = 0; // Reset vocab size when not appending
         }
 
         std::vector<std::future<void>> futures;
@@ -95,6 +92,7 @@ namespace NNGL {
         while (i < inputLen) {
             auto [token, len] = m_TokenTrie.match(input, inputLen, i);
             if (!token) {
+                throw std::runtime_error("Critical! Token not found!");
                 token = std::make_shared<Token>(input[i]);
                 len = 1;
             }
@@ -132,7 +130,6 @@ namespace NNGL {
 
         m_TokenTrie.root = TrieNode{};
 
-        m_VocabSize = 0;
         while (file) {
             size_t len;
             if (!file.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
@@ -149,9 +146,7 @@ namespace NNGL {
                 token = std::make_shared<Token>(token, nextChar);
             }
 
-            m_VocabSize++;
             m_TokenTrie.insert(tokenStr, token, usageScore);
         }
     }
-
 }

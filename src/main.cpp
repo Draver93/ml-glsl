@@ -22,7 +22,6 @@
 #include "Transformer.h"
 #include "NeuralNetwork.h"
 #include "MNISTLoader.h"
-#include "BPEVM.h"
 #include "BPE.h"
 #include "Matrix.h"
 
@@ -487,61 +486,66 @@ void transformer() {
     //batch size	1–4
     //# heads	4–8
     //layers	2–6
-    int d_model = 128; //token vector size
-    int d_hidden = d_model * 4; //ffn hidden layer size
-    int d_head = d_model; //size of attention head
+
+    int d_model = 128;
+    int d_hidden = d_model * 4;
     int seq_len = 64;
 
-    NNGL::BytePairEncodingVectorMapper bpe_vm(d_model, 100);
-
-
-    std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
+    std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
     std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(1024 * 10);
-    bytePairEnc->trainFromFiles(filenames);
-    int voc_size = bytePairEnc->getVocabSize();
-    bytePairEnc->reduceVocab(50000);
-    voc_size = bytePairEnc->getVocabSize();
-    bytePairEnc->save("bpe.checkpoint");
-
-    std::shared_ptr<NNGL::BPE> bytePairEnc2 = std::make_shared<NNGL::BPE>(1024 * 10);
-    bytePairEnc2->load("bpe.checkpoint");
-    voc_size = bytePairEnc2->getVocabSize();
+    //bytePairEnc->trainFromFiles(filenames);
+    //bytePairEnc->reduceVocab(50000);
+    bytePairEnc->load("bpe.checkpoint");
 
     std::string test = "the quick brown fox jumps over the lazy dog";
-    std::vector<std::string> tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
 
+    // to run
+    //std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());  // Context
+    //while (enc_tokens.size() < seq_len) enc_tokens.push_back("<PAD>");
+    //std::vector<std::string> dec_tokens(seq_len, "<PAD>");
+    //dec_tokens.at(0) = "<SOS>";     // Start of generation
 
-    /*if (!bpe_vm.load("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint")) {
+    // to train
+    //std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());  // Input sequence
+    //while (enc_tokens.size() < seq_len - 1) enc_tokens.push_back("<PAD>");
 
-        bpe_vm.train("english3.txt", "my_model_checkpoint");
-        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
-        bpe_vm.train("english3.txt", "my_model_checkpoint");
-        bpe_vm.train("pg76287.txt", "my_model_checkpoint");
-        bpe_vm.reduceVocabulary(10000, NNGL::VocabReductionStrategy::REMOVE_SHORTEST);
-        bpe_vm.addToken("<SOS>");
-        bpe_vm.addToken("<EOS>");
-        bpe_vm.addToken("<PAD>");
+    //std::vector<std::string> dec_tokens = { "<SOS>" } ;  // SOS + target
+    //dec_tokens.insert(dec_tokens.end(), enc_tokens.begin(), enc_tokens.end() - 1);
 
-        bpe_vm.save("my_model_checkpoint_bpe.checkpoint", "my_model_checkpoint_emb.checkpoint");
+    //std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(d_model, d_hidden, seq_len, bytePairEnc->getVocabSize() + 3 /*SOS EOS PAD*/);
+    //int next_token_id = transformer->forward(enc_tokens, dec_tokens);
+    //std::string next_token = bytePairEnc->getTokenById(next_token_id);
 
-        // Train with periodic checkpointing (saves every 500 merges)
-        std::cout << "Training completed!" << std::endl;
-        std::cout << "Total tokens: " << bpe_vm.getAllTokens().size() << std::endl;
-        std::cout << "Current merges: " << bpe_vm.getCurrentMerges() << std::endl;
-    }*/
-  
-    auto input = bpe_vm.encodeToVectors(test);
-    std::vector<float> pad_token = bpe_vm.getVector("<PAD>");
-    std::vector<float> sos_token = bpe_vm.getVector("<SOS>");
+    std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
+    std::vector<std::string> dec_tokens = { "<SOS>" };
 
-    while (input.size() != seq_len) input.push_back(pad_token);
-    std::shared_ptr<NNGL::Matrix> encInputMat= std::make_shared<NNGL::Matrix>(input);
+    std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(
+        d_model, d_hidden, seq_len, bytePairEnc->getVocabSize() + 3 /*SOS EOS PAD*/
+        );
 
-    input[0] = sos_token;
-    std::shared_ptr<NNGL::Matrix> decInputMat = std::make_shared<NNGL::Matrix>(input);
+    while (true) {
+        // Truncate to seq_len if needed
+        std::vector<std::string> padded_enc = enc_tokens;
+        while (padded_enc.size() < seq_len) padded_enc.push_back("<PAD>");
+        if (padded_enc.size() > seq_len) padded_enc = std::vector<std::string>(padded_enc.end() - seq_len, padded_enc.end());
 
-    std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(d_model, d_hidden, seq_len, bpe_vm.getAllTokens().size());
-    transformer->forward(decInputMat, decInputMat);
+        // Pad dec_tokens to seq_len
+        std::vector<std::string> padded_dec = dec_tokens;
+        while (padded_dec.size() < seq_len) padded_dec.push_back("<PAD>");
+        if (padded_dec.size() > seq_len) padded_dec = std::vector<std::string>(padded_dec.end() - seq_len, padded_dec.end());
+
+        int next_token_id = transformer->forward(padded_enc, padded_dec);
+        std::string next_token = bytePairEnc->getTokenById(next_token_id);
+
+        // Stop condition (optional)
+        if (next_token == "<EOS>") break;
+
+        // Append prediction
+        dec_tokens.push_back(next_token);
+
+        // Print/debug generated tokens
+        std::cout << next_token << ' ';
+    }
 
 }
 

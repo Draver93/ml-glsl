@@ -31,11 +31,17 @@ namespace NNGL {
         int m_NumHeads = 1; // single head
         // Allocate output buffer: [seq_len, m_NumHeads * head_dim]
         m_OutputMat = std::make_shared<Matrix>(seqLen, m_NumHeads * m_HeadDim);
+        m_OutputMat->uploadToGPU();
 
         // Output: [seq_len, head_dim]
         m_OutQueryMat = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_OutQueryMat->uploadToGPU();
+
         m_OutKeyMat = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_OutKeyMat->uploadToGPU();
+
         m_OutValueMat = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_OutValueMat->uploadToGPU();
 
         m_ForwardPassWeightsCompute = ShaderManager::getInstance().getShader("shaders/self_attention_forward_weights.comp");
         m_ForwardPassScoreCompute = ShaderManager::getInstance().getShader("shaders/self_attention_forward_score.comp");
@@ -52,15 +58,15 @@ namespace NNGL {
             if(input_kv) input_kv->uploadToGPU();
 
             m_ForwardPassWeightsCompute->bindBuffer(0, "InputQ", input->buffer);
-            m_ForwardPassWeightsCompute->bindBuffer(0, "InputKV", input_kv ? input_kv->buffer : input->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(1, "InputKV", input_kv ? input_kv->buffer : input->buffer);
 
-            m_ForwardPassWeightsCompute->bindBuffer(1, "WeightQ", m_WeightQueryMat->buffer);
-            m_ForwardPassWeightsCompute->bindBuffer(2, "WeightK", m_WeightKeyMat->buffer);
-            m_ForwardPassWeightsCompute->bindBuffer(3, "WeightV", m_WeightValueMat->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(2, "WeightQ", m_WeightQueryMat->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(3, "WeightK", m_WeightKeyMat->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(4, "WeightV", m_WeightValueMat->buffer);
 
-            m_ForwardPassWeightsCompute->bindBuffer(4, "OutputQ", m_OutQueryMat->buffer);
-            m_ForwardPassWeightsCompute->bindBuffer(5, "OutputK", m_OutKeyMat->buffer);
-            m_ForwardPassWeightsCompute->bindBuffer(6, "OutputV", m_OutValueMat->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(5, "OutputQ", m_OutQueryMat->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(6, "OutputK", m_OutKeyMat->buffer);
+            m_ForwardPassWeightsCompute->bindBuffer(7, "OutputV", m_OutValueMat->buffer);
 
             m_ForwardPassWeightsCompute->setUniform("head_dim", m_HeadDim);
             m_ForwardPassWeightsCompute->setUniform("input_dim", input->cols);
@@ -69,15 +75,13 @@ namespace NNGL {
             int workgroups_x = (input->rows * m_HeadDim + 31) / 32;
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
-            m_OutValueMat->print();
-            m_OutValueMat->downloadFromGPU();
-            m_OutValueMat->print();
+            //m_OutValueMat->print();
+            //m_OutValueMat->downloadFromGPU();
+            //m_OutValueMat->print();
             // Unbind
-            for (int i = 0; i <= 6; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+            for (int i = 0; i <= 7; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
         {
-            input->uploadToGPU();
-
             // Bind buffers
             m_ForwardPassScoreCompute->bindBuffer(0, "BufferQ", m_OutQueryMat->buffer);  // Q
             m_ForwardPassScoreCompute->bindBuffer(1, "BufferK", m_OutKeyMat->buffer);    // K
@@ -98,8 +102,8 @@ namespace NNGL {
             m_ForwardPassScoreCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             // Download results and print
-            m_OutputMat->downloadFromGPU();
-            m_OutputMat->print();
+            //m_OutputMat->downloadFromGPU();
+            //m_OutputMat->print();
 
             // Unbind all buffers
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);

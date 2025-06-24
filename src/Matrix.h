@@ -17,6 +17,10 @@ namespace NNGL {
         Matrix(const std::vector<std::vector<float>>& vec2d);
         Matrix(int r, int c, const float* data);
 
+        Matrix(const Matrix& other);
+        ~Matrix();
+
+        Matrix& operator=(const Matrix& other);
         float& operator()(int r, int c);
         float operator()(int r, int c) const;
 

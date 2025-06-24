@@ -6,7 +6,6 @@
 namespace NNGL {
     Matrix::Matrix(int r, int c, float fill) : 
         rows(r), cols(c), flatVec(r * c, fill) {
-        allocateBufferGPU();
     }
 
     Matrix::Matrix(int r, int c, const float* data) : rows(r), cols(c) {
@@ -23,8 +22,6 @@ namespace NNGL {
 
         // Direct copy since both input and storage are column-major
         std::copy(data, data + (rows * cols), flatVec.begin());
-
-        allocateBufferGPU();
     }
 
     Matrix::Matrix(const std::vector<std::vector<float>>& vec2d) {
@@ -55,6 +52,26 @@ namespace NNGL {
         }
 
         allocateBufferGPU();
+    }
+
+    Matrix::~Matrix() {
+        if (buffer != 0) {
+            glDeleteBuffers(1, &buffer);
+            buffer = 0;
+        }
+    }
+
+    Matrix::Matrix(const Matrix& other)
+        : rows(other.rows), cols(other.cols), flatVec(other.flatVec), buffer(0) {
+    }
+
+    Matrix& Matrix::operator=(const Matrix& other) {
+        if (this != &other) {
+            rows = other.rows;
+            cols = other.cols;
+            flatVec = other.flatVec;
+        }
+        return *this;
     }
 
     // Column-major indexing: data stored as [col0_all_rows, col1_all_rows, ...]
@@ -136,7 +153,8 @@ namespace NNGL {
     }
 
     void Matrix::downloadFromGPU() {
-        if (buffer == 0) return;
+        if (buffer == 0) 
+            return;
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
         glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), flatVec.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
