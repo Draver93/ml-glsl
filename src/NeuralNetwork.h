@@ -14,10 +14,15 @@ namespace NNGL {
 		~NeuralNetwork();
 
 	public:
+		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat);
+		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate);
+		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
+		std::shared_ptr<Matrix> backward_with_targetloss(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> targetLoss, float learningRate);
+		std::shared_ptr<Matrix> forwardMatOutput;
+	public:
 		void addLayer(int width, int height, ActivationFnType type);
 		void train(float learningRate = 0.01f);
 		float eval(int samplesToTest, bool do_softmax = false);
-		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat);
 		void run();
 		void load();
 		void save();
@@ -34,7 +39,7 @@ namespace NNGL {
 		void forwardPass(std::shared_ptr<Matrix>& inputBatchMat);
 		void targetLayerLossCalc(std::shared_ptr<Matrix>& outputBatchMat);
 		void hiddenLayersLossCalc();
-		void weightsAndBiasesUpdate(float learningRate);
+		void weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate);
 
 	private:
 		int m_ADAM_Timestep;

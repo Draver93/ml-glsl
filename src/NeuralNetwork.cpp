@@ -32,6 +32,7 @@ namespace NNGL {
         //we changed layer structure so we need to update mat's
         m_InputBatchMat = nullptr;
         m_OutputBatchMat = nullptr;
+        forwardMatOutput = nullptr;
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
@@ -66,7 +67,7 @@ namespace NNGL {
         outputBatchMat->uploadToGPU();
 
         m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationBuffer);
-        m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", m_OutputBatchMat->buffer);
+        m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", outputBatchMat->buffer);
         m_OutputDeltaCompute->bindBuffer(2, "PreActivationBuffer", m_Layers.back()->m_PreactivationBuffer);
         m_OutputDeltaCompute->bindBuffer(3, "DeltaBuffer", m_Layers.back()->m_DeltaBuffer);
 
@@ -107,9 +108,9 @@ namespace NNGL {
 	}
 
 	// Update weights and biases for all layers
-	void NeuralNetwork::weightsAndBiasesUpdate(float learningRate) {
-        m_InputBatchMat->uploadToGPU();
-        GLuint current_input = m_InputBatchMat->buffer;
+	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate) {
+        inputBatchMat->uploadToGPU();
+        GLuint current_input = inputBatchMat->buffer;
 
         for (auto& layer : m_Layers) {
 
@@ -162,7 +163,7 @@ namespace NNGL {
         m_ADAM_Timestep++;
 	}
 
-    void NeuralNetwork::train(float learningRate) {
+     void NeuralNetwork::train(float learningRate) {
         if (m_Layers.size() < 3) throw std::runtime_error("3 layers minimum");
 
         if (!m_TrainBatchProvider) throw std::runtime_error("Please specify onTrainBatch callback");
@@ -181,7 +182,7 @@ namespace NNGL {
 
         hiddenLayersLossCalc();
 
-        weightsAndBiasesUpdate(learningRate);
+        weightsAndBiasesUpdate(m_InputBatchMat, learningRate);
 
     }
 
@@ -242,20 +243,67 @@ namespace NNGL {
 
         forwardPass(inputMat);
 
-        std::shared_ptr<Matrix> outputMat;
         int outputSize = m_Layers.back()->getSize().y * m_BatchSize;
         std::vector<float> results(outputSize);
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (mapped) {
-            outputMat = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
+            if(!forwardMatOutput) forwardMatOutput = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         }
         else throw std::runtime_error("data failed to map");
 
-        return outputMat; 
+        return forwardMatOutput;
     }
+
+    std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate) {
+
+        forward(inputMat);
+
+        targetLayerLossCalc(outputMat);
+
+        hiddenLayersLossCalc();
+
+        weightsAndBiasesUpdate(inputMat, learningRate);
+
+        std::shared_ptr<Matrix> inputGradMat;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.front()->m_DeltaBuffer);
+        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        if (!mapped) throw std::runtime_error("data failed to map");
+
+        inputGradMat = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+        return inputGradMat; //attention block needs it
+    }
+
+    std::shared_ptr<Matrix> NeuralNetwork::backward_with_targetloss(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> targetLoss, float learningRate) {
+
+        forward(inputMat);
+
+        setTargetLayerLoss(targetLoss);
+
+        hiddenLayersLossCalc();
+
+        weightsAndBiasesUpdate(inputMat, learningRate);
+
+        std::shared_ptr<Matrix> inputGradMat;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.front()->m_DeltaBuffer);
+        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        if (!mapped) throw std::runtime_error("data failed to map");
+
+        inputGradMat = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+        return inputGradMat; //attention block needs it
+    }
+
+    void NeuralNetwork::setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss) {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->flatVec.size() * sizeof(float), targetLoss->flatVec.data(), GL_DYNAMIC_DRAW);
+    }
+
 
     // Interactive Testing CLI
 	void NeuralNetwork::run() {

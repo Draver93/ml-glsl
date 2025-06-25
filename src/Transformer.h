@@ -2,6 +2,7 @@
 
 #include "AttentionBlock.h"
 #include "NeuralNetwork.h"
+#include "BPE.h"
 
 #include <random>
 #include <fstream>
@@ -166,30 +167,93 @@ namespace NNGL {
 
             return mlp_out;
         }
+        std::shared_ptr<Matrix> backward( std::shared_ptr<Matrix> grad, std::shared_ptr<Matrix> input, float learningRate) {
+            // ---- 1. Backprop through MLP ----
+            auto grad_mlp_input = grad; // due to final residual: mlp_out + cross_out
+            auto grad_from_mlp = feedForward->backward_with_targetloss(input, grad_mlp_input, learningRate);
+            grad_from_mlp->add(*grad_mlp_input); // Add residual grad
 
+            // ---- 2. Backprop through Cross-Attention ----
+           /* auto grad_cross_input = grad_from_mlp;
+            auto cross_attn_input = maskedSelfAttn->getOutput(); // Output from maskedSelfAttn
+            auto grad_from_cross = crossAttn->backward(grad_cross_input, cross_attn_input, encoder_output); 
+            grad_from_cross->add(*grad_cross_input); // Add residual grad
+
+            // ---- 3. Backprop through Masked Self-Attention ----
+            auto grad_masked_input = grad_from_cross;
+            auto grad_from_self = maskedSelfAttn->backward(grad_masked_input, decoder_input);*/
+
+            return nullptr;// grad_from_self;
+        }
     };
 
     class Transformer {
     private:
+        std::unique_ptr<BPE> m_Tokenizer;
+
         std::unique_ptr<EmbeddingBlock> m_Embedder;
         std::unique_ptr<EncoderBlock> m_Encoder;
         std::unique_ptr<DecoderBlock> m_Decoder;
         std::unique_ptr<NeuralNetwork> m_OutputProjection;  // W_out as NN layer
 
+        size_t m_SeqLen, m_VocabSize;
     public:
-        Transformer(int modelDim, int hiddenDim, int seqLen, int vocabSize) {
-            m_Embedder = std::make_unique<EmbeddingBlock>(vocabSize, modelDim);
+        Transformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen) : m_SeqLen(seqLen) {
 
+            m_Tokenizer = std::make_unique<BPE>();
+            m_Tokenizer->load(tokCheckpointFilepath);
+            m_VocabSize = m_Tokenizer->getVocabSize();
+
+
+            m_Embedder = std::make_unique<EmbeddingBlock>(m_VocabSize, modelDim);
             m_Encoder = std::make_unique<EncoderBlock>(modelDim, hiddenDim, seqLen);
             m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
 
             // Output projection: from model_dim to vocab_size
             m_OutputProjection = std::make_unique<NeuralNetwork>(seqLen);
-            m_OutputProjection->addLayer(modelDim, vocabSize, NNGL::ActivationFnType::IDENTITY);
+            m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
         }
 
+        void train(std::string& inputText) {
+
+
+            // 1. Tokenize inputs
+            std::vector<std::string> encInputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+
+            // expected token
+            std::string expected_tok = encInputTokens.back();
+            encInputTokens.pop_back();
+
+            while (encInputTokens.size() < m_SeqLen) encInputTokens.push_back("<PAD>");
+            if (encInputTokens.size() > m_SeqLen) encInputTokens = std::vector<std::string>(encInputTokens.end() - m_SeqLen, encInputTokens.end());
+
+            // 2. Prepare decoder inputs (shifted right) and targets
+            std::vector<std::string> decInputTokens = { "<SOS>" };
+            decInputTokens.insert(decInputTokens.end(), encInputTokens.begin(), encInputTokens.end() - 1);
+
+            std::vector<std::string> targetTokens = encInputTokens; // For simplicity, let's assume autoencoder task
+            while (targetTokens.size() < m_SeqLen) targetTokens.push_back("<PAD>");
+
+
+            std::vector<float> expected_vec(m_VocabSize, 0.0f);
+            train(encInputTokens, decInputTokens, expected_vec);
+        }
+
+        std::string eval(std::string& inputText) {
+            std::vector<std::string> encInputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+            while (encInputTokens.size() < m_SeqLen) encInputTokens.push_back("<PAD>");
+            if (encInputTokens.size() > m_SeqLen) encInputTokens = std::vector<std::string>(encInputTokens.end() - m_SeqLen, encInputTokens.end());
+
+            std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
+            decInputTokens.at(0) = "<SOS>";     // Start of generation
+
+            int next_token_id = predictToken(forwardPass(encInputTokens, decInputTokens));
+            return m_Tokenizer->getTokenById(next_token_id);
+        }
+
+    private:
         // Forward that takes encoder input tokens and returns next token idz
-        int forward(std::vector<std::string> &encInputTokens, std::vector<std::string>& decInputTokens) {
+        std::shared_ptr<Matrix> forwardPass(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens) {
 
             // 1. Embedd input
             std::shared_ptr<Matrix> encInputMat = m_Embedder->forward(encInputTokens);
@@ -202,16 +266,45 @@ namespace NNGL {
             std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(decInputMat, encOutputMat);
 
             // 5. Project decoder output to vocab logits
-            std::shared_ptr<Matrix> logits = m_OutputProjection->forward(decOutputMat);
+            return m_OutputProjection->forward(decOutputMat);
+        }
+        
+        void train(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens, std::vector<float> expected) {
+            float learningRate = 0.01f;
+            // 1. Embedd input
+            std::shared_ptr<Matrix> encInputMat = m_Embedder->forward(encInputTokens); //should add position enc
+            std::shared_ptr<Matrix> decInputMat = m_Embedder->forward(decInputTokens); //should add position enc
 
+            // 2. Encode input
+            std::shared_ptr<Matrix> encOutputMat = m_Encoder->forward(encInputMat);
+
+            // 3. Decode
+            std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(decInputMat, encOutputMat);
+
+            // 4. FFN
+            std::shared_ptr<Matrix> FFNGradMat = m_OutputProjection->backward(decOutputMat, std::make_shared<Matrix>(1, expected.size(), expected.data()), learningRate);
+            
+            // 5. Decode Grad
+            std::shared_ptr<Matrix> decGradMat = m_Decoder->backward(FFNGradMat, decInputMat, learningRate);
+
+            //Here we should 
+            /*m_Embedder->updateEmbedding(decGradMat); //should remove position enc before applying grad
+
+            // 6. Encode Grad
+            std::shared_ptr<Matrix> encGradMat = m_Encoder->backward(decGradMat, learningRate);
+
+            //Here we should 
+            m_Embedder->updateEmbedding(encGradMat); //should remove position enc before applying grad*/
+        }
+
+        int predictToken(std::shared_ptr<Matrix> logits) {
             int predicted_token = -1;
             float max_token = FLT_MIN;
-            for (int i = 0; i < logits->cols; i++) 
+            for (int i = 0; i < logits->cols; i++)
                 if (max_token < (*logits)(0, i)) {
                     max_token = (*logits)(0, i);
                     predicted_token = i;
                 }
-  
             return predicted_token;
         }
     };

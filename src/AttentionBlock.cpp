@@ -21,7 +21,7 @@ namespace NNGL {
         // GradInput: [seq_len, input_dim]
         m_GradQueryInputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
         m_GradKeyInputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
-        m_GradKeyValueMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradValueInputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
 
         // GradWeight: [input_dim, head_dim]
         m_GradWeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
@@ -111,11 +111,10 @@ namespace NNGL {
         return m_OutputMat;
     }
  
-    // gradOutput one of concat heads gradients
-    void AttentionBlock::backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input) {
-
+    std::shared_ptr<Matrix> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context ) {
         gradOutput->uploadToGPU();
         input->uploadToGPU();
+        if (context) context->uploadToGPU();
 
         const int seq_len = input->rows;
         const int input_dim = input->cols;
@@ -124,9 +123,11 @@ namespace NNGL {
         const int workgroups_input = (seq_len * input_dim + 31) / 32;
         const int workgroups_weight = (input_dim * head_dim + 31) / 32;
 
-        // === Query ===
+        // === Backward Q, K, V projections ===
+        // If this is self-attn, Q = K = V = input.
+        // If this is cross-attn, Q = input, K = V = context
 
-        // Compute GradInput
+        // --- Query (always from input) ---
         m_GradInputCompute->setUniform("seq_len", seq_len);
         m_GradInputCompute->setUniform("input_dim", input_dim);
         m_GradInputCompute->setUniform("head_dim", head_dim);
@@ -136,7 +137,6 @@ namespace NNGL {
         m_GradInputCompute->bindBuffer(2, "GradInput", m_GradQueryInputMat->buffer);
         m_GradInputCompute->dispatch(workgroups_input, 1, 1);
 
-        // Compute GradWeight
         m_GradWeightCompute->setUniform("seq_len", seq_len);
         m_GradWeightCompute->setUniform("input_dim", input_dim);
         m_GradWeightCompute->setUniform("head_dim", head_dim);
@@ -146,30 +146,43 @@ namespace NNGL {
         m_GradWeightCompute->bindBuffer(2, "GradWeight", m_GradWeightQueryMat->buffer);
         m_GradWeightCompute->dispatch(workgroups_weight, 1, 1);
 
-        // === Key ===
+        // --- Key (from input or context) ---
+        const auto& keyInput = context ? context : input;
         m_GradInputCompute->bindBuffer(1, "Weight", m_WeightKeyMat->buffer);
         m_GradInputCompute->bindBuffer(2, "GradInput", m_GradKeyInputMat->buffer);
+        m_GradInputCompute->bindBuffer(0, "GradOutput", gradOutput->buffer);
         m_GradInputCompute->dispatch(workgroups_input, 1, 1);
 
+        m_GradWeightCompute->bindBuffer(0, "Input", keyInput->buffer);
         m_GradWeightCompute->bindBuffer(2, "GradWeight", m_GradWeightKeyMat->buffer);
         m_GradWeightCompute->dispatch(workgroups_weight, 1, 1);
 
-        // === Value ===
+        // --- Value (from input or context) ---
         m_GradInputCompute->bindBuffer(1, "Weight", m_WeightValueMat->buffer);
-        m_GradInputCompute->bindBuffer(2, "GradInput", m_GradKeyValueMat->buffer);
+        m_GradInputCompute->bindBuffer(2, "GradInput", m_GradValueInputMat->buffer);
         m_GradInputCompute->dispatch(workgroups_input, 1, 1);
 
         m_GradWeightCompute->bindBuffer(2, "GradWeight", m_GradWeightValueMat->buffer);
         m_GradWeightCompute->dispatch(workgroups_weight, 1, 1);
 
-        // === Update weights ===
+        // === Weight Updates ===
         updateWeights(input, m_GradWeightQueryMat, 0.1f);
-        updateWeights(input, m_GradWeightKeyMat, 0.1f);
-        updateWeights(input, m_GradWeightValueMat, 0.1f);
+        updateWeights(keyInput, m_GradWeightKeyMat, 0.1f);
+        updateWeights(keyInput, m_GradWeightValueMat, 0.1f);
+
+        // === Residual Gradient Accumulation ===
+        auto totalGradInput = std::make_shared<Matrix>(seq_len, input_dim);
+        totalGradInput->add(*m_GradQueryInputMat);
+        if (!context) {
+            totalGradInput->add(*m_GradKeyInputMat);  // only for self-attn
+            totalGradInput->add(*m_GradValueInputMat);
+        }
 
         // === Cleanup ===
-        for (int i = 0; i <= 2; ++i)
+        for (int i = 0; i <= 4; ++i)
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+
+        return totalGradInput;
     }
 
     void AttentionBlock::updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, float learningRate) {

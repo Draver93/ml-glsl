@@ -519,29 +519,15 @@ void transformer() {
     std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
     std::vector<std::string> dec_tokens = { "<SOS>" };
 
-    std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(
-        d_model, d_hidden, seq_len, bytePairEnc->getVocabSize() + 3 /*SOS EOS PAD*/
-        );
+    std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>( "bpe.checkpoint", d_model, d_hidden, seq_len );
+    transformer->train(test);
 
     while (true) {
-        // Truncate to seq_len if needed
-        std::vector<std::string> padded_enc = enc_tokens;
-        while (padded_enc.size() < seq_len) padded_enc.push_back("<PAD>");
-        if (padded_enc.size() > seq_len) padded_enc = std::vector<std::string>(padded_enc.end() - seq_len, padded_enc.end());
+        std::string next_token = transformer->eval(test);
 
-        // Pad dec_tokens to seq_len
-        std::vector<std::string> padded_dec = dec_tokens;
-        while (padded_dec.size() < seq_len) padded_dec.push_back("<PAD>");
-        if (padded_dec.size() > seq_len) padded_dec = std::vector<std::string>(padded_dec.end() - seq_len, padded_dec.end());
-
-        int next_token_id = transformer->forward(padded_enc, padded_dec);
-        std::string next_token = bytePairEnc->getTokenById(next_token_id);
-
+        test.append(next_token);
         // Stop condition (optional)
         if (next_token == "<EOS>") break;
-
-        // Append prediction
-        dec_tokens.push_back(next_token);
 
         // Print/debug generated tokens
         std::cout << next_token << ' ';
