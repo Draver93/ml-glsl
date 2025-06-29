@@ -1,0 +1,45 @@
+#version 430
+layout(local_size_x = 32) in;
+
+layout(std430) readonly buffer InputQ { float input_q[]; };     // [seq_len, input_dim]
+layout(std430) readonly buffer InputKV { float input_kv[]; };   // [seq_len, input_dim]
+layout(std430) readonly buffer WeightQ { float weight_q[]; };   // [input_dim, head_dim]
+layout(std430) readonly buffer WeightK { float weight_k[]; };   // [input_dim, head_dim]
+layout(std430) readonly buffer WeightV { float weight_v[]; };   // [input_dim, head_dim]
+
+layout(std430) writeonly buffer OutputQ { float output_q[]; };  // [seq_len, head_dim]
+layout(std430) writeonly buffer OutputK { float output_k[]; };  // [seq_len, head_dim]
+layout(std430) writeonly buffer OutputV { float output_v[]; };  // [seq_len, head_dim]
+
+uniform int seq_len;
+uniform int input_dim;
+uniform int head_dim;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= uint(seq_len * head_dim)) return;
+    
+    uint seq_idx = idx / uint(head_dim);
+    uint head_idx = idx % uint(head_dim);
+    
+    // Compute Q projection
+    float q_val = 0.0;
+    for (int i = 0; i < input_dim; i++) {
+        q_val += input_q[seq_idx * input_dim + i] * weight_q[i * head_dim + head_idx];
+    }
+    output_q[seq_idx * head_dim + head_idx] = q_val;
+    
+    // Compute K projection
+    float k_val = 0.0;
+    for (int i = 0; i < input_dim; i++) {
+        k_val += input_kv[seq_idx * input_dim + i] * weight_k[i * head_dim + head_idx];
+    }
+    output_k[seq_idx * head_dim + head_idx] = k_val;
+    
+    // Compute V projection
+    float v_val = 0.0;
+    for (int i = 0; i < input_dim; i++) {
+        v_val += input_kv[seq_idx * input_dim + i] * weight_v[i * head_dim + head_idx];
+    }
+    output_v[seq_idx * head_dim + head_idx] = v_val;
+}

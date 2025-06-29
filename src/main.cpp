@@ -241,20 +241,6 @@ void print2DImage(const std::vector<uint8_t>& image, int width, int height) {
     }
 }
 
-void print2DImage(const std::vector < float > & image, int width, int height) {
-    const char* shades = " .:-=+*#%@"; // 10 levels of intensity
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            float val = image[y * width + x];
-            val = std::clamp(val, 0.0f, 1.0f); // safety clamp
-            int shadeIdx = static_cast<int>(val * 9); // map [0,1] to 0-9
-            std::cout << shades[shadeIdx];
-        }
-        std::cout << '\n';
-    }
-}
-
 void digit_recognition() {
     // Network setup - simplified for testing
     const int inputSize = 784;
@@ -495,32 +481,33 @@ void transformer() {
     std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(1024 * 10);
     //bytePairEnc->trainFromFiles(filenames);
     //bytePairEnc->reduceVocab(50000);
+    //bytePairEnc->save("bpe.checkpoint");
     bytePairEnc->load("bpe.checkpoint");
-
     std::string test = "the quick brown fox jumps over the lazy dog";
 
-    // to run
-    //std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());  // Context
-    //while (enc_tokens.size() < seq_len) enc_tokens.push_back("<PAD>");
-    //std::vector<std::string> dec_tokens(seq_len, "<PAD>");
-    //dec_tokens.at(0) = "<SOS>";     // Start of generation
-
-    // to train
-    //std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());  // Input sequence
-    //while (enc_tokens.size() < seq_len - 1) enc_tokens.push_back("<PAD>");
-
-    //std::vector<std::string> dec_tokens = { "<SOS>" } ;  // SOS + target
-    //dec_tokens.insert(dec_tokens.end(), enc_tokens.begin(), enc_tokens.end() - 1);
-
-    //std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(d_model, d_hidden, seq_len, bytePairEnc->getVocabSize() + 3 /*SOS EOS PAD*/);
-    //int next_token_id = transformer->forward(enc_tokens, dec_tokens);
-    //std::string next_token = bytePairEnc->getTokenById(next_token_id);
 
     std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
     std::vector<std::string> dec_tokens = { "<SOS>" };
 
     std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>( "bpe.checkpoint", d_model, d_hidden, seq_len );
-    transformer->train(test);
+
+
+    auto trainFromFile = [&](const std::string& filename) {
+        std::ifstream infile(filename);
+        if (!infile.is_open()) {
+            std::cerr << "Error opening file: " << filename << std::endl;
+            return;
+        }
+
+        std::string line;
+        while (std::getline(infile, line)) {
+            resetCursor();
+            transformer->train(line);
+        }
+
+        infile.close();
+    };
+    trainFromFile("pg76287.txt");
 
     while (true) {
         std::string next_token = transformer->eval(test);
@@ -532,7 +519,6 @@ void transformer() {
         // Print/debug generated tokens
         std::cout << next_token << ' ';
     }
-
 }
 
 int main() {

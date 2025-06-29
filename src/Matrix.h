@@ -4,6 +4,7 @@
 extern "C" {
 #include <glad/glad.h>
 }
+#include <memory>
 
 namespace NNGL {
     struct Matrix {
@@ -34,7 +35,9 @@ namespace NNGL {
 
         size_t byteSize() const;
 
-        void clear() { std::memset(flatVec.data(), 0, flatVec.size() * sizeof(float)); }
+        void clear(float clear_with = 0.0f) { std::memset(flatVec.data(), clear_with, flatVec.size() * sizeof(float)); }
+
+        void copyFrom(std::shared_ptr<Matrix> srcMat);
 
         void uploadToGPU();
         void allocateBufferGPU();

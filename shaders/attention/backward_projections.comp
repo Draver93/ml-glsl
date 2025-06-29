@@ -1,0 +1,35 @@
+#version 430
+layout(local_size_x = 32) in;
+
+layout(std430) readonly buffer GradScores { float grad_scores[]; };  // [seq_len, seq_len]
+layout(std430) readonly buffer CachedQ { float cached_q[]; };        // [seq_len, head_dim]
+layout(std430) readonly buffer CachedK { float cached_k[]; };        // [seq_len, head_dim]
+
+layout(std430) writeonly buffer GradQ { float grad_q[]; };           // [seq_len, head_dim]
+layout(std430) writeonly buffer GradK { float grad_k[]; };           // [seq_len, head_dim]
+
+uniform int seq_len;
+uniform int head_dim;
+uniform float inv_sqrt_head_dim;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= uint(seq_len * head_dim)) return;
+    
+    uint seq_idx = idx / uint(head_dim);
+    uint dim_idx = idx % uint(head_dim);
+    
+    // Compute gradient w.r.t. Q
+    float grad_q_val = 0.0;
+    for (int j = 0; j < seq_len; j++) {
+        grad_q_val += grad_scores[seq_idx * seq_len + j] * cached_k[j * head_dim + dim_idx];
+    }
+    grad_q[seq_idx * head_dim + dim_idx] = grad_q_val * inv_sqrt_head_dim;
+    
+    // Compute gradient w.r.t. K
+    float grad_k_val = 0.0;
+    for (int i = 0; i < seq_len; i++) {
+        grad_k_val += grad_scores[i * seq_len + seq_idx] * cached_q[i * head_dim + dim_idx];
+    }
+    grad_k[seq_idx * head_dim + dim_idx] = grad_k_val * inv_sqrt_head_dim;
+}

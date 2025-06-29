@@ -160,4 +160,19 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
+
+    void Matrix::copyFrom(std::shared_ptr<Matrix> srcMat) {
+        if (!srcMat) {
+            throw std::invalid_argument("Source matrix is null");
+        }
+
+        // Check dimensions match
+        if (this->rows != srcMat->rows || this->cols != srcMat->cols) {
+            throw std::invalid_argument("Matrix dimensions must match for copyFrom operation");
+        }
+
+        // Copy the data from source matrix's flatVec to this matrix's flatVec
+        std::memcpy(this->flatVec.data(), srcMat->flatVec.data(), this->byteSize());
+    }
+
 }

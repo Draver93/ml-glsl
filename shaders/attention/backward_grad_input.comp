@@ -1,0 +1,27 @@
+#version 430
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, head_dim]
+layout(std430) readonly buffer Weight { float weight[]; };                  // [input_dim, head_dim]
+layout(std430) writeonly buffer GradInput { float grad_input[]; };          // [seq_len, input_dim]
+
+uniform int seq_len;
+uniform int input_dim;
+uniform int head_dim;
+
+void main() {
+    uint row = gl_GlobalInvocationID.x;  // seq_len
+    uint col = gl_GlobalInvocationID.y;  // input_dim
+    
+    if (row >= seq_len || col >= input_dim) return;
+    
+    // grad_input = grad_projection @ weight^T
+    float sum = 0.0;
+    for (uint k = 0; k < head_dim; k++) {
+        uint grad_proj_idx = row * head_dim + k;
+        uint weight_idx = col * head_dim + k;  // weight^T[k,col] = weight[col,k]
+        sum += grad_projection[grad_proj_idx] * weight[weight_idx];
+    }
+    
+    grad_input[row * input_dim + col] = sum;
+}

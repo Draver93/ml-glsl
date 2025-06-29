@@ -71,9 +71,8 @@ namespace NNGL {
 
     class TokenTrie {
     private:
-        std::unordered_map<int, std::shared_ptr<Token>> idToToken;
-        std::unordered_map<std::shared_ptr<Token>, int, TokenHasher, TokenEqual> tokenToId;
-
+        std::unordered_map<int, std::string> m_IdToToken;
+        std::unordered_map<std::string, int> m_TokenToId;
     public:
         TrieNode root;
 
@@ -91,11 +90,11 @@ namespace NNGL {
             node->token = token;
             node->usageScore = usageScore;
 
-            auto it = tokenToId.find(token);
-            if (it == tokenToId.end()) {
-                size_t id = tokenToId.size();
-                tokenToId[token] = id;
-                idToToken[id] = token;
+            auto it = m_TokenToId.find(sequence);
+            if (it == m_TokenToId.end()) {
+                size_t id = m_TokenToId.size();
+                m_TokenToId[sequence] = id;
+                m_IdToToken[id] = sequence;
                 return id;
             }
 
@@ -181,15 +180,16 @@ namespace NNGL {
 
             pruneEmptyBranches(&root);
 
-            tokenToId.clear();
-            idToToken.clear();
+            m_TokenToId.clear();
+            m_IdToToken.clear();
             int nextId = 0;
 
             std::function<void(TrieNode*)> rebuildMaps = [&](TrieNode* node) {
                 if (node->token) {
-                    if (tokenToId.find(node->token) == tokenToId.end()) {
-                        tokenToId[node->token] = nextId;
-                        idToToken[nextId] = node->token;
+                    auto tokenStr = node->token->getStr();
+                    if (m_TokenToId.find(tokenStr) == m_TokenToId.end()) {
+                        m_TokenToId[tokenStr] = nextId;
+                        m_IdToToken[nextId] = tokenStr;
                         ++nextId;
                     }
                 }
@@ -199,28 +199,24 @@ namespace NNGL {
             rebuildMaps(&root);
         }
 
-        std::shared_ptr<Token> getTokenById(int id) const {
-            auto it = idToToken.find(id);
-            return it != idToToken.end() ? it->second : nullptr;
+        std::string getTokenById(int id) const {
+            auto it = m_IdToToken.find(id);
+            return it != m_IdToToken.end() ? it->second : nullptr;
         }
 
-        int getIdByToken(const std::shared_ptr<Token>& token) const {
-            auto it = tokenToId.find(token);
-            return it != tokenToId.end() ? it->second : -1;
+        int getIdByToken(const std::string& token) const {
+            auto it = m_TokenToId.find(token);
+            return it != m_TokenToId.end() ? it->second : -1;
         }
 
-        std::string getStringById(int id) const {
-            auto token = getTokenById(id);
-            return token ? token->getStr() : "";
-        }
 
-        size_t getTokenCount() { return idToToken.size(); }
+        size_t getTokenCount() { return m_IdToToken.size(); }
 
         void clear() {
             root.children.clear();
             root.token = nullptr;
-            idToToken.clear();
-            tokenToId.clear();
+            m_IdToToken.clear();
+            m_TokenToId.clear();
         }
     };
 
@@ -233,7 +229,8 @@ namespace NNGL {
         std::vector<std::string> tokenizeInput(const char* input, size_t inputLen);
         void reduceVocab(size_t maxSize) { m_TokenTrie.reduce(maxSize); };
         size_t getVocabSize() { return m_TokenTrie.getTokenCount(); }
-        std::string getTokenById(int id) { return m_TokenTrie.getTokenById(id)->getStr(); }
+        std::string getTokenById(int id) { return m_TokenTrie.getTokenById(id); }
+        size_t getTokenByName(const std::string &name) { return m_TokenTrie.getIdByToken(name); }
 
         void save(const std::string& filepath) const;
         void load(const std::string& filepath);

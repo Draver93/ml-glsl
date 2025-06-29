@@ -11,21 +11,32 @@ namespace NNGL {
 
         //By spec input_kv we can replace kv for cross attention
         std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv = nullptr);
-        std::shared_ptr<Matrix> backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context);
-        void updateWeights(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& gradOutput, float learningRate);
 
+        //return GradInput, GradContext
+        std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context);
+ 
+        void updateWeights(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& gradOutput, float learningRate);
+    private:
+        void computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection,
+            const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
+            std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight);
     private:
 
         int m_ModelDim, m_HeadDim, m_SeqLen;
         bool m_UseMask;
 
         std::shared_ptr<Shader> 
-            m_ForwardPassWeightsCompute, 
-            m_ForwardPassScoreCompute, 
-            m_GradInputCompute, 
-            m_GradWeightCompute, 
-            m_WeightsUpdatePassCompute;
-
+            m_ForwardPassWeightsCompute,
+            m_ForwardPassScoreCompute,
+            m_ForwardPassOutCompute,
+            m_SoftmaxCompute,
+            m_BackwardOutputCompute,
+            m_BackwardScoresCompute,
+            m_WeightsUpdatePassCompute,
+            m_BackwardProjectionsCompute,
+            m_GradInputCompute,
+            m_GradWeightCompute;
+        
         std::shared_ptr<Matrix> m_WeightQueryMat;
         std::shared_ptr<Matrix> m_WeightKeyMat;
         std::shared_ptr<Matrix> m_WeightValueMat;
@@ -43,6 +54,24 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_GradWeightValueMat;
 
         std::shared_ptr<Matrix> m_OutputMat;
+
+        std::shared_ptr<Matrix> m_CachedQ;
+        std::shared_ptr<Matrix> m_CachedK;
+        std::shared_ptr<Matrix> m_CachedV;
+
+        std::shared_ptr<Matrix> m_CachedScores;
+        std::shared_ptr<Matrix> m_CachedAttentionWeights;
+
+        std::shared_ptr<Matrix> m_CachedInput;
+        std::shared_ptr<Matrix> m_CachedContext; //for cross att
+        std::shared_ptr<Matrix> m_GradInput;
+        std::shared_ptr<Matrix> m_GradContext;
+
+        std::shared_ptr<Matrix> m_GradQ;
+        std::shared_ptr<Matrix> m_GradK;
+        std::shared_ptr<Matrix> m_GradV;
+        std::shared_ptr<Matrix> m_GradScores;
+        std::shared_ptr<Matrix> m_GradAttentionWeights;
 	};
 
 }

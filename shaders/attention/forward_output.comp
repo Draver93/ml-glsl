@@ -1,0 +1,23 @@
+#version 430
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430) readonly buffer AttentionWeights { float weights[]; }; // [seq_len, seq_len]
+layout(std430) readonly buffer BufferV { float V[]; };                // [seq_len, head_dim]
+layout(std430) writeonly buffer BufferOutput { float buffer_output[]; };     // [seq_len, head_dim]
+
+uniform int seq_len;
+uniform int head_dim;
+
+void main() {
+    uint seq_idx = gl_GlobalInvocationID.x;  // output sequence position
+    uint dim_idx = gl_GlobalInvocationID.y;  // head dimension
+    
+    if (seq_idx >= uint(seq_len) || dim_idx >= uint(head_dim)) return;
+    
+    float result = 0.0;
+    for (int j = 0; j < seq_len; j++) {
+        result += weights[seq_idx * seq_len + j] * V[j * head_dim + dim_idx];
+    }
+    
+    buffer_output[seq_idx * head_dim + dim_idx] = result;
+}

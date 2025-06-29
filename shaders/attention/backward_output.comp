@@ -1,0 +1,35 @@
+#version 430
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430) readonly buffer GradOutput { float grad_out[]; };             // [seq_len, head_dim]
+layout(std430) readonly buffer CachedV { float cached_v[]; };                // [seq_len, head_dim]
+layout(std430) readonly buffer CachedAttentionWeights { float cached_attn[]; }; // [seq_len, seq_len]
+
+layout(std430) writeonly buffer GradAttentionWeights { float grad_attn[]; };  // [seq_len, seq_len]
+layout(std430) writeonly buffer GradV { float grad_v[]; };                   // [seq_len, head_dim]
+
+uniform int seq_len;
+uniform int head_dim;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    uint j = gl_GlobalInvocationID.y;
+    
+    // Compute gradient w.r.t. attention weights
+    if (i < uint(seq_len) && j < uint(seq_len)) {
+        float grad_weight = 0.0;
+        for (int d = 0; d < head_dim; d++) {
+            grad_weight += grad_out[i * head_dim + d] * cached_v[j * head_dim + d];
+        }
+        grad_attn[i * seq_len + j] = grad_weight;
+    }
+    
+    // Compute gradient w.r.t. V
+    if (i < uint(seq_len) && j < uint(head_dim)) {
+        float grad_val = 0.0;
+        for (int k = 0; k < seq_len; k++) {
+            grad_val += cached_attn[k * seq_len + i] * grad_out[k * head_dim + j];
+        }
+        grad_v[i * head_dim + j] = grad_val;
+    }
+}
