@@ -121,8 +121,8 @@ namespace NNGL {
             m_ForwardPassScoreCompute->setUniform("seq_len", input->rows);
             m_ForwardPassScoreCompute->setUniform("head_dim", m_HeadDim);
             m_ForwardPassScoreCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
-            float inv_sqrt_head_dim = 1.0f / std::sqrt(static_cast<float>(m_HeadDim));
-            m_ForwardPassScoreCompute->setUniform("inv_sqrt_head_dim", inv_sqrt_head_dim);
+            float invSqrtHeadDim = 1.0f / std::sqrt(static_cast<float>(m_HeadDim));
+            m_ForwardPassScoreCompute->setUniform("inv_sqrt_head_dim", invSqrtHeadDim);
 
             int workgroups_x = (input->rows + 15) / 16;
             int workgroups_y = (input->rows + 15) / 16;  // seq_len x seq_len
@@ -168,9 +168,9 @@ namespace NNGL {
  
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context ) {
         gradOutput->uploadToGPU();
-        const int seq_len = input->rows;
-        const int input_dim = input->cols;
-        const int head_dim = m_HeadDim;
+        const int seqLen = input->rows;
+        const int inputDim = input->cols;
+        const int headDim = m_HeadDim;
 
         // === STEP 1: Backward through final matmul (grad_output -> grad_attention_weights, grad_V) ===
         {
@@ -183,11 +183,11 @@ namespace NNGL {
             m_BackwardOutputCompute->bindBuffer(3, "GradAttentionWeights", m_GradAttentionWeights->buffer);
             m_BackwardOutputCompute->bindBuffer(4, "GradV", m_GradV->buffer);
 
-            m_BackwardOutputCompute->setUniform("seq_len", seq_len);
-            m_BackwardOutputCompute->setUniform("head_dim", head_dim);
+            m_BackwardOutputCompute->setUniform("seq_len", seqLen);
+            m_BackwardOutputCompute->setUniform("head_dim", headDim);
 
-            int workgroups_x = (seq_len + 15) / 16;
-            int workgroups_y = (seq_len + 15) / 16;
+            int workgroups_x = (seqLen + 15) / 16;
+            int workgroups_y = (seqLen + 15) / 16;
             m_BackwardOutputCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -202,10 +202,10 @@ namespace NNGL {
             m_BackwardScoresCompute->bindBuffer(1, "CachedAttentionWeights", m_CachedAttentionWeights->buffer);
             m_BackwardScoresCompute->bindBuffer(2, "GradScores", m_GradScores->buffer);
 
-            m_BackwardScoresCompute->setUniform("seq_len", seq_len);
+            m_BackwardScoresCompute->setUniform("seq_len", seqLen);
             m_BackwardScoresCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
 
-            int workgroups_x = (seq_len + 15) / 16;
+            int workgroups_x = (seqLen + 15) / 16;
             m_BackwardScoresCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -222,12 +222,12 @@ namespace NNGL {
             m_BackwardProjectionsCompute->bindBuffer(3, "GradQ", m_GradQ->buffer);
             m_BackwardProjectionsCompute->bindBuffer(4, "GradK", m_GradK->buffer);
 
-            m_BackwardProjectionsCompute->setUniform("seq_len", seq_len);
-            m_BackwardProjectionsCompute->setUniform("head_dim", head_dim);
-            float inv_sqrt_head_dim = 1.0f / std::sqrt(static_cast<float>(head_dim));
-            m_BackwardProjectionsCompute->setUniform("inv_sqrt_head_dim", inv_sqrt_head_dim);
+            m_BackwardProjectionsCompute->setUniform("seq_len", seqLen);
+            m_BackwardProjectionsCompute->setUniform("head_dim", headDim);
+            float invSqrtHeadDim = 1.0f / std::sqrt(static_cast<float>(headDim));
+            m_BackwardProjectionsCompute->setUniform("inv_sqrt_head_dim", invSqrtHeadDim);
 
-            int workgroups_x = (seq_len * head_dim + 31) / 32;
+            int workgroups_x = (seqLen * headDim + 31) / 32;
             m_BackwardProjectionsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -246,7 +246,7 @@ namespace NNGL {
                 m_GradContext, m_GradWeightKeyMat);
         }
         else {
-            auto tempGradInput = std::make_shared<Matrix>(seq_len, input_dim, 0);
+            auto tempGradInput = std::make_shared<Matrix>(seqLen, inputDim, 0);
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 tempGradInput, m_GradWeightKeyMat);
             m_GradInput->add(*tempGradInput);
@@ -254,13 +254,13 @@ namespace NNGL {
 
         // Value gradients (from input or context)
         if (context) {
-            auto tempGradContext = std::make_shared<Matrix>(seq_len, input_dim, 0);
+            auto tempGradContext = std::make_shared<Matrix>(seqLen, inputDim, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradContext, m_GradWeightValueMat);
             m_GradContext->add(*tempGradContext);
         }
         else {
-            auto tempGradInput = std::make_shared<Matrix>(seq_len, input_dim, 0);
+            auto tempGradInput = std::make_shared<Matrix>(seqLen, inputDim, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradInput, m_GradWeightValueMat);
             m_GradInput->add(*tempGradInput);

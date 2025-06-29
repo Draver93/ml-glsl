@@ -89,9 +89,9 @@ namespace NNGL {
         m_ApplyPosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
 
         // Dispatch compute shader
-        int workgroups_x = (seqLen + 15) / 16;
-        int workgroups_y = (m_ModelDim + 15) / 16;
-        m_ApplyPosEncodingCompute->dispatch(workgroups_x, workgroups_y, 1);
+        int workgroupsX = (seqLen + 15) / 16;
+        int workgroupsY = (m_ModelDim + 15) / 16;
+        m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
         embeddings->downloadFromGPU();
 
@@ -121,9 +121,9 @@ namespace NNGL {
         m_RemovePosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
 
         // Dispatch compute shader
-        int workgroups_x = (seqLen + 15) / 16;
-        int workgroups_y = (m_ModelDim + 15) / 16;
-        m_RemovePosEncodingCompute->dispatch(workgroups_x, workgroups_y, 1);
+        int workgroupsX = (seqLen + 15) / 16;
+        int workgroupsY = (m_ModelDim + 15) / 16;
+        m_RemovePosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
         embeddings->downloadFromGPU();
 

@@ -12,14 +12,14 @@ namespace NNGL {
         std::unique_ptr<NeuralNetwork> feedForward;
 
         // Cache intermediate results for backpropagation
-        std::shared_ptr<Matrix> cached_input;
-        std::shared_ptr<Matrix> cached_attention_output;
-        std::shared_ptr<Matrix> cached_ffn_input;
+        std::shared_ptr<Matrix> cachedInput;
+        std::shared_ptr<Matrix> cachedAttentionOutput;
+        std::shared_ptr<Matrix> cachedFfnInput;
 
     public:
-        EncoderBlock(int model_dim, int hidden_dim, int seq_len);
+        EncoderBlock(int modelDim, int hiddenDim, int seqLen);
         
         std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> x);
-        std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> grad_output, float learningRate);
+        std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
     };
 } 

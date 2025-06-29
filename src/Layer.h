@@ -22,7 +22,7 @@ namespace NNGL {
 
 		glm::uvec2 getSize() { return { m_Width , m_Height }; }
 		void printHeatmap();
-		void displayLayer(const std::string& layer_name);
+		void displayLayer(const std::string& layerName);
 
 	private:
 		GLuint m_WeightBuffer;

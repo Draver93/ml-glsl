@@ -37,10 +37,10 @@ namespace NNGL {
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
         inputBatchMat->uploadToGPU();
-		GLuint current_input = inputBatchMat->buffer;
+		GLuint currentInput = inputBatchMat->buffer;
 		for (auto &layer : m_Layers) {
 
-            m_ForwardPassCompute->bindBuffer(0, "InputBuffer", current_input);
+            m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
             m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
             m_ForwardPassCompute->bindBuffer(3, "OutputBuffer", layer->m_ActivationBuffer);
@@ -52,11 +52,11 @@ namespace NNGL {
             m_ForwardPassCompute->setUniform("activation_type", layer->m_ActivationFnType);
 
 			// Safe workgroup calculation with bounds checking
-			int workgroups_x = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
-			int workgroups_y = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
-            m_ForwardPassCompute->dispatch(workgroups_x, workgroups_y, 1);
+			int workgroupsX = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
+			int workgroupsY = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
+            m_ForwardPassCompute->dispatch(workgroupsX, workgroupsY, 1);
 
-			current_input = layer->m_ActivationBuffer;
+			currentInput = layer->m_ActivationBuffer;
 		}
 
 		// Unbind buffers for this layer
@@ -76,8 +76,8 @@ namespace NNGL {
         m_OutputDeltaCompute->setUniform("activation_type", m_Layers.back()->m_ActivationFnType);
 
         // Safe workgroup calculation with bounds checking
-		int output_workgroups = std::min((int)ceil((m_BatchSize * m_Layers.back()->getSize().y + 31) / 32), 65535);
-        m_OutputDeltaCompute->dispatch(output_workgroups, 1, 1);
+		int outputWorkgroups = std::min((int)ceil((m_BatchSize * m_Layers.back()->getSize().y + 31) / 32), 65535);
+        m_OutputDeltaCompute->dispatch(outputWorkgroups, 1, 1);
 
 		// Unbind output delta buffers
 		for (int j = 0; j < 4; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
@@ -98,9 +98,9 @@ namespace NNGL {
             m_HiddenDeltasCompute->setUniform("activation_type", m_Layers[i]->m_ActivationFnType);
 
 			// Safe workgroup calculation
-			int workgroups_x = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().x / 16.0f), 65535);
-			int workgroups_y = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().y / 16.0f), 65535);
-            m_HiddenDeltasCompute->dispatch(workgroups_x, workgroups_y, 1);
+			int workgroupsX = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().x / 16.0f), 65535);
+			int workgroupsY = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().y / 16.0f), 65535);
+            m_HiddenDeltasCompute->dispatch(workgroupsX, workgroupsY, 1);
 		}
 
 		// Unbind backward pass buffers
@@ -110,13 +110,13 @@ namespace NNGL {
 	// Update weights and biases for all layers
 	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate) {
         inputBatchMat->uploadToGPU();
-        GLuint current_input = inputBatchMat->buffer;
+        GLuint currentInput = inputBatchMat->buffer;
 
         for (auto& layer : m_Layers) {
 
             // --- WEIGHTS UPDATE WITH ADAM ---
             {
-                m_WeightsCompute->bindBuffer(0, "InputBuffer", current_input);
+                m_WeightsCompute->bindBuffer(0, "InputBuffer", currentInput);
                 m_WeightsCompute->bindBuffer(1, "DeltaBuffer", layer->m_DeltaBuffer);
                 m_WeightsCompute->bindBuffer(2, "WeightBuffer", layer->m_WeightBuffer);
                 m_WeightsCompute->bindBuffer(3, "ADAM_MBuffer", layer->m_ADAM_MBuffer);
@@ -131,12 +131,12 @@ namespace NNGL {
                 m_WeightsCompute->setUniform("ADAM_timestep", m_ADAM_Timestep);
 
                 // Dispatch compute for weight updates
-                int workgroups_x = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
-                int workgroups_y = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
-                m_WeightsCompute->dispatch(workgroups_x, workgroups_y, 1);
+                int workgroupsX = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
+                int workgroupsY = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
+                m_WeightsCompute->dispatch(workgroupsX, workgroupsY, 1);
 
                 // Update input for next layer
-                current_input = layer->m_ActivationBuffer;
+                currentInput = layer->m_ActivationBuffer;
 
                 // Unbind weight update buffers
                 for (int j = 0; j < 5; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
@@ -151,8 +151,8 @@ namespace NNGL {
                 m_BiasesCompute->setUniform("batch_size", m_BatchSize);
                 m_BiasesCompute->setUniform("learning_rate", learningRate);
 
-                int bias_workgroups = std::min((int)ceil((m_BatchSize * layer->getSize().y + 31) / 32), 65535);
-                m_BiasesCompute->dispatch(bias_workgroups, 1, 1);
+                int biasWorkgroups = std::min((int)ceil((m_BatchSize * layer->getSize().y + 31) / 32), 65535);
+                m_BiasesCompute->dispatch(biasWorkgroups, 1, 1);
 
                 // Unbind bias update buffers
                 for (int j = 0; j < 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
@@ -186,7 +186,7 @@ namespace NNGL {
 
     }
 
-    float NeuralNetwork::eval(int samplesToTest, bool do_softmax) {
+    float NeuralNetwork::eval(int samplesToTest, bool doSoftmax) {
 
         //if we changed layers on the fly 
         if (!m_InputBatchMat || !m_OutputBatchMat) {
@@ -222,7 +222,7 @@ namespace NNGL {
             for (int j = 0; j < outputSize; ++j)
                 expected[j] = (*m_OutputBatchMat)(j, 0);
 
-            if(do_softmax) results = softmax(results);
+            if(doSoftmax) results = softmax(results);
 
             int trueClass = std::distance(expected.begin(), std::max_element(expected.begin(), expected.end()));
             int resultClass = std::distance(results.begin(), std::max_element(results.begin(), results.end()));

@@ -98,8 +98,8 @@ namespace NNGL {
         std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
         decInputTokens.at(0) = "<SOS>";     // Start of generation
 
-        int next_token_id = predictToken(forwardPass(encInputTokens, decInputTokens));
-        return m_Tokenizer->getTokenById(next_token_id);
+        int nextTokenId = predictToken(forwardPass(encInputTokens, decInputTokens));
+        return m_Tokenizer->getTokenById(nextTokenId);
     }
 
     std::shared_ptr<Matrix> Transformer::forwardPass(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens) {
@@ -166,15 +166,15 @@ namespace NNGL {
     }
 
     int Transformer::predictToken(std::shared_ptr<Matrix> logits) {
-        int predicted_token = -1;
-        float max_token = FLT_MIN;
+        int predictedToken = -1;
+        float maxToken = FLT_MIN;
         for (int i = 0; i < logits->cols; i++) {
-            if (max_token < (*logits)(0, i)) {
-                max_token = (*logits)(0, i);
-                predicted_token = i;
+            if (maxToken < (*logits)(0, i)) {
+                maxToken = (*logits)(0, i);
+                predictedToken = i;
             }
         }
-        return predicted_token;
+        return predictedToken;
     }
 
     void Transformer::printGradientHeatmap(std::shared_ptr<Matrix> mat) {

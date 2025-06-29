@@ -85,20 +85,20 @@ namespace NNGL {
 
         // Read weights
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_WeightBuffer);
-        float* weight_ptr = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        std::copy(weight_ptr, weight_ptr + weights.size(), weights.begin());
+        float* weightPtr = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        std::copy(weightPtr, weightPtr + weights.size(), weights.begin());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
         // Find min/max for normalization
-        auto [min_it, max_it] = std::minmax_element(weights.begin(), weights.end());
-        float min_val = *min_it, max_val = *max_it;
+        auto [minIt, maxIt] = std::minmax_element(weights.begin(), weights.end());
+        float minVal = *minIt, maxVal = *maxIt;
 
         for (int i = 0; i < m_Width; i++) {
             for (int j = 0; j < m_Height; j++) {
                 // Normalize value between 0 and 1
-                float normalized = (weights[i * m_Height + j] - min_val) / (max_val - min_val);
-                int color_idx = static_cast<int>(normalized * (sizeof(colors) / sizeof(colors[0]) - 2));
-                std::cout << colors[color_idx] << "  " << colors[16]; // print 2 spaces with bg color, then reset
+                float normalized = (weights[i * m_Height + j] - minVal) / (maxVal - minVal);
+                int colorIdx = static_cast<int>(normalized * (sizeof(colors) / sizeof(colors[0]) - 2));
+                std::cout << colors[colorIdx] << "  " << colors[16]; // print 2 spaces with bg color, then reset
             }
             std::cout << "\n";
         }
@@ -107,14 +107,14 @@ namespace NNGL {
         std::cout << std::endl;
     }
 
-    void Layer::displayLayer(const std::string& layer_name) {
-        std::cout << "\n=== " << layer_name << " ===" << std::endl;
+    void Layer::displayLayer(const std::string& layerName) {
+        std::cout << "\n=== " << layerName << " ===" << std::endl;
 
         // Read weights
         std::vector<float> weights(m_Width * m_Height);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_WeightBuffer);
-        float* weight_ptr = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        std::copy(weight_ptr, weight_ptr + weights.size(), weights.begin());
+        float* weightPtr = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        std::copy(weightPtr, weightPtr + weights.size(), weights.begin());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
         // Display weight matrix
@@ -129,8 +129,8 @@ namespace NNGL {
         // Read and display biases
         std::vector<float> biases(m_Height);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER,m_BiasBuffer);
-        float* bias_ptr = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        std::copy(bias_ptr, bias_ptr + biases.size(), biases.begin());
+        float* biasPtr = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        std::copy(biasPtr, biasPtr + biases.size(), biases.begin());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
         std::cout << "Biases: ";
