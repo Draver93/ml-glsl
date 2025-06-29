@@ -1,6 +1,5 @@
 #pragma once
 
-#define NOMINMAX
 #define GLAD_GLX 0
 extern "C" {
 #include <glad/glad.h>

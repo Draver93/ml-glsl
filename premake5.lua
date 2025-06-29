@@ -16,6 +16,9 @@ project "nn-glsl-core"
     staticruntime "On"
     dependson { "glfw" }
 
+    -- Global defines for the entire project
+    defines { "NOMINMAX" }
+
     files { "src/**.h", "src/**.cpp", "external/glad/src/glad.c" }
     includedirs {
         "external/glfw/include",
