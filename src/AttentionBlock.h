@@ -6,7 +6,7 @@
 namespace NNGL {
 	class AttentionBlock {
 	public:
-		AttentionBlock(int modelDimensions, int headDimensions, int seqLen, bool mask = false);
+		AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask = false);
         ~AttentionBlock() {};
 
         //By spec input_kv we can replace kv for cross attention
@@ -22,7 +22,7 @@ namespace NNGL {
             std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight);
     private:
 
-        int m_ModelDim, m_HeadDim, m_SeqLen;
+        int m_ModelDim, m_NumHeads, m_HeadDim, m_SeqLen;
         bool m_UseMask;
 
         std::shared_ptr<Shader> 

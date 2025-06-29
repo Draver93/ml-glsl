@@ -1,34 +1,39 @@
 #include "AttentionBlock.h"
 
 namespace NNGL {
-    AttentionBlock::AttentionBlock(int modelDimensions, int headDimensions, int seqLen, bool mask)
-        : m_ModelDim(modelDimensions),  m_HeadDim(headDimensions),
+    AttentionBlock::AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask)
+        : m_ModelDim(modelDimensions), m_NumHeads(numHeads), m_HeadDim(modelDimensions / numHeads),
         m_UseMask(mask), m_SeqLen(seqLen) {
 
-        // Weight matrices: [input_dim, head_dim]
-        m_WeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim);
+        // Validate that model dimension is divisible by number of heads
+        if (modelDimensions % numHeads != 0) {
+            throw std::runtime_error("Model dimension must be divisible by number of heads");
+        }
+
+        // Weight matrices: [input_dim, model_dim] (will be reshaped to [input_dim, num_heads * head_dim])
+        m_WeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim);
         m_WeightQueryMat->randomize();
         m_WeightQueryMat->uploadToGPU();
 
-        m_WeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim);
+        m_WeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim);
         m_WeightKeyMat->randomize();
         m_WeightKeyMat->uploadToGPU();
 
-        m_WeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim);
+        m_WeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim);
         m_WeightValueMat->randomize();
         m_WeightValueMat->uploadToGPU();
 
-        // 1. Q, K, V projections [seq_len, head_dim]
-        m_CachedQ = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
-        m_CachedK = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
-        m_CachedV = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        // 1. Q, K, V projections [seq_len, num_heads * head_dim]
+        m_CachedQ = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_CachedK = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_CachedV = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
 
-        // 2. Attention scores BEFORE softmax [seq_len, seq_len]
-        m_CachedScores = std::make_shared<Matrix>(m_SeqLen, m_SeqLen);
+        // 2. Attention scores BEFORE softmax [num_heads, seq_len, seq_len]
+        m_CachedScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
         m_CachedScores->uploadToGPU();
 
-        // 3. Attention weights AFTER softmax [seq_len, seq_len]
-        m_CachedAttentionWeights = std::make_shared<Matrix>(m_SeqLen, m_SeqLen);
+        // 3. Attention weights AFTER softmax [num_heads, seq_len, seq_len]
+        m_CachedAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
         m_CachedAttentionWeights->uploadToGPU();
 
         // 4. Input matrices (for weight gradients)
@@ -40,21 +45,20 @@ namespace NNGL {
         m_GradContext = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
 
         // Weight gradients
-        m_GradWeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
-        m_GradWeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
-        m_GradWeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
+        m_GradWeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
+        m_GradWeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
+        m_GradWeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
 
         // Intermediate gradients for backprop chain
-        m_GradQ = std::make_shared<Matrix>(m_SeqLen, m_HeadDim, 0);
-        m_GradK = std::make_shared<Matrix>(m_SeqLen, m_HeadDim, 0);
-        m_GradV = std::make_shared<Matrix>(m_SeqLen, m_HeadDim, 0);
-        m_GradScores = std::make_shared<Matrix>(m_SeqLen, m_SeqLen, 0);
-        m_GradAttentionWeights = std::make_shared<Matrix>(m_SeqLen, m_SeqLen, 0);
+        m_GradQ = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradK = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradV = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
+        m_GradAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
 
-        int m_NumHeads = 1;
-        m_OutputMat = std::make_shared<Matrix>(seqLen, m_NumHeads * m_HeadDim);
+        // Output matrix: [seq_len, model_dim] (concatenated heads)
+        m_OutputMat = std::make_shared<Matrix>(seqLen, m_ModelDim);
         m_OutputMat->uploadToGPU();
-
 
         // Load shaders
         m_ForwardPassWeightsCompute = ShaderManager::getInstance().getShader("shaders/attention/forward_weights.comp");
@@ -69,7 +73,6 @@ namespace NNGL {
 
         m_GradInputCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_grad_input.comp");
         m_GradWeightCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_grad_weight.comp");
-
     }
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context) {
@@ -101,10 +104,11 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->bindBuffer(7, "OutputV", m_CachedV->buffer);
 
             m_ForwardPassWeightsCompute->setUniform("head_dim", m_HeadDim);
+            m_ForwardPassWeightsCompute->setUniform("num_heads", m_NumHeads);
             m_ForwardPassWeightsCompute->setUniform("input_dim", input->cols);
             m_ForwardPassWeightsCompute->setUniform("seq_len", input->rows);
 
-            int workgroups_x = (input->rows * m_HeadDim + 31) / 32;
+            int workgroups_x = (input->rows * m_ModelDim + 31) / 32;
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 7; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -112,7 +116,7 @@ namespace NNGL {
 
         // === STEP 2: Compute attention scores (Q * K^T / sqrt(d_k)) ===
         {
-            // This computes scores = Q @ K^T / sqrt(head_dim)
+            // This computes scores = Q @ K^T / sqrt(head_dim) for each head
             // CACHE the raw scores BEFORE softmax
             m_ForwardPassScoreCompute->bindBuffer(0, "BufferQ", m_CachedQ->buffer);
             m_ForwardPassScoreCompute->bindBuffer(1, "BufferK", m_CachedK->buffer);
@@ -120,6 +124,7 @@ namespace NNGL {
 
             m_ForwardPassScoreCompute->setUniform("seq_len", input->rows);
             m_ForwardPassScoreCompute->setUniform("head_dim", m_HeadDim);
+            m_ForwardPassScoreCompute->setUniform("num_heads", m_NumHeads);
             m_ForwardPassScoreCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
             float invSqrtHeadDim = 1.0f / std::sqrt(static_cast<float>(m_HeadDim));
             m_ForwardPassScoreCompute->setUniform("inv_sqrt_head_dim", invSqrtHeadDim);
@@ -138,6 +143,7 @@ namespace NNGL {
             m_SoftmaxCompute->bindBuffer(1, "Output", m_CachedAttentionWeights->buffer);  // CACHE THIS
 
             m_SoftmaxCompute->setUniform("seq_len", input->rows);
+            m_SoftmaxCompute->setUniform("num_heads", m_NumHeads);
             m_SoftmaxCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
 
             int workgroups = (input->rows + 15) / 16;
@@ -155,9 +161,10 @@ namespace NNGL {
 
             m_ForwardPassOutCompute->setUniform("seq_len", input->rows);
             m_ForwardPassOutCompute->setUniform("head_dim", m_HeadDim);
+            m_ForwardPassOutCompute->setUniform("num_heads", m_NumHeads);
 
             int workgroups_x = (input->rows + 15) / 16;
-            int workgroups_y = (m_HeadDim + 15) / 16;
+            int workgroups_y = (m_ModelDim + 15) / 16;
             m_ForwardPassOutCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -185,6 +192,7 @@ namespace NNGL {
 
             m_BackwardOutputCompute->setUniform("seq_len", seqLen);
             m_BackwardOutputCompute->setUniform("head_dim", headDim);
+            m_BackwardOutputCompute->setUniform("num_heads", m_NumHeads);
 
             int workgroups_x = (seqLen + 15) / 16;
             int workgroups_y = (seqLen + 15) / 16;
@@ -203,6 +211,7 @@ namespace NNGL {
             m_BackwardScoresCompute->bindBuffer(2, "GradScores", m_GradScores->buffer);
 
             m_BackwardScoresCompute->setUniform("seq_len", seqLen);
+            m_BackwardScoresCompute->setUniform("num_heads", m_NumHeads);
             m_BackwardScoresCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
 
             int workgroups_x = (seqLen + 15) / 16;
@@ -224,10 +233,11 @@ namespace NNGL {
 
             m_BackwardProjectionsCompute->setUniform("seq_len", seqLen);
             m_BackwardProjectionsCompute->setUniform("head_dim", headDim);
+            m_BackwardProjectionsCompute->setUniform("num_heads", m_NumHeads);
             float invSqrtHeadDim = 1.0f / std::sqrt(static_cast<float>(headDim));
             m_BackwardProjectionsCompute->setUniform("inv_sqrt_head_dim", invSqrtHeadDim);
 
-            int workgroups_x = (seqLen * headDim + 31) / 32;
+            int workgroups_x = (seqLen * m_ModelDim + 31) / 32;
             m_BackwardProjectionsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);

@@ -1,23 +1,33 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) readonly buffer AttentionWeights { float weights[]; }; // [seq_len, seq_len]
-layout(std430) readonly buffer BufferV { float V[]; };                // [seq_len, head_dim]
-layout(std430) writeonly buffer BufferOutput { float buffer_output[]; };     // [seq_len, head_dim]
+layout(std430) readonly buffer AttentionWeights { float weights[]; }; // [num_heads * seq_len, seq_len]
+layout(std430) readonly buffer BufferV { float V[]; };                // [seq_len, model_dim]
+layout(std430) writeonly buffer BufferOutput { float buffer_output[]; };     // [seq_len, model_dim]
 
 uniform int seq_len;
 uniform int head_dim;
+uniform int num_heads;
 
 void main() {
     uint seq_idx = gl_GlobalInvocationID.x;  // output sequence position
-    uint dim_idx = gl_GlobalInvocationID.y;  // head dimension
+    uint dim_idx = gl_GlobalInvocationID.y;  // output dimension
     
-    if (seq_idx >= uint(seq_len) || dim_idx >= uint(head_dim)) return;
+    if (seq_idx >= uint(seq_len) || dim_idx >= uint(num_heads * head_dim)) return;
+    
+    uint head_idx = dim_idx / uint(head_dim);
+    uint head_dim_idx = dim_idx % uint(head_dim);
     
     float result = 0.0;
     for (int j = 0; j < seq_len; j++) {
-        result += weights[seq_idx * seq_len + j] * V[j * head_dim + dim_idx];
+        // Get attention weight for this head
+        float weight = weights[(head_idx * seq_len + seq_idx) * seq_len + j];
+        
+        // Get V value for this head
+        float v_val = V[j * (num_heads * head_dim) + head_idx * head_dim + head_dim_idx];
+        
+        result += weight * v_val;
     }
     
-    buffer_output[seq_idx * head_dim + dim_idx] = result;
+    buffer_output[seq_idx * (num_heads * head_dim) + dim_idx] = result;
 }

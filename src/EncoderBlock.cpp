@@ -3,12 +3,12 @@
 
 namespace NNGL {
     EncoderBlock::EncoderBlock(int modelDim, int hiddenDim, int seqLen) {
-        int headDim = modelDim; // for simplicity
-        m_Attention = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen, false); // No masking for encoder
+        int numHeads = 8; // Standard number of heads for transformer
+        m_Attention = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, false); // No masking for encoder
 
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
-        m_FeedForward->addLayer(headDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        m_FeedForward->addLayer(hiddenDim, headDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
 
         // Initialize cache matrices
         m_CachedInput = std::make_shared<Matrix>(seqLen, modelDim);

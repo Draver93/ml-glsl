@@ -3,14 +3,14 @@
 
 namespace NNGL {
     DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) {
-        int headDim = modelDim; // same as modelDim for simplicity
+        int numHeads = 8; // Standard number of heads for transformer
 
-        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen, /*isMasked=*/true);
-        m_CrossAttn = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen); // CrossAttention takes Q, K, V separately
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, /*isMasked=*/true);
+        m_CrossAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen); // CrossAttention takes Q, K, V separately
 
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
-        m_FeedForward->addLayer(headDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        m_FeedForward->addLayer(hiddenDim, headDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
 
         // Initialize cache matrices
         m_CachedMaskedOut = std::make_shared<Matrix>(seqLen, modelDim);

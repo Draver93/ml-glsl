@@ -472,7 +472,7 @@ void transformer() {
     //# heads	4–8
     //layers	2–6
 
-    int d_model = 128;
+    int d_model = 128;  // Must be divisible by num_heads (8)
     int d_hidden = d_model * 4;
     int seq_len = 64;
 
