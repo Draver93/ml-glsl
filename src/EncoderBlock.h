@@ -8,13 +8,13 @@
 namespace NNGL {
     class EncoderBlock {
     private:
-        std::unique_ptr<AttentionBlock> attention;
-        std::unique_ptr<NeuralNetwork> feedForward;
+        std::unique_ptr<AttentionBlock> m_Attention;
+        std::unique_ptr<NeuralNetwork> m_FeedForward;
 
         // Cache intermediate results for backpropagation
-        std::shared_ptr<Matrix> cachedInput;
-        std::shared_ptr<Matrix> cachedAttentionOutput;
-        std::shared_ptr<Matrix> cachedFfnInput;
+        std::shared_ptr<Matrix> m_CachedInput;
+        std::shared_ptr<Matrix> m_CachedAttentionOutput;
+        std::shared_ptr<Matrix> m_CachedFfnInput;
 
     public:
         EncoderBlock(int modelDim, int hiddenDim, int seqLen);

@@ -8,14 +8,14 @@
 namespace NNGL {
     class DecoderBlock {
     private:
-        std::unique_ptr<AttentionBlock> maskedSelfAttn;   // Masked self-attention
-        std::unique_ptr<AttentionBlock> crossAttn;       // Cross-attention (encoder-decoder)
-        std::unique_ptr<NeuralNetwork> feedForward;
+        std::unique_ptr<AttentionBlock> m_MaskedSelfAttn;   // Masked self-attention
+        std::unique_ptr<AttentionBlock> m_CrossAttn;       // Cross-attention (encoder-decoder)
+        std::unique_ptr<NeuralNetwork> m_FeedForward;
 
-        std::shared_ptr<Matrix> cachedMaskedOut;
-        std::shared_ptr<Matrix> cachedCrossOut;
-        std::shared_ptr<Matrix> cachedDecoderInput;
-        std::shared_ptr<Matrix> cachedEncoderOutput;
+        std::shared_ptr<Matrix> m_CachedMaskedOut;
+        std::shared_ptr<Matrix> m_CachedCrossOut;
+        std::shared_ptr<Matrix> m_CachedDecoderInput;
+        std::shared_ptr<Matrix> m_CachedEncoderOutput;
 
     public:
         DecoderBlock(int modelDim, int hiddenDim, int seqLen);

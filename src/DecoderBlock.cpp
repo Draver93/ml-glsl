@@ -5,18 +5,18 @@ namespace NNGL {
     DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) {
         int headDim = modelDim; // same as modelDim for simplicity
 
-        maskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen, /*isMasked=*/true);
-        crossAttn = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen); // CrossAttention takes Q, K, V separately
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen, /*isMasked=*/true);
+        m_CrossAttn = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen); // CrossAttention takes Q, K, V separately
 
-        feedForward = std::make_unique<NeuralNetwork>(seqLen);
-        feedForward->addLayer(headDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        feedForward->addLayer(hiddenDim, headDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
+        m_FeedForward->addLayer(headDim, hiddenDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(hiddenDim, headDim, NNGL::ActivationFnType::RELU);
 
         // Initialize cache matrices
-        cachedMaskedOut = std::make_shared<Matrix>(seqLen, modelDim);
-        cachedCrossOut = std::make_shared<Matrix>(seqLen, modelDim);
-        cachedDecoderInput = std::make_shared<Matrix>(seqLen, modelDim);
-        cachedEncoderOutput = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedMaskedOut = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedCrossOut = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedDecoderInput = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedEncoderOutput = std::make_shared<Matrix>(seqLen, modelDim);
     }
 
     std::shared_ptr<Matrix> DecoderBlock::forward(
@@ -24,18 +24,18 @@ namespace NNGL {
         std::shared_ptr<Matrix> encoderOutput
     ) {
         // Cache inputs for backprop
-        cachedDecoderInput->copyFrom(decoderInput);
-        cachedEncoderOutput->copyFrom(encoderOutput);
+        m_CachedDecoderInput->copyFrom(decoderInput);
+        m_CachedEncoderOutput->copyFrom(encoderOutput);
 
-        auto maskedOut = maskedSelfAttn->forward(decoderInput);
+        auto maskedOut = m_MaskedSelfAttn->forward(decoderInput);
         maskedOut->add(*decoderInput);  // first residual
-        cachedMaskedOut->copyFrom(maskedOut);  // cache this intermediate result
+        m_CachedMaskedOut->copyFrom(maskedOut);  // cache this intermediate result
 
-        auto crossOut = crossAttn->forward(maskedOut, encoderOutput);
+        auto crossOut = m_CrossAttn->forward(maskedOut, encoderOutput);
         crossOut->add(*maskedOut);      // second residual
-        cachedCrossOut->copyFrom(crossOut);  // cache this intermediate result
+        m_CachedCrossOut->copyFrom(crossOut);  // cache this intermediate result
 
-        auto mlpOut = feedForward->forward(crossOut);
+        auto mlpOut = m_FeedForward->forward(crossOut);
         mlpOut->add(*crossOut);         // third residual
 
         return mlpOut;
@@ -46,14 +46,14 @@ namespace NNGL {
         auto gradCrossOutFromResidual = std::make_shared<Matrix>(*gradOutput);
         auto gradMlpInput = std::make_shared<Matrix>(*gradOutput);
 
-        auto gradFromMlp = feedForward->backward_with_targetloss(cachedCrossOut, gradMlpInput, learningRate);
+        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_CachedCrossOut, gradMlpInput, learningRate);
         gradFromMlp->add(*gradCrossOutFromResidual);
 
         // ---- 2. Backprop through second residual connection and Cross-Attention ----
         auto gradMaskedOutFromResidual = std::make_shared<Matrix>(*gradFromMlp);
         auto gradCrossInput = std::make_shared<Matrix>(*gradFromMlp);
 
-        auto [gradFromCross, gradContext] = crossAttn->backward(gradCrossInput, cachedMaskedOut, cachedEncoderOutput);
+        auto [gradFromCross, gradContext] = m_CrossAttn->backward(gradCrossInput, m_CachedMaskedOut, m_CachedEncoderOutput);
 
         gradFromCross->add(*gradMaskedOutFromResidual);
 
@@ -61,7 +61,7 @@ namespace NNGL {
         auto gradDecoderInputFromResidual = std::make_shared<Matrix>(*gradFromCross);
         auto gradMaskedInput = std::make_shared<Matrix>(*gradFromCross);
 
-        auto [gradFromMaskedSelf, maskedGradContext] = maskedSelfAttn->backward(gradMaskedInput, cachedDecoderInput, nullptr);
+        auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(gradMaskedInput, m_CachedDecoderInput, nullptr);
         gradFromMaskedSelf->add(*gradDecoderInputFromResidual);
 
         return gradFromMaskedSelf;
@@ -74,7 +74,7 @@ namespace NNGL {
         auto gradCrossOutFromResidual = std::make_shared<Matrix>(*gradOutput);
         auto gradMlpInput = std::make_shared<Matrix>(*gradOutput);
 
-        auto gradFromMlp = feedForward->backward_with_targetloss(cachedCrossOut, gradMlpInput, learningRate);
+        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_CachedCrossOut, gradMlpInput, learningRate);
         gradFromMlp->add(*gradCrossOutFromResidual);
 
         // ---- 2. Backprop through second residual connection and Cross-Attention ----
@@ -82,7 +82,7 @@ namespace NNGL {
         auto gradCrossInput = std::make_shared<Matrix>(*gradFromMlp);
 
 
-        auto [gradFromCrossQuery, gradFromCrossEncoder] = crossAttn->backward(gradCrossInput, cachedMaskedOut, cachedEncoderOutput);
+        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossInput, m_CachedMaskedOut, m_CachedEncoderOutput);
 
         gradFromCrossQuery->add(*gradMaskedOutFromResidual);
 
@@ -90,7 +90,7 @@ namespace NNGL {
         auto gradDecoderInputFromResidual = std::make_shared<Matrix>(*gradFromCrossQuery);
         auto gradMaskedInput = std::make_shared<Matrix>(*gradFromCrossQuery);
 
-        auto [gradFromMaskedSelf, gradFromMaskedEncoder] = maskedSelfAttn->backward(gradMaskedInput, cachedDecoderInput, nullptr);
+        auto [gradFromMaskedSelf, gradFromMaskedEncoder] = m_MaskedSelfAttn->backward(gradMaskedInput, m_CachedDecoderInput, nullptr);
         gradFromMaskedSelf->add(*gradDecoderInputFromResidual);
 
         // Return BOTH gradients: decoder input gradient AND encoder output gradient

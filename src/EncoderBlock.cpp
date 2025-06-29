@@ -4,32 +4,32 @@
 namespace NNGL {
     EncoderBlock::EncoderBlock(int modelDim, int hiddenDim, int seqLen) {
         int headDim = modelDim; // for simplicity
-        attention = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen, false); // No masking for encoder
+        m_Attention = std::make_unique<AttentionBlock>(modelDim, headDim, seqLen, false); // No masking for encoder
 
-        feedForward = std::make_unique<NeuralNetwork>(seqLen);
-        feedForward->addLayer(headDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        feedForward->addLayer(hiddenDim, headDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
+        m_FeedForward->addLayer(headDim, hiddenDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(hiddenDim, headDim, NNGL::ActivationFnType::RELU);
 
         // Initialize cache matrices
-        cachedInput = std::make_shared<Matrix>(seqLen, modelDim);
-        cachedAttentionOutput = std::make_shared<Matrix>(seqLen, modelDim);
-        cachedFfnInput = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedInput = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedAttentionOutput = std::make_shared<Matrix>(seqLen, modelDim);
+        m_CachedFfnInput = std::make_shared<Matrix>(seqLen, modelDim);
     }
 
     std::shared_ptr<Matrix> EncoderBlock::forward(std::shared_ptr<Matrix> x) {
         // Cache input for backpropagation
-        cachedInput->copyFrom(x);
+        m_CachedInput->copyFrom(x);
 
-        // Self-attention
-        std::shared_ptr<Matrix> attentionOutput = attention->forward(x);
+        // Self-m_Attention
+        std::shared_ptr<Matrix> attentionOutput = m_Attention->forward(x);
         attentionOutput->add(*x);  // First residual connection
 
-        // Cache attention output (after residual)
-        cachedAttentionOutput->copyFrom(attentionOutput);
-        cachedFfnInput->copyFrom(attentionOutput);
+        // Cache m_Attention output (after residual)
+        m_CachedAttentionOutput->copyFrom(attentionOutput);
+        m_CachedFfnInput->copyFrom(attentionOutput);
 
         // Feed-forward network
-        std::shared_ptr<Matrix> mlpOut = feedForward->forward(attentionOutput);
+        std::shared_ptr<Matrix> mlpOut = m_FeedForward->forward(attentionOutput);
         mlpOut->add(*attentionOutput); // Second residual connection
 
         return mlpOut;
@@ -41,19 +41,19 @@ namespace NNGL {
         auto gradFfnInputFromResidual = std::make_shared<Matrix>(*gradOutput);
         auto gradFfnInput = std::make_shared<Matrix>(*gradOutput);
 
-        // Backprop through feedforward network
-        auto gradFromFfn = feedForward->backward_with_targetloss(cachedFfnInput, gradFfnInput, learningRate);
+        // Backprop through m_FeedForward network
+        auto gradFromFfn = m_FeedForward->backward_with_targetloss(m_CachedFfnInput, gradFfnInput, learningRate);
 
         // Add gradient from residual connection
         gradFromFfn->add(*gradFfnInputFromResidual);
 
-        // ---- 2. Backprop through first residual connection and self-attention ----
-        // gradFromFfn flows to both the attention and the residual connection
+        // ---- 2. Backprop through first residual connection and self-m_Attention ----
+        // gradFromFfn flows to both the m_Attention and the residual connection
         auto gradInputFromResidual = std::make_shared<Matrix>(*gradFromFfn);
         auto gradAttentionInput = std::make_shared<Matrix>(*gradFromFfn);
 
-        // Backprop through self-attention (no context for encoder self-attention)
-        auto [ gradFromAttention, gradContext ] = attention->backward(gradAttentionInput, cachedInput, nullptr);
+        // Backprop through self-m_Attention (no context for encoder self-m_Attention)
+        auto [ gradFromAttention, gradContext ] = m_Attention->backward(gradAttentionInput, m_CachedInput, nullptr);
 
         // Add gradient from residual connection
         gradFromAttention->add(*gradInputFromResidual);

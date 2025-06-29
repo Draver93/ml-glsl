@@ -21,7 +21,7 @@ namespace NNGL {
         std::unique_ptr<NeuralNetwork> m_OutputProjection;  // W_out as NN layer
 
         size_t m_SeqLen, m_VocabSize;
-        size_t m_trainStep = 0;
+        size_t m_TrainStep = 0;
 
     public:
         Transformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen);
