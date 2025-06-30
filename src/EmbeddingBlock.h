@@ -16,7 +16,12 @@ namespace NNGL {
         std::normal_distribution<float> m_Distribution;
 
         size_t m_VocabSize, m_ModelDim, m_MaxSeqLen;
+        int m_ADAM_Timestep;
         std::unordered_map<std::string, std::vector<float>> m_Embeddings;
+        
+        // ADAM optimization buffers for embeddings
+        std::unordered_map<std::string, std::vector<float>> m_ADAM_M_Embeddings;
+        std::unordered_map<std::string, std::vector<float>> m_ADAM_V_Embeddings;
 
         std::shared_ptr<Matrix> m_PositionalEncodingMat;
 
@@ -24,6 +29,7 @@ namespace NNGL {
         std::shared_ptr<Shader> m_RemovePosEncodingCompute;
 
         void initializePositionalEncoding();
+        void initializeADAMBuffers(const std::string& token);
 
     public:
         EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen = 512);

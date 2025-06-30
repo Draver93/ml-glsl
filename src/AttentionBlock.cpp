@@ -2,62 +2,63 @@
 
 namespace NNGL {
     AttentionBlock::AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask)
-        : m_ModelDim(modelDimensions), m_NumHeads(numHeads), m_HeadDim(modelDimensions / numHeads),
-        m_UseMask(mask), m_SeqLen(seqLen) {
+        : m_ModelDim(modelDimensions), m_NumHeads(numHeads), m_HeadDim(modelDimensions / numHeads), m_SeqLen(seqLen), m_UseMask(mask), m_ADAM_Timestep(0) {
 
         // Validate that model dimension is divisible by number of heads
         if (modelDimensions % numHeads != 0) {
             throw std::runtime_error("Model dimension must be divisible by number of heads");
         }
 
-        // Weight matrices: [input_dim, model_dim] (will be reshaped to [input_dim, num_heads * head_dim])
-        m_WeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim);
-        m_WeightQueryMat->randomize();
-        m_WeightQueryMat->uploadToGPU();
+        // Initialize weight matrices
+        m_WeightQueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
+        m_WeightKeyMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
+        m_WeightValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
 
-        m_WeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim);
-        m_WeightKeyMat->randomize();
-        m_WeightKeyMat->uploadToGPU();
+        // Initialize ADAM optimization buffers for Q, K, V weights
+        m_ADAM_M_QueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
+        m_ADAM_V_QueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
+        m_ADAM_M_KeyMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
+        m_ADAM_V_KeyMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
+        m_ADAM_M_ValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
+        m_ADAM_V_ValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
 
-        m_WeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim);
-        m_WeightValueMat->randomize();
-        m_WeightValueMat->uploadToGPU();
+        // Initialize output matrices for Q, K, V projections
+        m_OutQueryMat = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_OutKeyMat = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_OutValueMat = std::make_shared<Matrix>(seqLen, modelDimensions);
 
-        // 1. Q, K, V projections [seq_len, num_heads * head_dim]
-        m_CachedQ = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
-        m_CachedK = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
-        m_CachedV = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        // Initialize gradient matrices for Q, K, V projections
+        m_GradQueryInputMat = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradKeyInputMat = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradValueInputMat = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
 
-        // 2. Attention scores BEFORE softmax [num_heads, seq_len, seq_len]
-        m_CachedScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
-        m_CachedScores->uploadToGPU();
-
-        // 3. Attention weights AFTER softmax [num_heads, seq_len, seq_len]
-        m_CachedAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
-        m_CachedAttentionWeights->uploadToGPU();
-
-        // 4. Input matrices (for weight gradients)
-        m_CachedInput = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
-        m_CachedContext = nullptr; // Will be set if cross-attention
+        // Cached forward pass values for backprop
+        m_CachedInput = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedContext = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedQ = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedK = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedV = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedScores = std::make_shared<Matrix>(numHeads * seqLen, seqLen);
+        m_CachedAttentionWeights = std::make_shared<Matrix>(numHeads * seqLen, seqLen);
 
         // Input gradients
-        m_GradInput = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
-        m_GradContext = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradInput = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradContext = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
 
         // Weight gradients
-        m_GradWeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
-        m_GradWeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
-        m_GradWeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
+        m_GradWeightQueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0);
+        m_GradWeightKeyMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0);
+        m_GradWeightValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0);
 
         // Intermediate gradients for backprop chain
-        m_GradQ = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
-        m_GradK = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
-        m_GradV = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
-        m_GradScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
-        m_GradAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
+        m_GradQ = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradK = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradV = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradScores = std::make_shared<Matrix>(numHeads * seqLen, seqLen, 0);
+        m_GradAttentionWeights = std::make_shared<Matrix>(numHeads * seqLen, seqLen, 0);
 
         // Output matrix: [seq_len, model_dim] (concatenated heads)
-        m_OutputMat = std::make_shared<Matrix>(seqLen, m_ModelDim);
+        m_OutputMat = std::make_shared<Matrix>(seqLen, modelDimensions);
         m_OutputMat->uploadToGPU();
 
         // Load shaders
@@ -68,7 +69,7 @@ namespace NNGL {
 
         m_BackwardOutputCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_output.comp");
         m_BackwardScoresCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_scores.comp");
-        m_WeightsUpdatePassCompute = ShaderManager::getInstance().getShader("shaders/attention/weights_update.comp");
+        m_WeightsUpdatePassCompute = ShaderManager::getInstance().getShader("shaders/attention/weights_update_adam.comp");
         m_BackwardProjectionsCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_projections.comp");
 
         m_GradInputCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_grad_input.comp");
@@ -276,31 +277,42 @@ namespace NNGL {
             m_GradInput->add(*tempGradInput);
         }
 
-        // === STEP 5: Update weights ===
-        updateWeights(m_WeightQueryMat, m_GradWeightQueryMat, 0.001f);
-        updateWeights(m_WeightKeyMat, m_GradWeightKeyMat, 0.001f);
-        updateWeights(m_WeightValueMat, m_GradWeightValueMat, 0.001f);
+        // === STEP 5: Update weights with ADAM ===
+        updateWeights(m_WeightQueryMat, m_GradWeightQueryMat, m_ADAM_M_QueryMat, m_ADAM_V_QueryMat, 0.001f);
+        updateWeights(m_WeightKeyMat, m_GradWeightKeyMat, m_ADAM_M_KeyMat, m_ADAM_V_KeyMat, 0.001f);
+        updateWeights(m_WeightValueMat, m_GradWeightValueMat, m_ADAM_M_ValueMat, m_ADAM_V_ValueMat, 0.001f);
+
+        // Increment ADAM timestep
+        m_ADAM_Timestep++;
 
         // Return gradient w.r.t. input
         return std::make_pair(m_GradInput, m_GradContext);
     }
 
-    void AttentionBlock::updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, float learningRate) {
+    void AttentionBlock::updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, 
+                                     const std::shared_ptr<Matrix>& adamM, const std::shared_ptr<Matrix>& adamV, float learningRate) {
 
         weight->uploadToGPU();
         gradWeight->uploadToGPU();
+        adamM->uploadToGPU();
+        adamV->uploadToGPU();
 
         m_WeightsUpdatePassCompute->bindBuffer(0, "Weight", weight->buffer);
         m_WeightsUpdatePassCompute->bindBuffer(1, "GradWeight", gradWeight->buffer);
+        m_WeightsUpdatePassCompute->bindBuffer(2, "ADAM_M", adamM->buffer);
+        m_WeightsUpdatePassCompute->bindBuffer(3, "ADAM_V", adamV->buffer);
 
         m_WeightsUpdatePassCompute->setUniform("input_dim", weight->rows);
         m_WeightsUpdatePassCompute->setUniform("head_dim", weight->cols);
         m_WeightsUpdatePassCompute->setUniform("learning_rate", learningRate);
+        m_WeightsUpdatePassCompute->setUniform("ADAM_beta1", 0.9f);
+        m_WeightsUpdatePassCompute->setUniform("ADAM_beta2", 0.999f);
+        m_WeightsUpdatePassCompute->setUniform("ADAM_timestep", m_ADAM_Timestep);
 
         int workgroups_x = (weight->rows * weight->cols + 31) / 32;
         m_WeightsUpdatePassCompute->dispatch(workgroups_x, 1, 1);
 
-        for (int i = 0; i <= 1; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+        for (int i = 0; i <= 3; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
 
     void AttentionBlock::computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection,

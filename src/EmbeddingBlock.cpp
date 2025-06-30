@@ -8,10 +8,14 @@ namespace NNGL {
         m_VocabSize(vocabSize), 
         m_ModelDim(modelDim),
         m_MaxSeqLen(maxSeqLen),
-        m_Generator(std::random_device{}()),
-        m_Distribution(0.0f, 0.02f) {
+        m_ADAM_Timestep(0) {
 
         m_Embeddings.reserve(m_VocabSize);
+
+        // Initialize random number generator
+        std::random_device rd;
+        m_Generator.seed(rd());
+        m_Distribution = std::normal_distribution<float>(0.0f, 0.1f);
 
         // Initialize positional encoding matrix
         initializePositionalEncoding();
@@ -51,7 +55,12 @@ namespace NNGL {
         // Download gradients from GPU
         gradOutput->downloadFromGPU();
 
-        // Update embeddings using cached tokens
+        // ADAM parameters
+        const float beta1 = 0.9f;
+        const float beta2 = 0.999f;
+        const float epsilon = 1e-8f;
+
+        // Update embeddings using ADAM optimization
         size_t minSize = std::min(tokens.size(), static_cast<size_t>(gradOutput->rows));
 
         for (size_t i = 0; i < minSize; ++i) {
@@ -59,11 +68,32 @@ namespace NNGL {
             auto it = m_Embeddings.find(token);
 
             if (it != m_Embeddings.end()) {
+                // Initialize ADAM buffers if needed
+                initializeADAMBuffers(token);
+                
+                auto& embedding = it->second;
+                auto& adamM = m_ADAM_M_Embeddings[token];
+                auto& adamV = m_ADAM_V_Embeddings[token];
+
                 for (size_t j = 0; j < m_ModelDim; ++j) {
-                    it->second[j] -= learningRate * (*gradOutput)(i, j);
+                    float gradient = (*gradOutput)(i, j);
+                    
+                    // ADAM update
+                    adamM[j] = beta1 * adamM[j] + (1.0f - beta1) * gradient;
+                    adamV[j] = beta2 * adamV[j] + (1.0f - beta2) * gradient * gradient;
+                    
+                    // Bias correction
+                    float m_hat = adamM[j] / (1.0f - std::pow(beta1, m_ADAM_Timestep + 1));
+                    float v_hat = adamV[j] / (1.0f - std::pow(beta2, m_ADAM_Timestep + 1));
+                    
+                    // Update embedding
+                    embedding[j] -= learningRate * m_hat / (std::sqrt(v_hat) + epsilon);
                 }
             }
         }
+
+        // Increment ADAM timestep
+        m_ADAM_Timestep++;
 
         // Return the gradient (no further backprop beyond embeddings)
         return nullptr;
@@ -212,5 +242,12 @@ namespace NNGL {
 
         // Upload to GPU
         m_PositionalEncodingMat->uploadToGPU();
+    }
+
+    void EmbeddingBlock::initializeADAMBuffers(const std::string& token) {
+        if (m_ADAM_M_Embeddings.find(token) == m_ADAM_M_Embeddings.end()) {
+            m_ADAM_M_Embeddings[token] = std::vector<float>(m_ModelDim, 0.0f);
+            m_ADAM_V_Embeddings[token] = std::vector<float>(m_ModelDim, 0.0f);
+        }
     }
 } 

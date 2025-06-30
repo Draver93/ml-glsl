@@ -1,0 +1,34 @@
+#version 430
+layout(local_size_x = 32) in;
+
+layout(std430) buffer Weight { float weight[]; };                    // [input_dim, head_dim]
+layout(std430) readonly buffer GradWeight { float grad_weight[]; };  // [input_dim, head_dim]
+layout(std430) buffer ADAM_M { float adam_m[]; };                    // [input_dim, head_dim]
+layout(std430) buffer ADAM_V { float adam_v[]; };                    // [input_dim, head_dim]
+
+uniform int input_dim;
+uniform int head_dim;
+uniform float learning_rate;
+uniform float ADAM_beta1;
+uniform float ADAM_beta2;
+uniform int ADAM_timestep;
+
+const float epsilon = 1e-8;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= uint(input_dim * head_dim)) return;
+    
+    float weight_gradient = grad_weight[idx];
+    
+    // ADAM optimization
+    adam_m[idx] = ADAM_beta1 * adam_m[idx] + (1.0 - ADAM_beta1) * weight_gradient;
+    adam_v[idx] = ADAM_beta2 * adam_v[idx] + (1.0 - ADAM_beta2) * weight_gradient * weight_gradient;
+
+    // Bias correction
+    float m_hat = adam_m[idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
+    float v_hat = adam_v[idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
+
+    // ADAM update: weight = weight - learning_rate * m_hat / (sqrt(v_hat) + epsilon)
+    weight[idx] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+} 
