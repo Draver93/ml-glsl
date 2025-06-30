@@ -244,12 +244,19 @@ namespace NNGL {
         forwardPass(inputMat);
 
         int outputSize = m_Layers.back()->getSize().y * m_BatchSize;
-        std::vector<float> results(outputSize);
+        
+        // Use memory pool instead of creating new Matrix
+        if(!forwardMatOutput) {
+            forwardMatOutput = getMatrixFromPool(inputMat->rows, inputMat->cols);
+        } else if (forwardMatOutput->rows != inputMat->rows || forwardMatOutput->cols != inputMat->cols) {
+            forwardMatOutput->reset(inputMat->rows, inputMat->cols);
+        }
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (mapped) {
-            if(!forwardMatOutput) forwardMatOutput = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
+            // Copy data directly to the pooled matrix
+            std::memcpy(forwardMatOutput->raw(), mapped, forwardMatOutput->byteSize());
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         }
         else throw std::runtime_error("data failed to map");
@@ -267,12 +274,15 @@ namespace NNGL {
 
         weightsAndBiasesUpdate(inputMat, learningRate);
 
-        std::shared_ptr<Matrix> inputGradMat;
+        // Use memory pool for input gradient matrix
+        std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
+        
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.front()->m_DeltaBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (!mapped) throw std::runtime_error("data failed to map");
 
-        inputGradMat = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
+        // Copy data directly to the pooled matrix
+        std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
         return inputGradMat; //attention block needs it
@@ -288,12 +298,15 @@ namespace NNGL {
 
         weightsAndBiasesUpdate(inputMat, learningRate);
 
-        std::shared_ptr<Matrix> inputGradMat;
+        // Use memory pool for input gradient matrix
+        std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
+        
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.front()->m_DeltaBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (!mapped) throw std::runtime_error("data failed to map");
 
-        inputGradMat = std::make_shared<Matrix>(inputMat->rows, inputMat->cols, mapped);
+        // Copy data directly to the pooled matrix
+        std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
         return inputGradMat; //attention block needs it
@@ -304,6 +317,33 @@ namespace NNGL {
         glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->flatVec.size() * sizeof(float), targetLoss->flatVec.data(), GL_DYNAMIC_DRAW);
     }
 
+    // Memory pool implementation
+    std::shared_ptr<Matrix> NeuralNetwork::getMatrixFromPool(int rows, int cols) {
+        std::lock_guard<std::mutex> lock(m_PoolMutex);
+        
+        if (!m_MatrixPool.empty()) {
+            auto matrix = m_MatrixPool.front();
+            m_MatrixPool.pop();
+            
+            // Reset the matrix to the required dimensions
+            matrix->reset(rows, cols);
+            return matrix;
+        }
+        
+        // Create new matrix if pool is empty
+        return std::make_shared<Matrix>(rows, cols);
+    }
+
+    void NeuralNetwork::returnMatrixToPool(std::shared_ptr<Matrix> matrix) {
+        if (!matrix) return;
+        
+        std::lock_guard<std::mutex> lock(m_PoolMutex);
+        
+        // Keep pool size reasonable (max 10 matrices)
+        if (m_MatrixPool.size() < 10) {
+            m_MatrixPool.push(matrix);
+        }
+    }
 
     // Interactive Testing CLI
 	void NeuralNetwork::run() {
@@ -442,7 +482,15 @@ namespace NNGL {
                             min_error = std::min(min_error, error);
                         }
                         else {
-                            // Multiple outputs - calculate MSE and check classification accuracy
+                            // Multiple outputs - check if prediction is correct
+                            int predictedClass = std::max_element(results.begin(), results.end()) - results.begin();
+                            int expectedClass = std::max_element(expected.begin(), expected.end()) - expected.begin();
+
+                            if (predictedClass == expectedClass) {
+                                correct_predictions++;
+                            }
+
+                            // Calculate MSE for this sample
                             float mse = 0.0f;
                             for (int j = 0; j < outputSize; j++) {
                                 float diff = results[j] - expected[j];
@@ -450,97 +498,61 @@ namespace NNGL {
                             }
                             mse /= outputSize;
                             total_error += mse;
-                            max_error = std::max(max_error, mse);
-                            min_error = std::min(min_error, mse);
-
-                            // Check classification accuracy (if likely classification)
-                            if (outputSize > 2) {
-                                int predictedClass = std::max_element(results.begin(), results.end()) - results.begin();
-                                int expectedClass = std::max_element(expected.begin(), expected.end()) - expected.begin();
-                                if (predictedClass == expectedClass) {
-                                    correct_predictions++;
-                                }
-                            }
                         }
                     }
 
                     std::cout << std::fixed << std::setprecision(6);
-                    std::cout << "Results for " << n << " samples:" << std::endl;
-
                     if (outputSize == 1) {
                         std::cout << "Average error: " << (total_error / n) << std::endl;
-                        std::cout << "Min error:     " << min_error << std::endl;
-                        std::cout << "Max error:     " << max_error << std::endl;
+                        std::cout << "Max error: " << max_error << std::endl;
+                        std::cout << "Min error: " << min_error << std::endl;
                     }
                     else {
-                        std::cout << "Average MSE:   " << (total_error / n) << std::endl;
-                        std::cout << "Min MSE:       " << min_error << std::endl;
-                        std::cout << "Max MSE:       " << max_error << std::endl;
-
-                        if (outputSize > 2) {
-                            float accuracy = (float)correct_predictions / n * 100.0f;
-                            std::cout << "Accuracy:      " << accuracy << "% (" << correct_predictions << "/" << n << " correct)" << std::endl;
-                        }
+                        std::cout << "Accuracy: " << (correct_predictions * 100.0f / n) << "%" << std::endl;
+                        std::cout << "Average MSE: " << (total_error / n) << std::endl;
                     }
-
                     std::cout << std::defaultfloat << std::endl;
                 }
                 else {
-                    std::cout << "Usage: batch <n> (where n is 1-1000)" << std::endl;
-                    std::cin.clear();
-                    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                    std::cout << "Invalid number. Please enter a number between 1 and 1000." << std::endl;
                 }
             }
             else if (command == "benchmark") {
                 std::cout << "Running performance benchmark..." << std::endl;
 
-                const int benchmark_samples = 10000;
-                auto start_time = std::chrono::high_resolution_clock::now();
+                const int numIterations = 1000;
+                auto start = std::chrono::high_resolution_clock::now();
 
-                for (int i = 0; i < benchmark_samples; i++) {
+                for (int i = 0; i < numIterations; i++) {
                     m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
                     forwardPass(m_InputBatchMat);
                 }
 
-                glFinish(); // Wait for all GPU operations to complete
-                auto end_time = std::chrono::high_resolution_clock::now();
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 
-                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-                double seconds = duration.count() / 1000000.0;
-                double samples_per_second = benchmark_samples / seconds;
-
-                std::cout << std::fixed << std::setprecision(2);
-                std::cout << "Benchmark results:" << std::endl;
-                std::cout << "Processed " << benchmark_samples << " samples in " << seconds << " seconds" << std::endl;
-                std::cout << "Performance: " << samples_per_second << " inferences/second" << std::endl;
-                std::cout << "Average time per inference: " << (seconds * 1000000 / benchmark_samples) << " microseconds" << std::endl;
-                std::cout << std::defaultfloat << std::endl;
-            }
-            else if (command == "help" || command == "h") {
-                std::cout << "Available commands:" << std::endl;
-                std::cout << "  test             - Test with random sample" << std::endl;
-                std::cout << "  batch <n>        - Test n random samples (1-1000)" << std::endl;
-                std::cout << "  benchmark        - Performance benchmark (10k samples)" << std::endl;
-                std::cout << "  layer <i>        - Show layer info" << std::endl;
-                std::cout << "  help             - Show this help" << std::endl;
-                std::cout << "  quit             - Exit" << std::endl;
+                std::cout << "Benchmark completed:" << std::endl;
+                std::cout << "  Iterations: " << numIterations << std::endl;
+                std::cout << "  Total time: " << duration.count() << " microseconds" << std::endl;
+                std::cout << "  Average time per iteration: " << (duration.count() / numIterations) << " microseconds" << std::endl;
+                std::cout << "  Throughput: " << (numIterations * 1000000.0 / duration.count()) << " iterations/second" << std::endl;
             }
             else if (command == "layer") {
-                int layer_idx;
-                if (!(std::cin >> layer_idx) || layer_idx < 0 || layer_idx >= m_Layers.size()) {
-                    std::cout << "Usage: layer <0-" << (m_Layers.size() - 1) << ">" << std::endl;
-                    continue;
+                int layerIndex;
+                if (std::cin >> layerIndex && layerIndex >= 0 && layerIndex < m_Layers.size()) {
+                    std::cout << "Layer " << layerIndex << ":" << std::endl;
+                    std::cout << "  Size: " << m_Layers[layerIndex]->getSize().x << "x" << m_Layers[layerIndex]->getSize().y << std::endl;
+                    std::cout << "  Activation: " << m_Layers[layerIndex]->m_ActivationFnType << std::endl;
                 }
-                m_Layers[layer_idx]->displayLayer("Layer " + std::to_string(layer_idx));
+                else {
+                    std::cout << "Invalid layer index. Please enter a number between 0 and " << (m_Layers.size() - 1) << "." << std::endl;
+                }
             }
             else {
-                std::cout << "Unknown command: " << command << std::endl;
-                std::cout << "Type 'help' for available commands." << std::endl;
+                std::cout << "Unknown command. Type 'help' for available commands." << std::endl;
             }
-
-            std::cin.clear();
         }
 
         m_BatchSize = origBatchSize;
-	}
+    }
 }

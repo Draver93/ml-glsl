@@ -5,7 +5,8 @@
 #include "Matrix.h"
 
 #include <vector>
-
+#include <queue>
+#include <mutex>
 
 namespace NNGL {
 	class NeuralNetwork {
@@ -41,6 +42,10 @@ namespace NNGL {
 		void hiddenLayersLossCalc();
 		void weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate);
 
+		// Memory pooling
+		std::shared_ptr<Matrix> getMatrixFromPool(int rows, int cols);
+		void returnMatrixToPool(std::shared_ptr<Matrix> matrix);
+
 	private:
 		int m_ADAM_Timestep;
 		int m_BatchSize;
@@ -56,6 +61,10 @@ namespace NNGL {
 			m_HiddenDeltasCompute,
 			m_WeightsCompute,
 			m_BiasesCompute;
+			
+		// Memory pool for Matrix objects
+		std::queue<std::shared_ptr<Matrix>> m_MatrixPool;
+		std::mutex m_PoolMutex;
 	public:
 		std::vector<std::unique_ptr<NNGL::Layer>> m_Layers;
 	};

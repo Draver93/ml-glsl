@@ -94,22 +94,6 @@ namespace NNGL {
             val = dist(gen);
     }
 
-    // Multiply with another matrix (this * B)
-    Matrix Matrix::multiply(const Matrix& B) const {
-        if (cols != B.rows) throw std::invalid_argument("Matrix multiplication shape mismatch");
-        Matrix result(rows, B.cols);
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < B.cols; ++j) {
-                float sum = 0.0f;
-                for (int k = 0; k < cols; ++k) {
-                    sum += (*this)(i, k) * B(k, j);
-                }
-                result(i, j) = sum;
-            }
-        }
-        return result;
-    }
-
     // Print for debugging
     void Matrix::print() const {
         for (int i = 0; i < rows; ++i) {
@@ -160,7 +144,6 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
-
     void Matrix::copyFrom(std::shared_ptr<Matrix> srcMat) {
         if (!srcMat) {
             throw std::invalid_argument("Source matrix is null");
@@ -175,4 +158,32 @@ namespace NNGL {
         std::memcpy(this->flatVec.data(), srcMat->flatVec.data(), this->byteSize());
     }
 
+    // Memory management for pooling
+    void Matrix::reserve(size_t size) {
+        flatVec.reserve(size);
+    }
+
+    void Matrix::shrink_to_fit() {
+        flatVec.shrink_to_fit();
+    }
+
+    void Matrix::reset(int newRows, int newCols, float fill) {
+        rows = newRows;
+        cols = newCols;
+        
+        // Reuse existing memory if possible
+        size_t newSize = rows * cols;
+        if (flatVec.capacity() >= newSize) {
+            flatVec.resize(newSize, fill);
+        } else {
+            flatVec.clear();
+            flatVec.resize(newSize, fill);
+        }
+        
+        // Reset GPU buffer if dimensions changed
+        if (buffer != 0) {
+            glDeleteBuffers(1, &buffer);
+            buffer = 0;
+        }
+    }
 }

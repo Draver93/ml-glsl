@@ -26,7 +26,6 @@ namespace NNGL {
         float operator()(int r, int c) const;
 
         void randomize(float min = -1.0f, float max = 1.0f);
-        Matrix multiply(const Matrix& B) const;
         void add(const Matrix& other);
         void print() const;
 
@@ -39,8 +38,14 @@ namespace NNGL {
 
         void copyFrom(std::shared_ptr<Matrix> srcMat);
 
+        // GPU operations
         void uploadToGPU();
         void allocateBufferGPU();
         void downloadFromGPU();
+        
+        // Memory management for pooling
+        void reserve(size_t size);
+        void shrink_to_fit();
+        void reset(int newRows, int newCols, float fill = 0.0f);
     };
 }
