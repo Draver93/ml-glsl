@@ -1,6 +1,6 @@
 workspace "nn-glsl-core"
     configurations { "Debug", "Release" }
-	architecture "x86_64"
+    architecture "x86_64"
     startproject "nn-glsl-core"
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
@@ -26,19 +26,28 @@ project "nn-glsl-core"
         "external/glm"
     }
 
-    filter "configurations:Debug"
+    filter { "configurations:Debug" }
         defines { "DEBUG" }
         runtime "Debug"
-        buildoptions { "/MTd" }
         symbols "On"
 
-    filter "configurations:Release"
+    filter { "configurations:Release" }
         defines { "NDEBUG" }
         runtime "Release"
-        buildoptions { "/MT" }
         optimize "On"
 
-    filter "system:windows"
+    filter { "configurations:Debug", "system:windows" }
+        buildoptions { "/MTd" }
+    filter { "configurations:Release", "system:windows" }
+        buildoptions { "/MT" }
+
+    filter { "configurations:Debug", "system:linux"}
+        buildoptions { "-static-libgcc", "-static-libstdc++", "-g" }
+    filter { "configurations:Release", "system:linux"}
+        buildoptions { "-static-libgcc", "-static-libstdc++" }
+
+
+    filter { "system:windows" }
         defines { "WINDOWS" }
         files { "external/glad/src/glad_wgl.c" }
         links {
@@ -46,18 +55,18 @@ project "nn-glsl-core"
             "opengl32"
         }
 
-    filter "system:linux"
+    filter { "system:linux" }
         defines { "LINUX" }
         files { "external/glad/src/glad_glx.c" }
         links {
-            "GL",         -- OpenGL
+            "GL",
             "dl",
+            "tbb",
             "pthread",
             "X11",
             "Xrandr",
             "Xi",
             "Xxf86vm",
             "Xcursor",
-            "glfw"        -- if installed via package manager
-         }
-   
+            "glfw"
+        }

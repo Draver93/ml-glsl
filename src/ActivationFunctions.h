@@ -2,6 +2,8 @@
 
 #include <functional>
 #include <algorithm>
+#include <cmath>
+#include <vector>
 
 namespace NNGL {
     static std::vector<float> softmax(const std::vector<float>& input) {

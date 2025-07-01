@@ -4,6 +4,7 @@
 extern "C" {
 #include <glad/glad.h>
 }
+#include <cstring>
 #include <memory>
 
 namespace NNGL {
