@@ -217,6 +217,10 @@ namespace NNGL {
                     results[j] = mapped[j];
                 }
                 glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                
+                // Log GPU data read for testing
+                std::cout << "[GPU DOWNLOAD] Test results (" << outputSize * sizeof(float) 
+                          << " bytes) downloaded from activation buffer " << m_Layers.back()->m_ActivationBuffer << std::endl;
             }
 
             for (int j = 0; j < outputSize; ++j)
@@ -258,6 +262,10 @@ namespace NNGL {
             // Copy data directly to the pooled matrix
             std::memcpy(forwardMatOutput->raw(), mapped, forwardMatOutput->byteSize());
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            
+            // Log GPU data read
+            std::cout << "[GPU DOWNLOAD] Forward pass results (" << forwardMatOutput->byteSize() 
+                      << " bytes) downloaded from activation buffer " << m_Layers.back()->m_ActivationBuffer << std::endl;
         }
         else throw std::runtime_error("data failed to map");
 
@@ -315,6 +323,10 @@ namespace NNGL {
     void NeuralNetwork::setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss) {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->flatVec.size() * sizeof(float), targetLoss->flatVec.data(), GL_DYNAMIC_DRAW);
+        
+        // Log target loss upload
+        std::cout << "[GPU UPLOAD] Target loss data (" << targetLoss->flatVec.size() * sizeof(float) 
+                  << " bytes) uploaded to delta buffer " << m_Layers.back()->m_DeltaBuffer << std::endl;
     }
 
     // Memory pool implementation
@@ -385,6 +397,10 @@ namespace NNGL {
                         results[i] = mapped[i];
                     }
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    
+                    // Log GPU data read for testing
+                    std::cout << "[GPU DOWNLOAD] Test results (" << outputSize * sizeof(float) 
+                              << " bytes) downloaded from activation buffer " << m_Layers.back()->m_ActivationBuffer << std::endl;
                 }
                 results = softmax(results);
 

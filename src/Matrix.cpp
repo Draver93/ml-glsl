@@ -6,6 +6,7 @@
 namespace NNGL {
     Matrix::Matrix(int r, int c, float fill) : 
         rows(r), cols(c), flatVec(r * c, fill) {
+        allocateBufferGPU();
     }
 
     Matrix::Matrix(int r, int c, const float* data) : rows(r), cols(c) {
@@ -22,6 +23,7 @@ namespace NNGL {
 
         // Direct copy since both input and storage are column-major
         std::copy(data, data + (rows * cols), flatVec.begin());
+        allocateBufferGPU();
     }
 
     Matrix::Matrix(const std::vector<std::vector<float>>& vec2d) {
@@ -56,6 +58,8 @@ namespace NNGL {
 
     Matrix::~Matrix() {
         if (buffer != 0) {
+            std::cout << "[GPU BUFFER] Deleting buffer " << buffer 
+                      << " for matrix " << rows << "x" << cols << std::endl;
             glDeleteBuffers(1, &buffer);
             buffer = 0;
         }
@@ -122,11 +126,19 @@ namespace NNGL {
     size_t Matrix::byteSize() const { return flatVec.size() * sizeof(float); }
 
     void Matrix::allocateBufferGPU() {
-        if (buffer != 0) glDeleteBuffers(1, &buffer);
+        if (buffer != 0) {
+            std::cout << "[GPU BUFFER] Deleting existing buffer " << buffer << std::endl;
+            glDeleteBuffers(1, &buffer);
+        }
         glGenBuffers(1, &buffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, byteSize(), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        
+        // Log GPU buffer allocation
+        std::cout << "[GPU BUFFER] Allocated new buffer " << buffer 
+                  << " for matrix " << rows << "x" << cols 
+                  << " (" << byteSize() << " bytes)" << std::endl;
     }
 
     void Matrix::uploadToGPU() {
@@ -134,14 +146,24 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), flatVec.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        
+        // Log GPU upload information
+        std::cout << "[GPU UPLOAD] Matrix " << rows << "x" << cols 
+                  << " (" << byteSize() << " bytes) uploaded to GPU buffer " << buffer << std::endl;
     }
 
     void Matrix::downloadFromGPU() {
-        if (buffer == 0) 
+        if (buffer == 0) {
+            std::cout << "[GPU DOWNLOAD] Skipped - no GPU buffer allocated" << std::endl;
             return;
+        }
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
         glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), flatVec.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        
+        // Log GPU download information
+        std::cout << "[GPU DOWNLOAD] Matrix " << rows << "x" << cols 
+                  << " (" << byteSize() << " bytes) downloaded from GPU buffer " << buffer << std::endl;
     }
 
     void Matrix::copyFrom(std::shared_ptr<Matrix> srcMat) {
@@ -182,6 +204,9 @@ namespace NNGL {
         
         // Reset GPU buffer if dimensions changed
         if (buffer != 0) {
+            std::cout << "[GPU BUFFER] Resetting buffer " << buffer 
+                      << " due to dimension change from " << rows << "x" << cols 
+                      << " to " << newRows << "x" << newCols << std::endl;
             glDeleteBuffers(1, &buffer);
             buffer = 0;
         }

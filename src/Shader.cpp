@@ -49,8 +49,16 @@ namespace NNGL {
         if (index == GL_INVALID_INDEX) {
             throw std::runtime_error("Buffer block not found: " + name);
         }
+        if (buffer == 0) {
+            throw std::runtime_error("Not initialized buffer: " + name);
+        }
         glShaderStorageBlockBinding(m_Program, index, binding_point);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding_point, buffer);
+        
+        // Log buffer binding
+        std::cout << "[SHADER BIND] Bound buffer " << buffer 
+                  << " to binding point " << binding_point 
+                  << " with name '" << name << "'" << std::endl;
     }
 
     // Set float uniform by name
@@ -78,6 +86,10 @@ namespace NNGL {
         glUseProgram(m_Program);
         glDispatchCompute(x, y, z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+        
+        // Log compute shader dispatch
+        std::cout << "[COMPUTE DISPATCH] Executed compute shader with workgroups: " 
+                  << x << "x" << y << "x" << z << std::endl;
     }
 
 	Shader::~Shader() {

@@ -363,7 +363,7 @@ void digit_recognition() {
 
         // Status updates and weight display
         if (stepsLeft % (10000) == 0) {
-            resetCursor();
+            //resetCursor();
             //for (int i = 1; i < nn.m_Layers.size(); i++) nn.m_Layers[i]->printHeatmap();
 
             float accurracy = nn.eval(100);
