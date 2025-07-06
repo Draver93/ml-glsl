@@ -1,5 +1,8 @@
 #include "EncoderBlock.h"
+#include "Logger.h"
+
 #include <memory>
+#include <iostream>
 
 namespace NNGL {
     EncoderBlock::EncoderBlock(int modelDim, int hiddenDim, int seqLen) {
@@ -22,6 +25,11 @@ namespace NNGL {
 
         // Self-m_Attention
         std::shared_ptr<Matrix> attentionOutput = m_Attention->forward(x);
+        
+        // Debug: Check dimensions before first residual connection
+        LOG_TRACE("  EncoderBlock: Input x: [" + std::to_string(x->rows) + "," + std::to_string(x->cols) + "]");
+        LOG_TRACE("  EncoderBlock: Attention output: [" + std::to_string(attentionOutput->rows) + "," + std::to_string(attentionOutput->cols) + "]");
+        
         attentionOutput->add(*x);  // First residual connection
 
         // Cache m_Attention output (after residual)
@@ -30,6 +38,11 @@ namespace NNGL {
 
         // Feed-forward network
         std::shared_ptr<Matrix> mlpOut = m_FeedForward->forward(attentionOutput);
+        
+        // Debug: Check dimensions before second residual connection
+        LOG_TRACE("  EncoderBlock: MLP output: [" + std::to_string(mlpOut->rows) + "," + std::to_string(mlpOut->cols) + "]");
+        LOG_TRACE("  EncoderBlock: Attention output (for residual): [" + std::to_string(attentionOutput->rows) + "," + std::to_string(attentionOutput->cols) + "]");
+        
         mlpOut->add(*attentionOutput); // Second residual connection
 
         return mlpOut;

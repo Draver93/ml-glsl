@@ -11,6 +11,7 @@ namespace NNGL {
         m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, /*isMasked=*/true);
         m_CrossAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen); // CrossAttention takes Q, K, V separately
 
+        // Use batch size of 1 for now, will be updated dynamically based on input
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
         m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
         m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);

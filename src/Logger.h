@@ -4,6 +4,14 @@
 #include <string>
 
 namespace NNGL {
+    enum class LogLevel {
+        LL_ERROR = 0,
+        LL_WARN = 1,
+        LL_INFO = 2,
+        LL_DEBUG = 3,
+        LL_TRACE = 4
+    };
+
     class Logger {
     public:
         static Logger& getInstance() {
@@ -11,9 +19,10 @@ namespace NNGL {
             return instance;
         }
 
-        void log(const std::string& message) {
-            if (m_enabled) {
-                std::cout << message << std::endl;
+        void log(const std::string& message, LogLevel level = LogLevel::LL_INFO) {
+            if (m_enabled && level <= m_currentLevel) {
+                std::string prefix = getLevelPrefix(level);
+                std::cout << prefix << message << std::endl;
             }
         }
 
@@ -25,14 +34,39 @@ namespace NNGL {
             return m_enabled;
         }
 
+        void setLogLevel(LogLevel level) {
+            m_currentLevel = level;
+        }
+
+        LogLevel getLogLevel() const {
+            return m_currentLevel;
+        }
+
     private:
-        Logger() : m_enabled(true) {}
+        Logger() : m_enabled(true), m_currentLevel(LogLevel::LL_INFO) {}
         Logger(const Logger&) = delete;
         Logger& operator=(const Logger&) = delete;
 
+        std::string getLevelPrefix(LogLevel level) {
+            switch (level) {
+                case LogLevel::LL_ERROR: return "[ERROR] ";
+                case LogLevel::LL_WARN:  return "[WARN]  ";
+                case LogLevel::LL_INFO:  return "[INFO]  ";
+                case LogLevel::LL_DEBUG: return "[DEBUG] ";
+                case LogLevel::LL_TRACE: return "[TRACE] ";
+                default: return "[INFO]  ";
+            }
+        }
+
         bool m_enabled;
+        LogLevel m_currentLevel;
     };
 
-    // Convenience macro for logging
-    #define LOG(message) NNGL::Logger::getInstance().log(message)
+    // Convenience macros for logging
+    #define LOG(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_INFO)
+    #define LOG_ERROR(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_ERROR)
+    #define LOG_WARN(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_WARN)
+    #define LOG_INFO(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_INFO)
+    #define LOG_DEBUG(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_DEBUG)
+    #define LOG_TRACE(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_TRACE)
 } 

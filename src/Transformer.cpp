@@ -1,4 +1,6 @@
 #include "Transformer.h"
+#include "Logger.h"
+
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
@@ -212,7 +214,7 @@ namespace NNGL {
         
         if (gradNorm > maxGradNorm) {
             float scale = maxGradNorm / gradNorm;
-            std::cout << "Gradient clipping applied: norm=" << gradNorm << ", scale=" << scale << std::endl;
+            LOG_TRACE("Gradient clipping applied: norm=" + std::to_string(gradNorm) + ", scale=" + std::to_string(scale));
             for (int i = 0; i < outputGrad->rows * outputGrad->cols; ++i) {
                 outputGrad->flatVec[i] *= scale;
             }
