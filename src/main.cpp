@@ -22,6 +22,7 @@
 #include "MNISTLoader.h"
 #include "BPE.h"
 #include "Matrix.h"
+#include "Logger.h"
 
 
 #include <vector>
@@ -456,13 +457,129 @@ void sin_multiplication() {
     nn.run();
 }
 
-
 void clean_word(std::string& word) {
     word.erase(std::remove_if(word.begin(), word.end(),
         [](unsigned char c) { return std::ispunct(c); }), word.end());
     std::transform(word.begin(), word.end(), word.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 }
+
+void transformer_simplified() {
+    // Simplified transformer for quick testing
+    // Uses smaller model and simple test data
+    NNGL::Logger::getInstance().setEnabled(false);
+
+    std::cout << "=== Simplified Transformer Test ===" << std::endl;
+
+    // Smaller model parameters for quick testing
+    int d_model = 64;   // Reduced from 128
+    int d_hidden = d_model * 2;  // Reduced from d_model * 4
+    int seq_len = 32;   // Reduced from 64
+
+    // Create a simple BPE tokenizer with smaller vocab
+    std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(); // Smaller vocab size
+    
+    // Simple test sentences for training
+    std::vector<std::string> training_data = {
+        "hello world",
+        "the cat sat",
+        "a dog runs",
+        "birds fly high",
+        "fish swim deep",
+        "trees grow tall",
+        "sun shines bright",
+        "moon glows soft",
+        "stars twinkle night",
+        "wind blows strong",
+        // Add more sentences to ensure all characters are covered
+        "hello there",
+        "hello friend",
+        "hello everyone",
+        "hello and goodbye",
+        "hello world today",
+        "hello world tomorrow",
+        "hello world forever",
+        "hello world universe",
+        "hello world planet",
+        "hello world space"
+    };
+
+    // Train BPE on simple data
+    std::cout << "Training BPE tokenizer on simple data..." << std::endl;
+    
+    // First, train on individual characters to ensure all characters are covered
+    std::string all_chars = "abcdefghijklmnopqrstuvwxyz ";
+    for (char c : all_chars) {
+        std::string char_str(1, c);
+        bytePairEnc->trainFromString(char_str, true);
+    }
+    
+    // Then train on the actual sentences
+    for (const auto& sentence : training_data) {
+        bytePairEnc->trainFromString(sentence, true);
+    }
+    bytePairEnc->reduceVocab(100); // Small vocab for testing
+    std::cout << "BPE training completed." << std::endl;
+
+    // Test input
+    std::string test_input = "hello";
+    std::cout << "Test input: '" << test_input << "'" << std::endl;
+
+    // Tokenize input
+    std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test_input.c_str(), test_input.size());
+    std::cout << "Tokenized input: ";
+    for (const auto& token : enc_tokens) {
+        std::cout << "'" << token << "' ";
+    }
+    std::cout << std::endl;
+
+    // Create transformer
+    std::cout << "Creating transformer model..." << std::endl;
+    
+    // Save BPE to temporary file
+    std::string temp_bpe_file = "temp_bpe_simplified.checkpoint";
+    bytePairEnc->save(temp_bpe_file);
+    std::cout << "BPE saved to: " << temp_bpe_file << std::endl;
+    
+    std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(
+        temp_bpe_file, d_model, d_hidden, seq_len);
+
+    // Quick training on simple data
+    std::cout << "Training transformer on simple data..." << std::endl;
+    for (int epoch = 0; epoch < 5; ++epoch) {
+        for (const auto& sentence : training_data) {
+            transformer->train(sentence);
+        }
+        std::cout << "Epoch " << (epoch + 1) << "/5 completed" << std::endl;
+    }
+
+    // Test generation
+    std::cout << "\nTesting generation..." << std::endl;
+    std::string generated_text = test_input;
+    int max_tokens = 10; // Limit generation length
+    
+    for (int i = 0; i < max_tokens; ++i) {
+        std::string next_token = transformer->eval(generated_text);
+        
+        if (next_token == "<EOS>" || next_token.empty()) {
+            std::cout << "Generation stopped (EOS or empty token)" << std::endl;
+            break;
+        }
+        
+        generated_text.append(next_token);
+        std::cout << "Generated: '" << generated_text << "'" << std::endl;
+        
+        // Simple stop condition
+        if (generated_text.length() > 50) {
+            std::cout << "Generation stopped (max length reached)" << std::endl;
+            break;
+        }
+    }
+
+    std::cout << "\nFinal generated text: '" << generated_text << "'" << std::endl;
+    std::cout << "=== Simplified Transformer Test Complete ===" << std::endl;
+}
+
 void transformer() {
     //d_model	256–512
     //vocab_size	10000–20000
@@ -521,7 +638,8 @@ void transformer() {
 
 int main() {
     srand(time(nullptr));
-    
+    NNGL::Logger::getInstance().setEnabled(false);
+
     //new tokenizer
     // take a byte convert it in vector of 8 float where each float is bit 1.0f or 0.0f
     // feed it to ???
@@ -560,6 +678,7 @@ int main() {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr << "Failed to initialize GLAD!" << std::endl; return -1; }
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+    //transformer_simplified();
     transformer();
     //digit_recognition();
 

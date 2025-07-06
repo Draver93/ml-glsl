@@ -9,6 +9,10 @@ namespace NNGL {
     Transformer::Transformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen) : m_SeqLen(seqLen) {
         m_Tokenizer = std::make_unique<BPE>();
         m_Tokenizer->load(tokCheckpointFilepath);
+        m_Tokenizer->addToken("<PAD>");
+        m_Tokenizer->addToken("<SOS>");
+        m_Tokenizer->addToken("<EOS>");
+
         m_VocabSize = m_Tokenizer->getVocabSize();
 
         m_Embedder = std::make_unique<EmbeddingBlock>(m_VocabSize, modelDim);
@@ -114,8 +118,8 @@ namespace NNGL {
 
         std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
         decInputTokens.at(0) = "<SOS>";     // Start of generation
-
-        int nextTokenId = predictToken(forwardPass(encInputTokens, decInputTokens));
+        auto result = forwardPass(encInputTokens, decInputTokens);
+        int nextTokenId = predictToken(result);
         return m_Tokenizer->getTokenById(nextTokenId);
     }
 
@@ -192,6 +196,28 @@ namespace NNGL {
 
         // 5. Backward through output projection
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(decOutputMat, targetMat, learningRate);
+        
+        // Apply gradient clipping to prevent explosion
+        float maxGradNorm = 1.0f; // Clip gradients to norm of 1.0
+        float gradNorm = 0.0f;
+        
+        // Check for NaN or infinite values and clamp them
+        for (int i = 0; i < outputGrad->rows * outputGrad->cols; ++i) {
+            if (std::isnan(outputGrad->flatVec[i]) || std::isinf(outputGrad->flatVec[i])) {
+                outputGrad->flatVec[i] = 0.0f;
+            }
+            gradNorm += outputGrad->flatVec[i] * outputGrad->flatVec[i];
+        }
+        gradNorm = std::sqrt(gradNorm);
+        
+        if (gradNorm > maxGradNorm) {
+            float scale = maxGradNorm / gradNorm;
+            std::cout << "Gradient clipping applied: norm=" << gradNorm << ", scale=" << scale << std::endl;
+            for (int i = 0; i < outputGrad->rows * outputGrad->cols; ++i) {
+                outputGrad->flatVec[i] *= scale;
+            }
+        }
+        
         printGradientHeatmap(outputGrad);
 
         // 6. Backward through decoder
@@ -216,12 +242,12 @@ namespace NNGL {
         m_Embedder->backward(encInputStrings, encGrad, learningRate);
     }
 
-    int Transformer::predictToken(std::shared_ptr<Matrix> logits) {
+    int Transformer::predictToken(std::shared_ptr<Matrix> probabilities) {
         int predictedToken = -1;
-        float maxToken = FLT_MIN;
-        for (int i = 0; i < logits->cols; i++) {
-            if (maxToken < (*logits)(0, i)) {
-                maxToken = (*logits)(0, i);
+        float maxProb = (*probabilities)(0, 0);
+        for (int i = 0; i < probabilities->cols; i++) {
+            if (maxProb < (*probabilities)(0, i)) {
+                maxProb = (*probabilities)(0, i);
                 predictedToken = i;
             }
         }

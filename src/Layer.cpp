@@ -1,4 +1,5 @@
 #include "Layer.h"
+#include "Logger.h"
 
 #include <execution>
 #include <string>
@@ -10,8 +11,8 @@ namespace NNGL {
         m_Height = height;
         m_ActivationFnType = type;
 
-        std::cout << "[LAYER INIT] Creating layer " << width << "x" << height 
-                  << " with batch size " << batchSize << std::endl;
+        LOG("[LAYER INIT] Creating layer " + std::to_string(width) + "x" + std::to_string(height) + 
+            " with batch size " + std::to_string(batchSize));
 
         // Initialize weights
         std::vector<float> weights(m_Width * m_Height);
@@ -20,21 +21,21 @@ namespace NNGL {
         glGenBuffers(1, &m_WeightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_WeightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, weights.size() * sizeof(float), weights.data(), GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created weight buffer " << m_WeightBuffer 
-                  << " (" << weights.size() * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created weight buffer " + std::to_string(m_WeightBuffer) + 
+            " (" + std::to_string(weights.size() * sizeof(float)) + " bytes)");
 
         // for ADAM calc
         glGenBuffers(1, &m_ADAM_MBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ADAM_MBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, weights.size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created ADAM M buffer " << m_ADAM_MBuffer 
-                  << " (" << weights.size() * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created ADAM M buffer " + std::to_string(m_ADAM_MBuffer) + 
+            " (" + std::to_string(weights.size() * sizeof(float)) + " bytes)");
 
         glGenBuffers(1, &m_ADAM_VBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ADAM_VBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, weights.size() * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created ADAM V buffer " << m_ADAM_VBuffer 
-                  << " (" << weights.size() * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created ADAM V buffer " + std::to_string(m_ADAM_VBuffer) + 
+            " (" + std::to_string(weights.size() * sizeof(float)) + " bytes)");
 
         // Initialize biases
         std::vector<float> biases(m_Height);
@@ -43,52 +44,52 @@ namespace NNGL {
         glGenBuffers(1, &m_BiasBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_BiasBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, biases.size() * sizeof(float), biases.data(), GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created bias buffer " << m_BiasBuffer 
-                  << " (" << biases.size() * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created bias buffer " + std::to_string(m_BiasBuffer) + 
+            " (" + std::to_string(biases.size() * sizeof(float)) + " bytes)");
 
         // Initialize activation and delta buffers
         glGenBuffers(1, &m_ActivationBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ActivationBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created activation buffer " << m_ActivationBuffer 
-                  << " (" << batchSize * m_Height * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created activation buffer " + std::to_string(m_ActivationBuffer) + 
+            " (" + std::to_string(batchSize * m_Height * sizeof(float)) + " bytes)");
 
         glGenBuffers(1, &m_PreactivationBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PreactivationBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created preactivation buffer " << m_PreactivationBuffer 
-                  << " (" << batchSize * m_Height * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created preactivation buffer " + std::to_string(m_PreactivationBuffer) + 
+            " (" + std::to_string(batchSize * m_Height * sizeof(float)) + " bytes)");
 
         glGenBuffers(1, &m_DeltaBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_DeltaBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        std::cout << "[GPU BUFFER] Created delta buffer " << m_DeltaBuffer 
-                  << " (" << batchSize * m_Height * sizeof(float) << " bytes)" << std::endl;
+        LOG("[GPU BUFFER] Created delta buffer " + std::to_string(m_DeltaBuffer) + 
+            " (" + std::to_string(batchSize * m_Height * sizeof(float)) + " bytes)");
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
 
 	Layer::~Layer() {
-        std::cout << "[LAYER CLEANUP] Deleting layer " << m_Width << "x" << m_Height << std::endl;
+        LOG("[LAYER CLEANUP] Deleting layer " + std::to_string(m_Width) + "x" + std::to_string(m_Height));
 
         if(m_WeightBuffer) {
-            std::cout << "[GPU BUFFER] Deleting weight buffer " << m_WeightBuffer << std::endl;
+            LOG("[GPU BUFFER] Deleting weight buffer " + std::to_string(m_WeightBuffer));
             glDeleteBuffers(1, &m_WeightBuffer);
         }
         if(m_BiasBuffer) {
-            std::cout << "[GPU BUFFER] Deleting bias buffer " << m_BiasBuffer << std::endl;
+            LOG("[GPU BUFFER] Deleting bias buffer " + std::to_string(m_BiasBuffer));
             glDeleteBuffers(1, &m_BiasBuffer);
         }
         if(m_ActivationBuffer) {
-            std::cout << "[GPU BUFFER] Deleting activation buffer " << m_ActivationBuffer << std::endl;
+            LOG("[GPU BUFFER] Deleting activation buffer " + std::to_string(m_ActivationBuffer));
             glDeleteBuffers(1, &m_ActivationBuffer);
         }
         if(m_PreactivationBuffer) {
-            std::cout << "[GPU BUFFER] Deleting preactivation buffer " << m_PreactivationBuffer << std::endl;
+            LOG("[GPU BUFFER] Deleting preactivation buffer " + std::to_string(m_PreactivationBuffer));
             glDeleteBuffers(1, &m_PreactivationBuffer);
         }
         if(m_DeltaBuffer) {
-            std::cout << "[GPU BUFFER] Deleting delta buffer " << m_DeltaBuffer << std::endl;
+            LOG("[GPU BUFFER] Deleting delta buffer " + std::to_string(m_DeltaBuffer));
             glDeleteBuffers(1, &m_DeltaBuffer);
         }
 	}
@@ -123,8 +124,8 @@ namespace NNGL {
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         
         // Log GPU data read for visualization
-        std::cout << "[GPU DOWNLOAD] Weight data (" << weights.size() * sizeof(float) 
-                  << " bytes) downloaded from weight buffer " << m_WeightBuffer << " for heatmap" << std::endl;
+        LOG("[GPU DOWNLOAD] Weight data (" + std::to_string(weights.size() * sizeof(float)) + 
+            " bytes) downloaded from weight buffer " + std::to_string(m_WeightBuffer) + " for heatmap");
 
         // Find min/max for normalization
         auto [minIt, maxIt] = std::minmax_element(weights.begin(), weights.end());
@@ -155,8 +156,8 @@ namespace NNGL {
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         
         // Log GPU data read for layer display
-        std::cout << "[GPU DOWNLOAD] Weight data (" << weights.size() * sizeof(float) 
-                  << " bytes) downloaded from weight buffer " << m_WeightBuffer << " for layer display" << std::endl;
+        LOG("[GPU DOWNLOAD] Weight data (" + std::to_string(weights.size() * sizeof(float)) + 
+            " bytes) downloaded from weight buffer " + std::to_string(m_WeightBuffer) + " for layer display");
 
         // Display weight matrix
         std::cout << "Weights (" << m_Width << "x" << m_Height << "):" << std::endl;
@@ -175,8 +176,8 @@ namespace NNGL {
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         
         // Log GPU data read for bias display
-        std::cout << "[GPU DOWNLOAD] Bias data (" << biases.size() * sizeof(float) 
-                  << " bytes) downloaded from bias buffer " << m_BiasBuffer << " for layer display" << std::endl;
+        LOG("[GPU DOWNLOAD] Bias data (" + std::to_string(biases.size() * sizeof(float)) + 
+            " bytes) downloaded from bias buffer " + std::to_string(m_BiasBuffer) + " for layer display");
 
         std::cout << "Biases: ";
         for (float b : biases) {

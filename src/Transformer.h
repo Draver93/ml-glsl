@@ -20,11 +20,11 @@ namespace NNGL {
         std::string eval(std::string& inputText);
 
     private:
-        void trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize = 0, float learningRate = 0.01f);
+        void trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize = 0, float learningRate = 0.001f);
         void trainNextToken(const std::vector<std::string>& inputTokens, float learningRate);
         
         // Optimized versions using integer tokens
-        void trainOnSequenceInt(const std::vector<int>& longSequence, size_t windowSize = 0, float learningRate = 0.01f);
+        void trainOnSequenceInt(const std::vector<int>& longSequence, size_t windowSize = 0, float learningRate = 0.001f);
         void trainNextTokenInt(const std::vector<int>& inputTokens, float learningRate);
         
         std::shared_ptr<Matrix> forwardPass(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens);
@@ -40,7 +40,7 @@ namespace NNGL {
                            int targetTokenId,
                            float learningRate);
         
-        int predictToken(std::shared_ptr<Matrix> logits);
+        int predictToken(std::shared_ptr<Matrix> probabilities);
         void printGradientHeatmap(std::shared_ptr<Matrix> mat);
 
         // Token conversion helpers

@@ -1,4 +1,5 @@
 #include "Shader.h"
+#include "Logger.h"
 
 #include <iomanip>
 #include <iostream>
@@ -56,9 +57,9 @@ namespace NNGL {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding_point, buffer);
         
         // Log buffer binding
-        std::cout << "[SHADER BIND] Bound buffer " << buffer 
-                  << " to binding point " << binding_point 
-                  << " with name '" << name << "'" << std::endl;
+        LOG("[SHADER BIND] Bound buffer " + std::to_string(buffer) + 
+            " to binding point " + std::to_string(binding_point) + 
+            " with name '" + name + "'");
     }
 
     // Set float uniform by name
@@ -88,8 +89,8 @@ namespace NNGL {
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         
         // Log compute shader dispatch
-        std::cout << "[COMPUTE DISPATCH] Executed compute shader with workgroups: " 
-                  << x << "x" << y << "x" << z << std::endl;
+        LOG("[COMPUTE DISPATCH] Executed compute shader with workgroups: " + 
+            std::to_string(x) + "x" + std::to_string(y) + "x" + std::to_string(z));
     }
 
 	Shader::~Shader() {

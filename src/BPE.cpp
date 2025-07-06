@@ -85,6 +85,30 @@ namespace NNGL {
         for (auto& fut : futures) fut.get();
     }
 
+    void BPE::trainFromString(const std::string& text, bool append) {
+        if (!append) {
+            m_TokenTrie.clear();
+        }
+
+        // Process the text directly
+        processChunk(text.c_str(), text.size());
+    }
+
+    void BPE::addToken(const std::string& token) {
+        if (token.empty()) return;
+        
+        // Create a token object from the string
+        auto tokenObj = std::make_shared<Token>(token[0]);
+        for (size_t i = 1; i < token.size(); ++i) {
+            auto nextChar = std::make_shared<Token>(token[i]);
+            tokenObj = std::make_shared<Token>(tokenObj, nextChar);
+        }
+        
+        // Insert directly into trie
+        std::lock_guard<std::mutex> lock(m_TrieMutex);
+        m_TokenTrie.insert(token, tokenObj);
+    }
+
     std::vector<std::string> BPE::tokenizeInput(const char* input, size_t inputLen) {
         std::vector<std::string> result;
         size_t i = 0;

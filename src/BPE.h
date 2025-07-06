@@ -201,12 +201,14 @@ namespace NNGL {
 
         std::string getTokenById(int id) const {
             auto it = m_IdToToken.find(id);
-            return it != m_IdToToken.end() ? it->second : nullptr;
+            if (it == m_IdToToken.end()) throw std::runtime_error("Token not found");
+            return it->second;
         }
 
         int getIdByToken(const std::string& token) const {
             auto it = m_TokenToId.find(token);
-            return it != m_TokenToId.end() ? it->second : -1;
+            if (it == m_TokenToId.end()) throw std::runtime_error("Token not found");
+            return it->second;
         }
 
 
@@ -225,7 +227,9 @@ namespace NNGL {
         explicit BPE(size_t mergeLimit = 10000);
 
         void processChunk(const char* chunk, size_t chunkSize);
-        void trainFromFiles(const std::vector<std::string>& files, bool append = false);
+        void trainFromFiles(const std::vector<std::string>& files, bool append = true);
+        void trainFromString(const std::string& text, bool append = true);
+        void addToken(const std::string& token);
         std::vector<std::string> tokenizeInput(const char* input, size_t inputLen);
         void reduceVocab(size_t maxSize) { m_TokenTrie.reduce(maxSize); };
         size_t getVocabSize() { return m_TokenTrie.getTokenCount(); }

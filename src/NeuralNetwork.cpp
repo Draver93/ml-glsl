@@ -1,4 +1,5 @@
 #include "NeuralNetwork.h"
+#include "Logger.h"
 
 #include <execution>
 #include <iostream>
@@ -198,11 +199,10 @@ namespace NNGL {
         m_BatchSize = 1;
 
         float totalRegressionError = 0.0f;
-        float confidenceSum = 0.0f;  // sum of probabilities assigned to true classes
+        float confidenceSum = 0.0f;
         int classificationSamples = 0;
 
-        for (int i = 0; i < samplesToTest; ++i) {
-
+        for (int i = 0; i < samplesToTest; i++) {
             m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
             forwardPass(m_InputBatchMat);
 
@@ -219,8 +219,8 @@ namespace NNGL {
                 glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 
                 // Log GPU data read for testing
-                std::cout << "[GPU DOWNLOAD] Test results (" << outputSize * sizeof(float) 
-                          << " bytes) downloaded from activation buffer " << m_Layers.back()->m_ActivationBuffer << std::endl;
+                LOG("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
+                    " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
             }
 
             for (int j = 0; j < outputSize; ++j)
@@ -264,8 +264,8 @@ namespace NNGL {
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
             
             // Log GPU data read
-            std::cout << "[GPU DOWNLOAD] Forward pass results (" << forwardMatOutput->byteSize() 
-                      << " bytes) downloaded from activation buffer " << m_Layers.back()->m_ActivationBuffer << std::endl;
+            LOG("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) + 
+                " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
         }
         else throw std::runtime_error("data failed to map");
 
@@ -325,8 +325,8 @@ namespace NNGL {
         glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->flatVec.size() * sizeof(float), targetLoss->flatVec.data(), GL_DYNAMIC_DRAW);
         
         // Log target loss upload
-        std::cout << "[GPU UPLOAD] Target loss data (" << targetLoss->flatVec.size() * sizeof(float) 
-                  << " bytes) uploaded to delta buffer " << m_Layers.back()->m_DeltaBuffer << std::endl;
+        LOG("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->flatVec.size() * sizeof(float)) + 
+            " bytes) uploaded to delta buffer " + std::to_string(m_Layers.back()->m_DeltaBuffer));
     }
 
     // Memory pool implementation
@@ -399,8 +399,8 @@ namespace NNGL {
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                     
                     // Log GPU data read for testing
-                    std::cout << "[GPU DOWNLOAD] Test results (" << outputSize * sizeof(float) 
-                              << " bytes) downloaded from activation buffer " << m_Layers.back()->m_ActivationBuffer << std::endl;
+                    LOG("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
+                        " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
                 }
                 results = softmax(results);
 
