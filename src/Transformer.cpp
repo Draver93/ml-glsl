@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <cfloat>
 #include <sstream>
+#include <windows.h>
 
 namespace NNGL {
     Transformer::Transformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen) : m_SeqLen(seqLen) {
@@ -34,9 +35,7 @@ namespace NNGL {
             return;
         }
 
-        // Convert to integer tokens for optimized training
-        std::vector<int> tokenIds = stringToTokenIds(tokens);
-        trainOnSequenceInt(tokenIds);
+        trainOnSequence(tokens);
     }
 
     void Transformer::trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize, float learningRate) {
@@ -57,23 +56,6 @@ namespace NNGL {
         }
     }
 
-    void Transformer::trainOnSequenceInt(const std::vector<int>& longSequence, size_t windowSize, float learningRate) {
-        if (windowSize == 0) windowSize = m_SeqLen + 1;
-
-        if (longSequence.size() < windowSize) {
-            trainNextTokenInt(longSequence, learningRate);
-            return;
-        }
-
-        // Optimized sliding window - reuse vectors
-        std::vector<int> window(windowSize);
-        for (size_t i = 0; i <= longSequence.size() - windowSize; ++i) {
-            // Copy window data without creating new vector
-            std::copy(longSequence.begin() + i, longSequence.begin() + i + windowSize, window.begin());
-            trainNextTokenInt(window, learningRate);
-        }
-    }
-
     void Transformer::trainNextToken(const std::vector<std::string>& inputTokens, float learningRate) {
         if (inputTokens.size() < 2) {
             throw std::runtime_error("Need at least 2 tokens for next-token prediction");
@@ -81,19 +63,11 @@ namespace NNGL {
 
         // Convert to integer tokens and use optimized version
         std::vector<int> tokenIds = stringToTokenIds(inputTokens);
-        trainNextTokenInt(tokenIds, learningRate);
-    }
-
-    void Transformer::trainNextTokenInt(const std::vector<int>& inputTokens, float learningRate) {
-        if (inputTokens.size() < 2) {
-            throw std::runtime_error("Need at least 2 tokens for next-token prediction");
-        }
-
         // Prepare input sequence (all tokens except the last one)
-        std::vector<int> contextTokens(inputTokens.begin(), inputTokens.end() - 1);
+        std::vector<int> contextTokens(tokenIds.begin(), tokenIds.end() - 1);
 
         // Target is the last token (what we want to predict)
-        int targetTokenId = inputTokens.back();
+        int targetTokenId = tokenIds.back();
 
         // Pad or truncate context to sequence length
         while (contextTokens.size() < m_SeqLen) {
@@ -219,9 +193,8 @@ namespace NNGL {
                 outputGrad->flatVec[i] *= scale;
             }
         }
-        
+        Sleep(1000);
         printGradientHeatmap(outputGrad);
-
         // 6. Backward through decoder
         std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> decoderGrads =
             m_Decoder->backwardWithEncoderGrad(outputGrad, learningRate);

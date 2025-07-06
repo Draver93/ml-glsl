@@ -23,10 +23,6 @@ namespace NNGL {
         void trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize = 0, float learningRate = 0.001f);
         void trainNextToken(const std::vector<std::string>& inputTokens, float learningRate);
         
-        // Optimized versions using integer tokens
-        void trainOnSequenceInt(const std::vector<int>& longSequence, size_t windowSize = 0, float learningRate = 0.001f);
-        void trainNextTokenInt(const std::vector<int>& inputTokens, float learningRate);
-        
         std::shared_ptr<Matrix> forwardPass(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens);
         std::shared_ptr<Matrix> forwardPassInt(const std::vector<int>& encInputTokens, const std::vector<int>& decInputTokens);
         

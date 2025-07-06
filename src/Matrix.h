@@ -28,6 +28,7 @@ namespace NNGL {
 
         void randomize(float min = -1.0f, float max = 1.0f);
         void add(const Matrix& other);
+        void add(const Matrix& other, float scale);
         void print() const;
 
         float* raw();

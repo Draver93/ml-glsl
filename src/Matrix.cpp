@@ -119,6 +119,16 @@ namespace NNGL {
         }
     }
 
+    void Matrix::add(const Matrix& other, float scale) {
+        if (rows != other.rows || cols != other.cols) {
+            throw std::runtime_error("Matrix dimensions must match for addition");
+        }
+
+        for (size_t i = 0; i < flatVec.size(); ++i) {
+            flatVec[i] += other.flatVec[i] * scale;
+        }
+    }
+
     // Return raw pointer (useful for GPU upload)
     float* Matrix::raw() { return flatVec.data(); }
     const float* Matrix::raw() const { return flatVec.data(); }

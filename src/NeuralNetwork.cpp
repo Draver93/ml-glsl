@@ -255,7 +255,7 @@ namespace NNGL {
         } else if (forwardMatOutput->rows != inputMat->rows || forwardMatOutput->cols != inputMat->cols) {
             forwardMatOutput->reset(inputMat->rows, inputMat->cols);
         }
-
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (mapped) {
@@ -284,7 +284,7 @@ namespace NNGL {
 
         // Use memory pool for input gradient matrix
         std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
-        
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.front()->m_DeltaBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (!mapped) throw std::runtime_error("data failed to map");
