@@ -61,12 +61,15 @@ namespace NNGL {
 			m_OutputDeltaCompute,
 			m_HiddenDeltasCompute,
 			m_WeightsCompute,
-			m_BiasesCompute;
-			
+			m_BiasesCompute,
+			m_InputDeltaCompute;
 		// Memory pool for Matrix objects
 		std::queue<std::shared_ptr<Matrix>> m_MatrixPool;
 		std::mutex m_PoolMutex;
+
+		GLuint m_InputGradBuffer; // Buffer for input gradient, now owned by NeuralNetwork
 	public:
 		std::vector<std::unique_ptr<NNGL::Layer>> m_Layers;
+		void inputGradientCalc();
 	};
 }

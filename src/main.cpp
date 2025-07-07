@@ -1406,11 +1406,11 @@ int main() {
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     
     // Run comprehensive unit tests
-    runAllUnitTests();
+    //runAllUnitTests();
     
     //transformer_simplified();
-    transformer();
-    //digit_recognition();
+    //transformer();
+    digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;
 

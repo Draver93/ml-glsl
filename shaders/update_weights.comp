@@ -46,6 +46,12 @@ void main() {
     float m_hat = adam_m[idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
     float v_hat = adam_v[idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
 
-    weights[idx] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon); //ADAM
+    v_hat = max(v_hat, epsilon); // Prevent sqrt of zero or negative
+    float denom = sqrt(v_hat) + epsilon;
+    if (denom == 0.0) denom = epsilon;
+    weights[idx] -= learning_rate * m_hat / denom;
+    
+    if (isnan(weights[idx]) || isinf(weights[idx])) weights[idx] = 0.0;
+    
     //weights[idx] -= learning_rate * weight_gradient; SGD
 }

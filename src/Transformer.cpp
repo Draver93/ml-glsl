@@ -199,26 +199,6 @@ namespace NNGL {
         // 5. Backward through output projection
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(decOutputMat, targetMat, learningRate);
 
-        // Apply gradient clipping to prevent explosion
-        float maxGradNorm = 1.0f; // Clip gradients to norm of 1.0
-        float gradNorm = 0.0f;
-
-        // Check for NaN or infinite values and clamp them
-        for (int i = 0; i < outputGrad->rows * outputGrad->cols; ++i) {
-            if (std::isnan(outputGrad->flatVec[i]) || std::isinf(outputGrad->flatVec[i])) {
-                outputGrad->flatVec[i] = 0.0f;
-            }
-            gradNorm += outputGrad->flatVec[i] * outputGrad->flatVec[i];
-        }
-        gradNorm = std::sqrt(gradNorm);
-
-        if (gradNorm > maxGradNorm) {
-            float scale = maxGradNorm / gradNorm;
-            LOG_TRACE("Gradient clipping applied: norm=" + std::to_string(gradNorm) + ", scale=" + std::to_string(scale));
-            for (int i = 0; i < outputGrad->rows * outputGrad->cols; ++i) {
-                outputGrad->flatVec[i] *= scale;
-            }
-        }
 
         printGradientHeatmap(outputGrad);
 

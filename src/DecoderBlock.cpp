@@ -32,29 +32,14 @@ namespace NNGL {
         m_CachedEncoderOutput->copyFrom(encoderOutput);
 
         auto maskedOut = m_MaskedSelfAttn->forward(decoderInput);
-
-        // Debug: Check dimensions before first residual connection
-        LOG_TRACE("  DecoderBlock: Decoder input: [" + std::to_string(decoderInput->rows) + "," + std::to_string(decoderInput->cols) + "]");
-        LOG_TRACE("  DecoderBlock: Masked attention output: [" + std::to_string(maskedOut->rows) + "," + std::to_string(maskedOut->cols) + "]");
-
         maskedOut->add(*decoderInput);  // first residual
         m_CachedMaskedOut->copyFrom(maskedOut);  // cache this intermediate result
 
         auto crossOut = m_CrossAttn->forward(maskedOut, encoderOutput);
-
-        // Debug: Check dimensions before second residual connection
-        LOG_TRACE("  DecoderBlock: Cross attention output: [" + std::to_string(crossOut->rows) + "," + std::to_string(crossOut->cols) + "]");
-        LOG_TRACE("  DecoderBlock: Masked output (for residual): [" + std::to_string(maskedOut->rows) + "," + std::to_string(maskedOut->cols) + "]");
-
         crossOut->add(*maskedOut);      // second residual
         m_CachedCrossOut->copyFrom(crossOut);  // cache this intermediate result
 
         auto mlpOut = m_FeedForward->forward(crossOut);
-
-        // Debug: Check dimensions before third residual connection
-        LOG_TRACE("  DecoderBlock: MLP output: [" + std::to_string(mlpOut->rows) + "," + std::to_string(mlpOut->cols) + "]");
-        LOG_TRACE("  DecoderBlock: Cross output (for residual): [" + std::to_string(crossOut->rows) + "," + std::to_string(crossOut->cols) + "]");
-
         mlpOut->add(*crossOut);         // third residual
 
         return mlpOut;

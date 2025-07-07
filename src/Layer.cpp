@@ -92,7 +92,7 @@ namespace NNGL {
             LOG("[GPU BUFFER] Deleting delta buffer " + std::to_string(m_DeltaBuffer));
             glDeleteBuffers(1, &m_DeltaBuffer);
         }
-	}
+    }
 
     const std::string colors[] = {
     "\033[48;5;17m",   // deep blue

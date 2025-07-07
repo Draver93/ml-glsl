@@ -109,21 +109,23 @@ namespace NNGL {
         std::cout << '\n';
     }
 
-    void Matrix::add(const Matrix& other) {
+    void Matrix::add(Matrix& other) {
         if (rows != other.rows || cols != other.cols) {
             throw std::runtime_error("Matrix dimensions must match for addition");
         }
-
+        if (buffer) downloadFromGPU();
+        if (other.buffer) other.downloadFromGPU();
         for (size_t i = 0; i < flatVec.size(); ++i) {
             flatVec[i] += other.flatVec[i];
         }
     }
 
-    void Matrix::add(const Matrix& other, float scale) {
+    void Matrix::add(Matrix& other, float scale) {
         if (rows != other.rows || cols != other.cols) {
             throw std::runtime_error("Matrix dimensions must match for addition");
         }
-
+        if(buffer) downloadFromGPU();
+        if (other.buffer) other.downloadFromGPU();
         for (size_t i = 0; i < flatVec.size(); ++i) {
             flatVec[i] += other.flatVec[i] * scale;
         }

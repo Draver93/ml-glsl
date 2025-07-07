@@ -1,0 +1,32 @@
+#version 430
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430) restrict readonly buffer NextDeltaBuffer { float next_deltas[]; };
+layout(std430) restrict readonly buffer WeightBuffer { float weights[]; };
+layout(std430) restrict writeonly buffer InputDeltaBuffer { float input_deltas[]; };
+
+uniform int input_size;
+uniform int output_size;
+uniform int batch_size;
+
+void main() {
+    uint batch_idx = gl_GlobalInvocationID.x / input_size;
+    uint input_idx = gl_GlobalInvocationID.x % input_size;
+
+    if (batch_idx >= batch_size || input_idx >= input_size) return;
+
+    float grad = 0.0;
+    for (int o = 0; o < output_size; o++) {
+        uint delta_idx = batch_idx * output_size + o;
+        uint weight_idx = o * input_size + input_idx;
+        float delta_val = next_deltas[delta_idx];
+        float weight_val = weights[weight_idx];
+        if (isnan(delta_val) || isnan(weight_val)) {
+            grad = 0.5; // Use a different debug value
+            break;
+        }
+        grad += delta_val * weight_val;
+    }
+    input_deltas[batch_idx * input_size + input_idx] = grad;
+} 
