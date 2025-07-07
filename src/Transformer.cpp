@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <cfloat>
 #include <sstream>
-#include <windows.h>
 
 namespace NNGL {
     Transformer::Transformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen) : m_SeqLen(seqLen) {
@@ -35,7 +34,9 @@ namespace NNGL {
             return;
         }
 
-        trainOnSequence(tokens);
+        // Convert to integer tokens for optimized training
+        std::vector<int> tokenIds = stringToTokenIds(tokens);
+        trainOnSequenceInt(tokenIds);
     }
 
     void Transformer::trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize, float learningRate) {
@@ -56,6 +57,23 @@ namespace NNGL {
         }
     }
 
+    void Transformer::trainOnSequenceInt(const std::vector<int>& longSequence, size_t windowSize, float learningRate) {
+        if (windowSize == 0) windowSize = m_SeqLen + 1;
+
+        if (longSequence.size() < windowSize) {
+            trainNextTokenInt(longSequence, learningRate);
+            return;
+        }
+
+        // Optimized sliding window - reuse vectors
+        std::vector<int> window(windowSize);
+        for (size_t i = 0; i <= longSequence.size() - windowSize; ++i) {
+            // Copy window data without creating new vector
+            std::copy(longSequence.begin() + i, longSequence.begin() + i + windowSize, window.begin());
+            trainNextTokenInt(window, learningRate);
+        }
+    }
+
     void Transformer::trainNextToken(const std::vector<std::string>& inputTokens, float learningRate) {
         if (inputTokens.size() < 2) {
             throw std::runtime_error("Need at least 2 tokens for next-token prediction");
@@ -63,11 +81,19 @@ namespace NNGL {
 
         // Convert to integer tokens and use optimized version
         std::vector<int> tokenIds = stringToTokenIds(inputTokens);
+        trainNextTokenInt(tokenIds, learningRate);
+    }
+
+    void Transformer::trainNextTokenInt(const std::vector<int>& inputTokens, float learningRate) {
+        if (inputTokens.size() < 2) {
+            throw std::runtime_error("Need at least 2 tokens for next-token prediction");
+        }
+
         // Prepare input sequence (all tokens except the last one)
-        std::vector<int> contextTokens(tokenIds.begin(), tokenIds.end() - 1);
+        std::vector<int> contextTokens(inputTokens.begin(), inputTokens.end() - 1);
 
         // Target is the last token (what we want to predict)
-        int targetTokenId = tokenIds.back();
+        int targetTokenId = inputTokens.back();
 
         // Pad or truncate context to sequence length
         while (contextTokens.size() < m_SeqLen) {
@@ -132,7 +158,7 @@ namespace NNGL {
         // Convert to integer tokens and use optimized version
         std::vector<int> encTokenIds = stringToTokenIds(encInputTokens);
         std::vector<int> decTokenIds = stringToTokenIds(decInputTokens);
-        
+
         // Extract target token ID from one-hot vector
         int targetTokenId = -1;
         for (int i = 0; i < targetMat->cols; i++) {
@@ -141,7 +167,7 @@ namespace NNGL {
                 break;
             }
         }
-        
+
         backwardPassInt(encTokenIds, decTokenIds, targetTokenId, learningRate);
     }
 
@@ -172,11 +198,11 @@ namespace NNGL {
 
         // 5. Backward through output projection
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(decOutputMat, targetMat, learningRate);
-        
+
         // Apply gradient clipping to prevent explosion
         float maxGradNorm = 1.0f; // Clip gradients to norm of 1.0
         float gradNorm = 0.0f;
-        
+
         // Check for NaN or infinite values and clamp them
         for (int i = 0; i < outputGrad->rows * outputGrad->cols; ++i) {
             if (std::isnan(outputGrad->flatVec[i]) || std::isinf(outputGrad->flatVec[i])) {
@@ -185,7 +211,7 @@ namespace NNGL {
             gradNorm += outputGrad->flatVec[i] * outputGrad->flatVec[i];
         }
         gradNorm = std::sqrt(gradNorm);
-        
+
         if (gradNorm > maxGradNorm) {
             float scale = maxGradNorm / gradNorm;
             LOG_TRACE("Gradient clipping applied: norm=" + std::to_string(gradNorm) + ", scale=" + std::to_string(scale));
@@ -193,8 +219,9 @@ namespace NNGL {
                 outputGrad->flatVec[i] *= scale;
             }
         }
-        Sleep(1000);
+
         printGradientHeatmap(outputGrad);
+
         // 6. Backward through decoder
         std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> decoderGrads =
             m_Decoder->backwardWithEncoderGrad(outputGrad, learningRate);
@@ -233,31 +260,33 @@ namespace NNGL {
     std::vector<int> Transformer::stringToTokenIds(const std::vector<std::string>& tokens) {
         std::vector<int> tokenIds;
         tokenIds.reserve(tokens.size());
-        
+
         for (const auto& token : tokens) {
             size_t tokenId = m_Tokenizer->getTokenByName(token);
             if (tokenId >= 0 && tokenId < m_VocabSize) {
                 tokenIds.push_back(static_cast<int>(tokenId));
-            } else {
+            }
+            else {
                 tokenIds.push_back(0); // Unknown token -> PAD
             }
         }
-        
+
         return tokenIds;
     }
 
     std::vector<std::string> Transformer::tokenIdsToStrings(const std::vector<int>& tokenIds) {
         std::vector<std::string> tokens;
         tokens.reserve(tokenIds.size());
-        
+
         for (int tokenId : tokenIds) {
             if (tokenId >= 0 && tokenId < m_VocabSize) {
                 tokens.push_back(m_Tokenizer->getTokenById(tokenId));
-            } else {
+            }
+            else {
                 tokens.push_back("<PAD>");
             }
         }
-        
+
         return tokens;
     }
 
@@ -269,7 +298,7 @@ namespace NNGL {
             ss << tokenId << ",";
         }
         std::string cacheKey = ss.str();
-        
+
         // Check cache first
         {
             std::lock_guard<std::mutex> lock(m_CacheMutex);
@@ -278,11 +307,11 @@ namespace NNGL {
                 return it->second;
             }
         }
-        
+
         // Convert to strings and create embedding
         std::vector<std::string> tokenStrings = tokenIdsToStrings(tokens);
         std::shared_ptr<Matrix> embedding = m_Embedder->forward(tokenStrings);
-        
+
         // Cache the result
         {
             std::lock_guard<std::mutex> lock(m_CacheMutex);
@@ -292,7 +321,7 @@ namespace NNGL {
             }
             m_EmbeddingCache[cacheKey] = embedding;
         }
-        
+
         return embedding;
     }
 
