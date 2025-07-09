@@ -17,60 +17,32 @@ namespace NNGL {
         m_CachedInput = std::make_shared<Matrix>(seqLen, modelDim);
         m_CachedAttentionOutput = std::make_shared<Matrix>(seqLen, modelDim);
         m_CachedFfnInput = std::make_shared<Matrix>(seqLen, modelDim);
+        m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
+        m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
     }
 
     std::shared_ptr<Matrix> EncoderBlock::forward(std::shared_ptr<Matrix> x) {
-        // Cache input for backpropagation
         m_CachedInput->copyFrom(x);
-
-        // Self-m_Attention
         std::shared_ptr<Matrix> attentionOutput = m_Attention->forward(x);
-
-        // Debug: Check dimensions before first residual connection
-        LOG_TRACE("  EncoderBlock: Input x: [" + std::to_string(x->rows) + "," + std::to_string(x->cols) + "]");
-        LOG_TRACE("  EncoderBlock: Attention output: [" + std::to_string(attentionOutput->rows) + "," + std::to_string(attentionOutput->cols) + "]");
-
-        attentionOutput->add(*x);  // First residual connection
-
-        // Cache m_Attention output (after residual)
-        m_CachedAttentionOutput->copyFrom(attentionOutput);
-        m_CachedFfnInput->copyFrom(attentionOutput);
-
-        // Feed-forward network
-        std::shared_ptr<Matrix> mlpOut = m_FeedForward->forward(attentionOutput);
-
-        // Debug: Check dimensions before second residual connection
-        LOG_TRACE("  EncoderBlock: MLP output: [" + std::to_string(mlpOut->rows) + "," + std::to_string(mlpOut->cols) + "]");
-        LOG_TRACE("  EncoderBlock: Attention output (for residual): [" + std::to_string(attentionOutput->rows) + "," + std::to_string(attentionOutput->cols) + "]");
-
-        mlpOut->add(*attentionOutput); // Second residual connection
-
-        return mlpOut;
+        auto addNorm1Out = m_AddNorm1->forward(attentionOutput, x);
+        m_CachedAttentionOutput->copyFrom(addNorm1Out);
+        m_CachedFfnInput->copyFrom(addNorm1Out);
+        std::shared_ptr<Matrix> mlpOut = m_FeedForward->forward(addNorm1Out);
+        auto addNorm2Out = m_AddNorm2->forward(mlpOut, addNorm1Out);
+        return addNorm2Out;
     }
 
     std::shared_ptr<Matrix> EncoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
-        // ---- 1. Backprop through second residual connection and FFN ----
-        // gradOutput flows to both the FFN and the residual connection
-        auto gradFfnInputFromResidual = std::make_shared<Matrix>(*gradOutput);
-        auto gradFfnInput = std::make_shared<Matrix>(*gradOutput);
-
-        // Backprop through m_FeedForward network
-        auto gradFromFfn = m_FeedForward->backward_with_targetloss(m_CachedFfnInput, gradFfnInput, learningRate);
-
-        // Add gradient from residual connection
-        gradFromFfn->add(*gradFfnInputFromResidual);
-
-        // ---- 2. Backprop through first residual connection and self-m_Attention ----
-        // gradFromFfn flows to both the m_Attention and the residual connection
-        auto gradInputFromResidual = std::make_shared<Matrix>(*gradFromFfn);
-        auto gradAttentionInput = std::make_shared<Matrix>(*gradFromFfn);
-
-        // Backprop through self-m_Attention (no context for encoder self-m_Attention)
-        auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionInput, m_CachedInput, nullptr);
-
-        // Add gradient from residual connection
-        gradFromAttention->add(*gradInputFromResidual);
-
-        return gradFromAttention;
+        // Backprop through addNorm2
+        std::shared_ptr<Matrix> gradMlpOut, gradAddNorm1Out, gradGamma2, gradBeta2;
+        m_AddNorm2->backward(gradOutput, m_CachedFfnInput, m_CachedAttentionOutput, gradMlpOut, gradAddNorm1Out, gradGamma2, gradBeta2);
+        // Backprop through FFN
+        auto gradFromFfn = m_FeedForward->backward_with_targetloss(m_CachedFfnInput, gradMlpOut, learningRate);
+        // Backprop through addNorm1
+        std::shared_ptr<Matrix> gradAttentionOut, gradInput, gradGamma1, gradBeta1;
+        m_AddNorm1->backward(gradAddNorm1Out, m_CachedAttentionOutput, m_CachedInput, gradAttentionOut, gradInput, gradGamma1, gradBeta1);
+        // Backprop through Attention
+        auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionOut, m_CachedInput, nullptr);
+        return gradInput;
     }
 }

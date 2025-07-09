@@ -120,8 +120,9 @@ namespace NNGL {
 
         std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
         decInputTokens.at(0) = "<SOS>";     // Start of generation
-        auto result = forwardPass(encInputTokens, decInputTokens);
-        int nextTokenId = predictToken(result);
+        // forwardPass already applies m_OutputProjection and returns logits
+        auto logits = forwardPass(encInputTokens, decInputTokens);
+        int nextTokenId = predictToken(logits);
         return m_Tokenizer->getTokenById(nextTokenId);
     }
 
@@ -226,10 +227,11 @@ namespace NNGL {
 
     int Transformer::predictToken(std::shared_ptr<Matrix> probabilities) {
         int predictedToken = -1;
-        float maxProb = (*probabilities)(0, 0);
+        int lastRow = probabilities->rows - 1;
+        float maxProb = (*probabilities)(lastRow, 0);
         for (int i = 0; i < probabilities->cols; i++) {
-            if (maxProb < (*probabilities)(0, i)) {
-                maxProb = (*probabilities)(0, i);
+            if (maxProb < (*probabilities)(lastRow, i)) {
+                maxProb = (*probabilities)(lastRow, i);
                 predictedToken = i;
             }
         }

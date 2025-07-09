@@ -4,114 +4,101 @@
 #include <algorithm>
 
 namespace NNGL {
-    LayerNorm::LayerNorm(int normalizedShape, float epsilon) 
+    LayerNorm::LayerNorm(int normalizedShape, float epsilon)
         : m_NormalizedShape(normalizedShape), m_Epsilon(epsilon), m_LearningRate(0.001f) {
-        
-        // Initialize learnable parameters
-        m_Gamma = std::make_shared<Matrix>(normalizedShape, 1, 1.0f);  // Initialize to 1
-        m_Beta = std::make_shared<Matrix>(normalizedShape, 1, 0.0f);   // Initialize to 0
-        
+        m_Gamma = std::make_shared<Matrix>(normalizedShape, 1, 1.0f);
+        m_Beta = std::make_shared<Matrix>(normalizedShape, 1, 0.0f);
+        m_ForwardShader = ShaderManager::getInstance().getShader("shaders/attention/add_norm.comp");
+        m_BackwardShader = ShaderManager::getInstance().getShader("shaders/attention/backward_add_norm.comp");
         LOG_DEBUG("LayerNorm initialized with shape " + std::to_string(normalizedShape));
     }
 
-    std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input) {
-        // Cache input for backprop
-        m_CachedInput = std::make_shared<Matrix>(*input);
-        
+    std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual) {
         int seqLen = input->rows;
-        int batchSize = input->cols;
-        
-        // Create output matrix
-        auto output = std::make_shared<Matrix>(seqLen, batchSize);
-        
-        // For each position in the sequence
-        for (int pos = 0; pos < seqLen; ++pos) {
-            // Calculate mean for this position across all features
+        int modelDim = input->cols;
+        m_CachedInput = std::make_shared<Matrix>(*input);
+        m_CachedResidual = std::make_shared<Matrix>(*residual);
+        // Compute and cache mean/var for (input + residual)
+        m_CachedMean = std::make_shared<Matrix>(seqLen, 1);
+        m_CachedVariance = std::make_shared<Matrix>(seqLen, 1);
+        for (int i = 0; i < seqLen; ++i) {
             float sum = 0.0f;
-            for (int batch = 0; batch < batchSize; ++batch) {
-                sum += (*input)(pos, batch);
+            for (int d = 0; d < modelDim; ++d) {
+                sum += (*input)(i, d) + (*residual)(i, d);
             }
-            float mean = sum / batchSize;
-            
-            // Calculate variance for this position
-            float variance = 0.0f;
-            for (int batch = 0; batch < batchSize; ++batch) {
-                float diff = (*input)(pos, batch) - mean;
-                variance += diff * diff;
+            float m = sum / modelDim;
+            (*m_CachedMean)(i, 0) = m;
+            float v = 0.0f;
+            for (int d = 0; d < modelDim; ++d) {
+                float val = (*input)(i, d) + (*residual)(i, d);
+                v += (val - m) * (val - m);
             }
-            variance = variance / batchSize;
-            
-            // Cache mean and variance for backprop
-            if (pos == 0) {
-                m_CachedMean = std::make_shared<Matrix>(seqLen, 1);
-                m_CachedVariance = std::make_shared<Matrix>(seqLen, 1);
-            }
-            (*m_CachedMean)(pos, 0) = mean;
-            (*m_CachedVariance)(pos, 0) = variance;
-            
-            // Normalize and apply gamma/beta
-            float stdDev = std::sqrt(variance + m_Epsilon);
-            for (int batch = 0; batch < batchSize; ++batch) {
-                float normalized = ((*input)(pos, batch) - mean) / stdDev;
-                float gamma = (*m_Gamma)(pos % m_NormalizedShape, 0);
-                float beta = (*m_Beta)(pos % m_NormalizedShape, 0);
-                (*output)(pos, batch) = gamma * normalized + beta;
-            }
+            (*m_CachedVariance)(i, 0) = v / modelDim;
         }
-        
-        // Cache normalized values for backprop
-        m_CachedNormalized = std::make_shared<Matrix>(*output);
-        
-        return output;
+        // Prepare output
+        m_CachedOutput = std::make_shared<Matrix>(seqLen, modelDim);
+        input->uploadToGPU();
+        residual->uploadToGPU();
+        m_Gamma->uploadToGPU();
+        m_Beta->uploadToGPU();
+        m_CachedOutput->uploadToGPU();
+        m_ForwardShader->bindBuffer(0, "InputA", input->buffer);
+        m_ForwardShader->bindBuffer(1, "InputB", residual->buffer);
+        m_ForwardShader->bindBuffer(2, "Gamma", m_Gamma->buffer);
+        m_ForwardShader->bindBuffer(3, "Beta", m_Beta->buffer);
+        m_ForwardShader->bindBuffer(4, "Output", m_CachedOutput->buffer);
+        m_ForwardShader->setUniform("seq_len", seqLen);
+        m_ForwardShader->setUniform("model_dim", modelDim);
+        m_ForwardShader->setUniform("epsilon", m_Epsilon);
+        m_ForwardShader->dispatch(seqLen, 1, 1);
+        m_CachedOutput->downloadFromGPU();
+        return m_CachedOutput;
     }
 
-    std::shared_ptr<Matrix> LayerNorm::backward(const std::shared_ptr<Matrix>& gradOutput, float learningRate) {
-        int seqLen = gradOutput->rows;
-        int batchSize = gradOutput->cols;
-        
-        // Create gradient input
-        auto gradInput = std::make_shared<Matrix>(seqLen, batchSize);
-        
-        // Gradients for gamma and beta
-        auto gradGamma = std::make_shared<Matrix>(m_NormalizedShape, 1, 0.0f);
-        auto gradBeta = std::make_shared<Matrix>(m_NormalizedShape, 1, 0.0f);
-        
-        // For each position in the sequence
-        for (int pos = 0; pos < seqLen; ++pos) {
-            float mean = (*m_CachedMean)(pos, 0);
-            float variance = (*m_CachedVariance)(pos, 0);
-            float stdDev = std::sqrt(variance + m_Epsilon);
-            
-            // Calculate gradients for gamma and beta
-            for (int batch = 0; batch < batchSize; ++batch) {
-                float normalized = ((*m_CachedNormalized)(pos, batch) - (*m_Beta)(pos % m_NormalizedShape, 0)) / (*m_Gamma)(pos % m_NormalizedShape, 0);
-                float gradOut = (*gradOutput)(pos, batch);
-                
-                // Gradient for gamma
-                (*gradGamma)(pos % m_NormalizedShape, 0) += gradOut * normalized;
-                
-                // Gradient for beta
-                (*gradBeta)(pos % m_NormalizedShape, 0) += gradOut;
-            }
-            
-            // Calculate gradient for input
-            for (int batch = 0; batch < batchSize; ++batch) {
-                float normalized = ((*m_CachedInput)(pos, batch) - mean) / stdDev;
-                float gradOut = (*gradOutput)(pos, batch);
-                float gamma = (*m_Gamma)(pos % m_NormalizedShape, 0);
-                
-                // Gradient for input (simplified)
-                float gradNorm = gradOut * gamma / stdDev;
-                (*gradInput)(pos, batch) = gradNorm;
-            }
-        }
-        
-        // Update parameters
-        for (int i = 0; i < m_NormalizedShape; ++i) {
-            (*m_Gamma)(i, 0) -= learningRate * (*gradGamma)(i, 0);
-            (*m_Beta)(i, 0) -= learningRate * (*gradBeta)(i, 0);
-        }
-        
-        return gradInput;
+    void LayerNorm::backward(
+        const std::shared_ptr<Matrix>& gradOutput,
+        const std::shared_ptr<Matrix>& input,
+        const std::shared_ptr<Matrix>& residual,
+        std::shared_ptr<Matrix>& gradInput,
+        std::shared_ptr<Matrix>& gradResidual,
+        std::shared_ptr<Matrix>& gradGamma,
+        std::shared_ptr<Matrix>& gradBeta
+    ) {
+        int seqLen = input->rows;
+        int modelDim = input->cols;
+        gradInput = std::make_shared<Matrix>(seqLen, modelDim);
+        gradResidual = std::make_shared<Matrix>(seqLen, modelDim);
+        gradGamma = std::make_shared<Matrix>(modelDim, 1);
+        gradBeta = std::make_shared<Matrix>(modelDim, 1);
+        gradOutput->uploadToGPU();
+        input->uploadToGPU();
+        residual->uploadToGPU();
+        m_Gamma->uploadToGPU();
+        m_Beta->uploadToGPU();
+        m_CachedMean->uploadToGPU();
+        m_CachedVariance->uploadToGPU();
+        gradInput->uploadToGPU();
+        gradResidual->uploadToGPU();
+        gradGamma->uploadToGPU();
+        gradBeta->uploadToGPU();
+        m_BackwardShader->bindBuffer(0, "GradOutput", gradOutput->buffer);
+        m_BackwardShader->bindBuffer(1, "InputA", input->buffer);
+        m_BackwardShader->bindBuffer(2, "InputB", residual->buffer);
+        m_BackwardShader->bindBuffer(3, "Gamma", m_Gamma->buffer);
+        m_BackwardShader->bindBuffer(4, "Beta", m_Beta->buffer);
+        m_BackwardShader->bindBuffer(5, "CachedMean", m_CachedMean->buffer);
+        m_BackwardShader->bindBuffer(6, "CachedVar", m_CachedVariance->buffer);
+        m_BackwardShader->bindBuffer(7, "GradInputA", gradInput->buffer);
+        m_BackwardShader->bindBuffer(8, "GradInputB", gradResidual->buffer);
+        m_BackwardShader->bindBuffer(9, "GradGamma", gradGamma->buffer);
+        m_BackwardShader->bindBuffer(10, "GradBeta", gradBeta->buffer);
+        m_BackwardShader->setUniform("seq_len", seqLen);
+        m_BackwardShader->setUniform("model_dim", modelDim);
+        m_BackwardShader->setUniform("epsilon", m_Epsilon);
+        m_BackwardShader->dispatch(seqLen, 1, 1);
+        gradInput->downloadFromGPU();
+        gradResidual->downloadFromGPU();
+        gradGamma->downloadFromGPU();
+        gradBeta->downloadFromGPU();
     }
 } 

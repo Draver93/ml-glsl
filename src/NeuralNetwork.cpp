@@ -256,24 +256,21 @@ namespace NNGL {
 
         forwardPass(inputMat);
 
-        int outputSize = m_Layers.back()->getSize().y * m_BatchSize;
-        
+        int outputRows = inputMat->rows;
+        int outputCols = m_Layers.back()->m_Height; // output size
         // Use memory pool instead of creating new Matrix
         if(!forwardMatOutput) {
-            forwardMatOutput = getMatrixFromPool(inputMat->rows, inputMat->cols);
-        } else if (forwardMatOutput->rows != inputMat->rows || forwardMatOutput->cols != inputMat->cols) {
-            forwardMatOutput->reset(inputMat->rows, inputMat->cols);
+            forwardMatOutput = getMatrixFromPool(outputRows, outputCols);
+        } else if (forwardMatOutput->rows != outputRows || forwardMatOutput->cols != outputCols) {
+            forwardMatOutput->reset(outputRows, outputCols);
         }
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (mapped) {
-            // Copy data directly to the pooled matrix
             std::memcpy(forwardMatOutput->raw(), mapped, forwardMatOutput->byteSize());
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            
-            // Log GPU data read
-            LOG("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) + 
+            LOG("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) +
                 " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
         }
         else throw std::runtime_error("data failed to map");
@@ -314,9 +311,9 @@ namespace NNGL {
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (!mapped) throw std::runtime_error("data failed to map");
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
-        for (int i = 0; i < 10; ++i) {
-            std::cout << "input_grad[" << i << "] = " << mapped[i] << std::endl;
-        }
+        //for (int i = 0; i < 10; ++i) {
+        //    std::cout << "input_grad[" << i << "] = " << mapped[i] << std::endl;
+        //}
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
         return inputGradMat;
     }

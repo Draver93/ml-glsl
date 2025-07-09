@@ -1,0 +1,49 @@
+#version 430
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+// Main input buffer (e.g., output of sublayer)
+layout(std430) readonly buffer InputA { float input_a[]; }; // [seq_len, model_dim]
+// Residual input buffer (e.g., skip connection)
+layout(std430) readonly buffer InputB { float input_b[]; }; // [seq_len, model_dim]
+// Learnable scale (gamma) and shift (beta) parameters
+layout(std430) readonly buffer Gamma { float gamma[]; };    // [model_dim]
+layout(std430) readonly buffer Beta { float beta[]; };      // [model_dim]
+// Output buffer
+layout(std430) writeonly buffer Output { float output_buffer[]; }; // [seq_len, model_dim]
+
+uniform int seq_len;
+uniform int model_dim;
+uniform float epsilon;
+
+void main() {
+    uint seq_idx = gl_GlobalInvocationID.x; // sequence position
+    if (seq_idx >= uint(seq_len)) return;
+
+    // Compute mean and variance for this sequence position
+    float mean = 0.0;
+    float variance = 0.0;
+
+    // First pass: compute mean
+    for (int d = 0; d < model_dim; d++) {
+        float val = input_a[d * seq_len + seq_idx] + input_b[d * seq_len + seq_idx];
+        mean += val;
+    }
+    mean /= float(model_dim);
+
+    // Second pass: compute variance
+    for (int d = 0; d < model_dim; d++) {
+        float val = input_a[d * seq_len + seq_idx] + input_b[d * seq_len + seq_idx];
+        float diff = val - mean;
+        variance += diff * diff;
+    }
+    variance /= float(model_dim);
+    float stddev = sqrt(variance + epsilon);
+
+    // Third pass: normalize, scale, shift, and write output
+    for (int d = 0; d < model_dim; d++) {
+        float val = input_a[d * seq_len + seq_idx] + input_b[d * seq_len + seq_idx];
+        float norm = (val - mean) / stddev;
+        output_buffer[d * seq_len + seq_idx] = gamma[d] * norm + beta[d];
+    }
+} 

@@ -1,0 +1,62 @@
+#version 430
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430) readonly buffer GradOutput { float grad_output[]; }; // [seq_len, model_dim]
+layout(std430) readonly buffer InputA { float input_a[]; };         // [seq_len, model_dim]
+layout(std430) readonly buffer InputB { float input_b[]; };         // [seq_len, model_dim]
+layout(std430) readonly buffer Gamma { float gamma[]; };            // [model_dim]
+layout(std430) readonly buffer Beta { float beta[]; };              // [model_dim]
+layout(std430) readonly buffer CachedMean { float cached_mean[]; }; // [seq_len]
+layout(std430) readonly buffer CachedVar { float cached_var[]; };   // [seq_len]
+
+layout(std430) writeonly buffer GradInputA { float grad_input_a[]; }; // [seq_len, model_dim]
+layout(std430) writeonly buffer GradInputB { float grad_input_b[]; }; // [seq_len, model_dim]
+layout(std430) writeonly buffer GradGamma { float grad_gamma[]; };    // [model_dim]
+layout(std430) writeonly buffer GradBeta { float grad_beta[]; };      // [model_dim]
+
+uniform int seq_len;
+uniform int model_dim;
+uniform float epsilon;
+
+void main() {
+    uint seq_idx = gl_GlobalInvocationID.x;
+    if (seq_idx >= uint(seq_len)) return;
+
+    float mean = cached_mean[seq_idx];
+    float var = cached_var[seq_idx];
+    float stddev = sqrt(var + epsilon);
+
+    // Compute sum for grad_input normalization
+    float sum_dy = 0.0;
+    float sum_dy_xmu = 0.0;
+    for (int d = 0; d < model_dim; d++) {
+        float x = input_a[seq_idx * model_dim + d] + input_b[seq_idx * model_dim + d];
+        float dy = grad_output[seq_idx * model_dim + d];
+        float xmu = x - mean;
+        sum_dy += dy * gamma[d];
+        sum_dy_xmu += dy * gamma[d] * xmu;
+    }
+
+    // Compute gradients
+    for (int d = 0; d < model_dim; d++) {
+        float x = input_a[seq_idx * model_dim + d] + input_b[seq_idx * model_dim + d];
+        float dy = grad_output[seq_idx * model_dim + d];
+        float xmu = x - mean;
+        float norm = xmu / stddev;
+        float g = gamma[d];
+
+        // Gradients for gamma and beta (accumulate across batch outside shader if needed)
+        // Here, we just write per-position, per-dim (user must sum across seq_len on CPU if needed)
+        grad_gamma[d] = dy * norm;
+        grad_beta[d] = dy;
+
+        // Gradient for input (chain rule for LayerNorm)
+        float grad_norm = (dy * g) / stddev;
+        float grad_mean = sum_dy / float(model_dim);
+        float grad_var = sum_dy_xmu * 2.0 * xmu / (float(model_dim) * stddev * stddev);
+        float grad = grad_norm - grad_mean / stddev - grad_var;
+        grad_input_a[seq_idx * model_dim + d] = grad * 0.5; // split equally to A and B
+        grad_input_b[seq_idx * model_dim + d] = grad * 0.5;
+    }
+} 

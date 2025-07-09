@@ -3,6 +3,7 @@
 #include "AttentionBlock.h"
 #include "NeuralNetwork.h"
 #include "Matrix.h"
+#include "LayerNorm.h"
 #include <memory>
 
 namespace NNGL {
@@ -15,6 +16,8 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_CachedInput;
         std::shared_ptr<Matrix> m_CachedAttentionOutput;
         std::shared_ptr<Matrix> m_CachedFfnInput;
+        std::unique_ptr<LayerNorm> m_AddNorm1;
+        std::unique_ptr<LayerNorm> m_AddNorm2;
 
     public:
         EncoderBlock(int modelDim, int hiddenDim, int seqLen);
