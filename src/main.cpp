@@ -1217,8 +1217,8 @@ int main() {
     // Run comprehensive unit tests
     //runAllUnitTests();
     
-    transformer_simplified();
-    //transformer();
+    //transformer_simplified();
+    transformer();
     //digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;

@@ -13,8 +13,8 @@ namespace NNGL {
 
         // Use batch size of 1 for now, will be updated dynamically based on input
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
-        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::LRELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::LRELU);
 
         // Initialize cache matrices
         m_CachedMaskedOut = std::make_shared<Matrix>(seqLen, modelDim);
@@ -65,28 +65,26 @@ namespace NNGL {
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> DecoderBlock::backwardWithEncoderGrad(
         std::shared_ptr<Matrix> gradOutput, float learningRate) {
 
-        // ---- 1. Backprop through final residual connection and MLP ----
-        auto gradCrossOutFromResidual = std::make_shared<Matrix>(*gradOutput);
-        auto gradMlpInput = std::make_shared<Matrix>(*gradOutput);
+        // ---- 1. Backprop through AddNorm3 (final residual + normalization) ----
+        std::shared_ptr<Matrix> gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3;
+        m_AddNorm3->backward(gradOutput, m_CachedCrossOut, m_CachedCrossOut, gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);
+        
+        // Backprop through MLP
+        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_CachedCrossOut, gradMlpOut, learningRate);
 
-        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_CachedCrossOut, gradMlpInput, learningRate);
-        gradFromMlp->add(*gradCrossOutFromResidual);
+        // ---- 2. Backprop through AddNorm2 (cross-attention residual + normalization) ----
+        std::shared_ptr<Matrix> gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2;
+        m_AddNorm2->backward(gradFromMlp, m_CachedCrossOut, m_CachedMaskedOut, gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2);
+        
+        // Backprop through Cross-Attention
+        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossOut, m_CachedMaskedOut, m_CachedEncoderOutput);
 
-        // ---- 2. Backprop through second residual connection and Cross-Attention ----
-        auto gradMaskedOutFromResidual = std::make_shared<Matrix>(*gradFromMlp);
-        auto gradCrossInput = std::make_shared<Matrix>(*gradFromMlp);
-
-
-        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossInput, m_CachedMaskedOut, m_CachedEncoderOutput);
-
-        gradFromCrossQuery->add(*gradMaskedOutFromResidual);
-
-        // ---- 3. Backprop through first residual connection and Masked Self-Attention ----
-        auto gradDecoderInputFromResidual = std::make_shared<Matrix>(*gradFromCrossQuery);
-        auto gradMaskedInput = std::make_shared<Matrix>(*gradFromCrossQuery);
-
-        auto [gradFromMaskedSelf, gradFromMaskedEncoder] = m_MaskedSelfAttn->backward(gradMaskedInput, m_CachedDecoderInput, nullptr);
-        gradFromMaskedSelf->add(*gradDecoderInputFromResidual);
+        // ---- 3. Backprop through AddNorm1 (masked self-attention residual + normalization) ----
+        std::shared_ptr<Matrix> gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1;
+        m_AddNorm1->backward(gradFromCrossQuery, m_CachedMaskedOut, m_CachedDecoderInput, gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1);
+        
+        // Backprop through Masked Self-Attention
+        auto [gradFromMaskedSelf, gradFromMaskedEncoder] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr);
 
         // Return BOTH gradients: decoder input gradient AND encoder output gradient
         return std::make_pair(gradFromMaskedSelf, gradFromCrossEncoder);

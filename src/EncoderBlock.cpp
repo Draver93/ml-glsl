@@ -10,8 +10,8 @@ namespace NNGL {
         m_Attention = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, false); // No masking for encoder
 
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
-        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::LRELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::LRELU);
 
         // Initialize cache matrices
         m_CachedInput = std::make_shared<Matrix>(seqLen, modelDim);

@@ -62,8 +62,8 @@ namespace NNGL {
             m_ForwardPassCompute->setUniform("activation_type", layer->m_ActivationFnType);
 
 			// Safe workgroup calculation with bounds checking
-			int workgroupsX = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
-			int workgroupsY = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
+			int workgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
+			int workgroupsY = std::min((int)ceil(layer->getSize().y / 16.0f), 65535);
             m_ForwardPassCompute->dispatch(workgroupsX, workgroupsY, 1);
 
 			currentInput = layer->m_ActivationBuffer;
@@ -86,8 +86,9 @@ namespace NNGL {
         m_OutputDeltaCompute->setUniform("activation_type", m_Layers.back()->m_ActivationFnType);
 
         // Safe workgroup calculation with bounds checking
-		int outputWorkgroups = std::min((int)ceil((m_BatchSize * m_Layers.back()->getSize().y + 31) / 32), 65535);
-        m_OutputDeltaCompute->dispatch(outputWorkgroups, 1, 1);
+		int outputWorkgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
+		int outputWorkgroupsY = std::min((int)ceil(m_Layers.back()->getSize().y / 16.0f), 65535);
+        m_OutputDeltaCompute->dispatch(outputWorkgroupsX, outputWorkgroupsY, 1);
 
 		// Unbind output delta buffers
 		for (int j = 0; j < 4; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
@@ -108,9 +109,9 @@ namespace NNGL {
             m_HiddenDeltasCompute->setUniform("activation_type", m_Layers[i]->m_ActivationFnType);
 
 			// Safe workgroup calculation
-			int workgroupsX = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().x / 16.0f), 65535);
-			int workgroupsY = std::min((int)ceil(m_BatchSize * m_Layers[i]->getSize().y / 16.0f), 65535);
-            m_HiddenDeltasCompute->dispatch(workgroupsX, workgroupsY, 1);
+			int hiddenWorkgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
+			int hiddenWorkgroupsY = std::min((int)ceil(m_Layers[i]->getSize().y / 16.0f), 65535);
+            m_HiddenDeltasCompute->dispatch(hiddenWorkgroupsX, hiddenWorkgroupsY, 1);
 		}
 
 		// Unbind backward pass buffers
@@ -295,8 +296,9 @@ namespace NNGL {
         m_InputDeltaCompute->setUniform("input_size", (int)firstLayer->getSize().x);
         m_InputDeltaCompute->setUniform("output_size", (int)firstLayer->getSize().y);
         m_InputDeltaCompute->setUniform("batch_size", m_BatchSize);
-        int workgroups = std::min((int)ceil((m_BatchSize * firstLayer->getSize().x + 31) / 32), 65535);
-        m_InputDeltaCompute->dispatch(workgroups, 1, 1);
+        int inputWorkgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
+        int inputWorkgroupsY = std::min((int)ceil(firstLayer->getSize().x / 16.0f), 65535);
+        m_InputDeltaCompute->dispatch(inputWorkgroupsX, inputWorkgroupsY, 1);
         for (int j = 0; j < 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
     }
 
@@ -306,15 +308,15 @@ namespace NNGL {
         hiddenLayersLossCalc();
         weightsAndBiasesUpdate(inputMat, learningRate);
         inputGradientCalc();
+
+        // Get matrix from pool and download GPU data into it
         std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (!mapped) throw std::runtime_error("data failed to map");
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
-        //for (int i = 0; i < 10; ++i) {
-        //    std::cout << "input_grad[" << i << "] = " << mapped[i] << std::endl;
-        //}
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        
         return inputGradMat;
     }
 
@@ -324,12 +326,15 @@ namespace NNGL {
         hiddenLayersLossCalc();
         weightsAndBiasesUpdate(inputMat, learningRate);
         inputGradientCalc();
+        
+        // Get matrix from pool and download GPU data into it
         std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (!mapped) throw std::runtime_error("data failed to map");
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        
         return inputGradMat;
     }
 

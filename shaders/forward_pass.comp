@@ -1,6 +1,6 @@
 #version 430
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(std430) restrict readonly buffer InputBuffer { float input_data[]; };
 layout(std430) restrict readonly buffer WeightBuffer { float weights[]; };
@@ -26,8 +26,8 @@ float activate(float x, int type) {
 }
 
 void main() {
-    uint batch_idx = gl_GlobalInvocationID.x / output_size;
-    uint neuron_idx = gl_GlobalInvocationID.x % output_size;
+    uint batch_idx = gl_GlobalInvocationID.x;
+    uint neuron_idx = gl_GlobalInvocationID.y;
     
     if (batch_idx >= batch_size || neuron_idx >= output_size) return;
     

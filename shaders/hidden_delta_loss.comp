@@ -1,6 +1,6 @@
 #version 430
 
-layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(std430) restrict readonly buffer PreActivationBuffer { float preactivations[]; };
 layout(std430) restrict readonly buffer NextDeltaBuffer { float next_deltas[]; };
@@ -14,35 +14,23 @@ uniform int activation_type;
 
 float derivative(float z, int type) {
     switch(type) {
-        case 0: { // tanh derivative using pre-activation
-            float y = tanh(z);
-            return 1.0 - y * y;
-        }
-        case 1: return z > 0.0 ? 1.0 : 0.0; // relu derivative
-        case 2: return z > 0.0 ? 1.0 : 0.01; // leaky relu derivative
-        case 3: { // sigmoid derivative using pre-activation
-            float y = 1.0 / (1.0 + exp(-z));
-            return y * (1.0 - y);
-        }
-        case 4: return 1.0; // identity derivative
+        case 0: { float y = tanh(z); return 1.0 - y * y; }
+        case 1: return z > 0.0 ? 1.0 : 0.0;
+        case 2: return z > 0.0 ? 1.0 : 0.01;
+        case 3: { float y = 1.0 / (1.0 + exp(-z)); return y * (1.0 - y); }
+        case 4: return 1.0;
         default: return 1.0;
     }
 }
 
 void main() {
-    uint batch_idx = gl_GlobalInvocationID.x / current_size;
-    uint neuron_idx = gl_GlobalInvocationID.x % current_size;
-    
+    uint batch_idx = gl_GlobalInvocationID.x;
+    uint neuron_idx = gl_GlobalInvocationID.y;
     if (batch_idx >= batch_size || neuron_idx >= current_size) return;
-    
     float error = 0.0;
-    
-    // Backpropagate error from next layer
     for (int i = 0; i < next_size; i++) {
         error += next_deltas[batch_idx * next_size + i] * weights[neuron_idx * next_size + i];
     }
-    
-    // Apply derivative using pre-activation value
     uint idx = batch_idx * current_size + neuron_idx;
     float preactivation = preactivations[idx];
     deltas[idx] = error * derivative(preactivation, activation_type);
