@@ -14,17 +14,19 @@ uniform int seq_len;
 uniform int model_dim;
 
 void main() {
-    uint seq_idx = gl_GlobalInvocationID.x;
-    uint dim_idx = gl_GlobalInvocationID.y;
+    uint seq_pos = gl_GlobalInvocationID.x;  // sequence position (row index)
+    uint model_dim_idx = gl_GlobalInvocationID.y;  // model dimension (column index)
     
     // Bounds check
-    if (seq_idx >= seq_len || dim_idx >= model_dim) {
+    if (seq_pos >= seq_len || model_dim_idx >= model_dim) {
         return;
     }
     
-    uint embedding_idx = seq_idx * model_dim + dim_idx;
-    uint pos_encoding_idx = seq_idx * model_dim + dim_idx;
+    // Column-major indexing: [model_dimension * seq_len + sequence_position]
+    // This accesses the embedding value at [seq_pos, model_dim_idx]
+    uint embedding_col_major_idx = model_dim_idx * seq_len + seq_pos;
+    uint pos_encoding_col_major_idx = model_dim_idx * seq_len + seq_pos;
     
     // Remove positional encoding from embedding
-    embeddings[embedding_idx] -= positional_encoding[pos_encoding_idx];
+    embeddings[embedding_col_major_idx] -= positional_encoding[pos_encoding_col_major_idx];
 }

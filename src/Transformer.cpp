@@ -34,6 +34,9 @@ namespace NNGL {
             return;
         }
 
+        // Add EOS token to the end for proper training
+        tokens.push_back("<EOS>");
+
         // Convert to integer tokens for optimized training
         std::vector<int> tokenIds = stringToTokenIds(tokens);
         trainOnSequenceInt(tokenIds);
@@ -97,7 +100,7 @@ namespace NNGL {
 
         // Pad or truncate context to sequence length
         while (contextTokens.size() < m_SeqLen) {
-            contextTokens.push_back(0); // PAD token ID
+            contextTokens.push_back(getPadTokenId()); // Use proper PAD token ID
         }
         if (contextTokens.size() > m_SeqLen) {
             contextTokens = std::vector<int>(contextTokens.end() - m_SeqLen, contextTokens.end());
@@ -114,13 +117,19 @@ namespace NNGL {
     }
 
     std::string Transformer::eval(std::string& inputText) {
-        std::vector<std::string> encInputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+        // Tokenize input and add SOS token for generation
+        std::vector<std::string> inputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+        
+        // Prepare encoder input (the actual input text)
+        std::vector<std::string> encInputTokens = inputTokens;
         while (encInputTokens.size() < m_SeqLen) encInputTokens.push_back("<PAD>");
         if (encInputTokens.size() > m_SeqLen) encInputTokens = std::vector<std::string>(encInputTokens.end() - m_SeqLen, encInputTokens.end());
 
+        // Prepare decoder input (start with SOS, then PAD tokens)
         std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
         decInputTokens.at(0) = "<SOS>";     // Start of generation
-        // forwardPass already applies m_OutputProjection and returns logits
+        
+        // Forward pass
         auto logits = forwardPass(encInputTokens, decInputTokens);
         int nextTokenId = predictToken(logits);
         return m_Tokenizer->getTokenById(nextTokenId);
@@ -249,7 +258,7 @@ namespace NNGL {
                 tokenIds.push_back(static_cast<int>(tokenId));
             }
             else {
-                tokenIds.push_back(0); // Unknown token -> PAD
+                tokenIds.push_back(getPadTokenId()); // Unknown token -> PAD
             }
         }
 
@@ -270,6 +279,23 @@ namespace NNGL {
         }
 
         return tokens;
+    }
+
+    // Helper methods for special token IDs
+    int Transformer::getPadTokenId() const {
+        return static_cast<int>(m_Tokenizer->getTokenByName("<PAD>"));
+    }
+
+    int Transformer::getSosTokenId() const {
+        return static_cast<int>(m_Tokenizer->getTokenByName("<SOS>"));
+    }
+
+    int Transformer::getEosTokenId() const {
+        return static_cast<int>(m_Tokenizer->getTokenByName("<EOS>"));
+    }
+
+    bool Transformer::isSpecialToken(int tokenId) const {
+        return tokenId == getPadTokenId() || tokenId == getSosTokenId() || tokenId == getEosTokenId();
     }
 
     // Embedding caching

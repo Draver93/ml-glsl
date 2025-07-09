@@ -26,17 +26,24 @@ float activate(float x, int type) {
 }
 
 void main() {
-    uint batch_idx = gl_GlobalInvocationID.x;
-    uint neuron_idx = gl_GlobalInvocationID.y;
+    uint batch_idx = gl_GlobalInvocationID.x;  // batch sample index
+    uint output_neuron_idx = gl_GlobalInvocationID.y;  // output neuron index
     
-    if (batch_idx >= batch_size || neuron_idx >= output_size) return;
+    if (batch_idx >= batch_size || output_neuron_idx >= output_size) return;
     
-    float sum = biases[neuron_idx];
+    // Initialize with bias for this output neuron
+    float weighted_sum = biases[output_neuron_idx];
     
-    for (int i = 0; i < input_size; i++)
-        sum += input_data[batch_idx * input_size + i] * weights[i * output_size + neuron_idx];
+    // Compute weighted sum: input @ weights + bias
+    // Row-major indexing for batch processing: [batch * input_size + input_neuron]
+    for (int input_neuron_idx = 0; input_neuron_idx < input_size; input_neuron_idx++) {
+        uint input_idx = batch_idx * input_size + input_neuron_idx;
+        uint weight_idx = input_neuron_idx * output_size + output_neuron_idx;
+        weighted_sum += input_data[input_idx] * weights[weight_idx];
+    }
     
-    uint idx = batch_idx * output_size + neuron_idx;
-    preactivation_data[idx] = sum;  // Store pre-activation
-    output_data[idx] = activate(sum, activation_type);  // Store post-activation
+    // Store results with row-major indexing: [batch * output_size + output_neuron]
+    uint output_idx = batch_idx * output_size + output_neuron_idx;
+    preactivation_data[output_idx] = weighted_sum;  // Store pre-activation for backprop
+    output_data[output_idx] = activate(weighted_sum, activation_type);  // Store post-activation
 }

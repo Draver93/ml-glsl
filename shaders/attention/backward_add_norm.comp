@@ -20,43 +20,46 @@ uniform int model_dim;
 uniform float epsilon;
 
 void main() {
-    uint seq_idx = gl_GlobalInvocationID.x;
-    if (seq_idx >= uint(seq_len)) return;
+    uint seq_pos = gl_GlobalInvocationID.x; // sequence position (row index)
+    if (seq_pos >= uint(seq_len)) return;
 
-    float mean = cached_mean[seq_idx];
-    float var = cached_var[seq_idx];
+    float mean = cached_mean[seq_pos];
+    float var = cached_var[seq_pos];
     float stddev = sqrt(var + epsilon);
 
-    // Compute sum for grad_input normalization
+    // Compute sum for grad_input normalization across all dimensions
     float sum_dy = 0.0;
     float sum_dy_xmu = 0.0;
-    for (int d = 0; d < model_dim; d++) {
-        float x = input_a[seq_idx * model_dim + d] + input_b[seq_idx * model_dim + d];
-        float dy = grad_output[seq_idx * model_dim + d];
+    for (int dim = 0; dim < model_dim; dim++) {
+        // Column-major indexing: [dimension * seq_len + sequence_position]
+        uint col_major_idx = dim * seq_len + seq_pos;
+        float x = input_a[col_major_idx] + input_b[col_major_idx];
+        float dy = grad_output[col_major_idx];
         float xmu = x - mean;
-        sum_dy += dy * gamma[d];
-        sum_dy_xmu += dy * gamma[d] * xmu;
+        sum_dy += dy * gamma[dim];
+        sum_dy_xmu += dy * gamma[dim] * xmu;
     }
 
-    // Compute gradients
-    for (int d = 0; d < model_dim; d++) {
-        float x = input_a[seq_idx * model_dim + d] + input_b[seq_idx * model_dim + d];
-        float dy = grad_output[seq_idx * model_dim + d];
+    // Compute gradients for each dimension at this sequence position
+    for (int dim = 0; dim < model_dim; dim++) {
+        uint col_major_idx = dim * seq_len + seq_pos;
+        float x = input_a[col_major_idx] + input_b[col_major_idx];
+        float dy = grad_output[col_major_idx];
         float xmu = x - mean;
         float norm = xmu / stddev;
-        float g = gamma[d];
+        float g = gamma[dim];
 
-        // Gradients for gamma and beta (accumulate across batch outside shader if needed)
-        // Here, we just write per-position, per-dim (user must sum across seq_len on CPU if needed)
-        grad_gamma[d] = dy * norm;
-        grad_beta[d] = dy;
+        // Gradients for gamma and beta (accumulate across sequence positions outside shader if needed)
+        // Here, we just write per-position, per-dimension (user must sum across seq_len on CPU if needed)
+        grad_gamma[dim] = dy * norm;
+        grad_beta[dim] = dy;
 
         // Gradient for input (chain rule for LayerNorm)
         float grad_norm = (dy * g) / stddev;
         float grad_mean = sum_dy / float(model_dim);
         float grad_var = sum_dy_xmu * 2.0 * xmu / (float(model_dim) * stddev * stddev);
         float grad = grad_norm - grad_mean / stddev - grad_var;
-        grad_input_a[seq_idx * model_dim + d] = grad * 0.5; // split equally to A and B
-        grad_input_b[seq_idx * model_dim + d] = grad * 0.5;
+        grad_input_a[col_major_idx] = grad * 0.5; // split equally to A and B
+        grad_input_b[col_major_idx] = grad * 0.5;
     }
 } 

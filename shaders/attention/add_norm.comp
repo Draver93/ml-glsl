@@ -17,23 +17,27 @@ uniform int model_dim;
 uniform float epsilon;
 
 void main() {
-    uint seq_idx = gl_GlobalInvocationID.x; // sequence position
-    if (seq_idx >= uint(seq_len)) return;
+    uint seq_pos = gl_GlobalInvocationID.x; // sequence position (row index)
+    if (seq_pos >= uint(seq_len)) return;
 
     // Compute mean and variance for this sequence position
     float mean = 0.0;
     float variance = 0.0;
 
-    // First pass: compute mean
-    for (int d = 0; d < model_dim; d++) {
-        float val = input_a[d * seq_len + seq_idx] + input_b[d * seq_len + seq_idx];
+    // First pass: compute mean across all dimensions for this sequence position
+    for (int dim = 0; dim < model_dim; dim++) {
+        // Column-major indexing: [dimension * seq_len + sequence_position]
+        // This accesses all sequence positions for a given dimension
+        uint col_major_idx = dim * seq_len + seq_pos;
+        float val = input_a[col_major_idx] + input_b[col_major_idx];
         mean += val;
     }
     mean /= float(model_dim);
 
-    // Second pass: compute variance
-    for (int d = 0; d < model_dim; d++) {
-        float val = input_a[d * seq_len + seq_idx] + input_b[d * seq_len + seq_idx];
+    // Second pass: compute variance across all dimensions for this sequence position
+    for (int dim = 0; dim < model_dim; dim++) {
+        uint col_major_idx = dim * seq_len + seq_pos;
+        float val = input_a[col_major_idx] + input_b[col_major_idx];
         float diff = val - mean;
         variance += diff * diff;
     }
@@ -41,9 +45,10 @@ void main() {
     float stddev = sqrt(variance + epsilon);
 
     // Third pass: normalize, scale, shift, and write output
-    for (int d = 0; d < model_dim; d++) {
-        float val = input_a[d * seq_len + seq_idx] + input_b[d * seq_len + seq_idx];
+    for (int dim = 0; dim < model_dim; dim++) {
+        uint col_major_idx = dim * seq_len + seq_pos;
+        float val = input_a[col_major_idx] + input_b[col_major_idx];
         float norm = (val - mean) / stddev;
-        output_buffer[d * seq_len + seq_idx] = gamma[d] * norm + beta[d];
+        output_buffer[col_major_idx] = gamma[dim] * norm + beta[dim];
     }
 } 

@@ -466,120 +466,333 @@ void clean_word(std::string& word) {
 }
 
 void transformer_simplified() {
-    // Simplified transformer for quick testing
-    // Uses smaller model and simple test data
+    // Enhanced transformer training with realistic data and intermediate checks
     NNGL::Logger::getInstance().setEnabled(false);
 
-    std::cout << "=== Simplified Transformer Test ===" << std::endl;
+    std::cout << "=== Enhanced Transformer Training with Validation ===" << std::endl;
 
-    // Smaller model parameters for quick testing
-    int d_model = 64;   // Reduced from 128
-    int d_hidden = d_model * 2;  // Reduced from d_model * 4
-    int seq_len = 32;   // Reduced from 64
+    // Model parameters optimized for testing
+    int d_model = 64;   // Reduced for quick testing
+    int d_hidden = d_model * 2;
+    int seq_len = 32;
 
-    // Create a simple BPE tokenizer with smaller vocab
-    std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(); // Smaller vocab size
+    // Create BPE tokenizer
+    std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>();
     
-    // Simple test sentences for training
+    // Comprehensive training data with different patterns and complexity levels
     std::vector<std::string> training_data = {
+        // Basic patterns - single words (will be automatically appended with EOS)
+        "hello",
+        "world",
+        "the",
+        "cat",
+        "dog",
+        "bird",
+        "fish",
+        "tree",
+        "sun",
+        "moon",
+        
+        // Simple phrases - 2-3 words
         "hello world",
-        "the cat sat",
-        "a dog runs",
-        "birds fly high",
-        "fish swim deep",
-        "trees grow tall",
-        "sun shines bright",
-        "moon glows soft",
-        "stars twinkle night",
-        "wind blows strong",
-        // Add more sentences to ensure all characters are covered
-        "hello there",
-        "hello friend",
-        "hello everyone",
-        "hello and goodbye",
-        "hello world today",
-        "hello world tomorrow",
-        "hello world forever",
-        "hello world universe",
-        "hello world planet",
-        "hello world space"
+        "the cat",
+        "a dog",
+        "birds fly",
+        "fish swim",
+        "trees grow",
+        "sun shines",
+        "moon glows",
+        "stars twinkle",
+        "wind blows",
+        
+        // Medium complexity - 4-6 words
+        "the cat sat down",
+        "a dog runs fast",
+        "birds fly high above",
+        "fish swim deep below",
+        "trees grow tall slowly",
+        "sun shines bright today",
+        "moon glows soft tonight",
+        "stars twinkle in darkness",
+        "wind blows strong outside",
+        "rain falls gently down",
+        
+        // Complex patterns - 7+ words with variety
+        "the quick brown fox jumps over the lazy dog",
+        "a beautiful bird sings sweetly in the morning",
+        "tall trees sway gently in the summer breeze",
+        "bright stars shine brilliantly in the night sky",
+        "fresh rain falls softly on the green grass",
+        "warm sun rises slowly over the mountain peak",
+        "cool wind blows gently through the forest trees",
+        "clear water flows smoothly down the rocky stream",
+        "soft clouds drift slowly across the blue sky",
+        "gentle waves crash softly on the sandy beach",
+        
+        // Question patterns
+        "what is this",
+        "where are you",
+        "when will it",
+        "how do you",
+        "why does the",
+        "which way should",
+        "who can help",
+        "whose book is",
+        
+        // Conditional patterns
+        "if you want",
+        "when it rains",
+        "while the sun",
+        "since the moon",
+        "because the wind",
+        "although the bird",
+        "unless the fish",
+        "until the tree",
+        
+        // Repetition patterns (for testing attention)
+        "hello hello hello",
+        "the the the",
+        "cat cat cat",
+        "dog dog dog",
+        "bird bird bird",
+        
+        // Sequential patterns
+        "one two three",
+        "first second third",
+        "begin middle end",
+        "start continue finish",
+        "alpha beta gamma",
+        
+        // Contrast patterns
+        "big and small",
+        "hot and cold",
+        "fast and slow",
+        "high and low",
+        "bright and dark",
+        "loud and quiet",
+        "hard and soft",
+        "old and new"
     };
 
-    // Train BPE on simple data
-    std::cout << "Training BPE tokenizer on simple data..." << std::endl;
+    // Validation data (separate from training)
+    std::vector<std::string> validation_data = {
+        "hello there",
+        "the bird flies",
+        "sun is bright",
+        "water flows down",
+        "trees are tall",
+        "stars shine bright",
+        "wind blows strong",
+        "rain falls hard",
+        "moon is full",
+        "fish swim fast"
+    };
+
+    // Test prompts for generation (these should NOT include EOS tokens)
+    std::vector<std::string> test_prompts = {
+        "hello",
+        "the",
+        "a",
+        "birds",
+        "sun",
+        "water",
+        "trees",
+        "stars",
+        "wind",
+        "rain"
+    };
+
+    std::cout << "Training BPE tokenizer on diverse data..." << std::endl;
     
-    // First, train on individual characters to ensure all characters are covered
+    // Train on individual characters first
     std::string all_chars = "abcdefghijklmnopqrstuvwxyz ";
     for (char c : all_chars) {
         std::string char_str(1, c);
         bytePairEnc->trainFromString(char_str, true);
     }
     
-    // Then train on the actual sentences
+    // Train on all training data
     for (const auto& sentence : training_data) {
         bytePairEnc->trainFromString(sentence, true);
     }
-    bytePairEnc->reduceVocab(100); // Small vocab for testing
-    std::cout << "BPE training completed." << std::endl;
+    bytePairEnc->reduceVocab(200); // Larger vocab for better coverage
+    std::cout << "BPE training completed. Vocabulary size: " << bytePairEnc->getVocabSize() << std::endl;
 
-    // Test input
-    std::string test_input = "hello";
-    std::cout << "Test input: '" << test_input << "'" << std::endl;
-
-    // Tokenize input
-    std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test_input.c_str(), test_input.size());
-    std::cout << "Tokenized input: ";
-    for (const auto& token : enc_tokens) {
-        std::cout << "'" << token << "' ";
-    }
-    std::cout << std::endl;
-
-    // Create transformer
-    std::cout << "Creating transformer model..." << std::endl;
-    
-    // Save BPE to temporary file
-    std::string temp_bpe_file = "temp_bpe_simplified.checkpoint";
+    // Save BPE
+    std::string temp_bpe_file = "temp_bpe_enhanced.checkpoint";
     bytePairEnc->save(temp_bpe_file);
-    std::cout << "BPE saved to: " << temp_bpe_file << std::endl;
     
+    // Create transformer
     std::shared_ptr<NNGL::Transformer> transformer = std::make_shared<NNGL::Transformer>(
         temp_bpe_file, d_model, d_hidden, seq_len);
 
-    // Quick training on simple data
-    std::cout << "Training transformer on simple data..." << std::endl;
-    for (int epoch = 0; epoch < 5; ++epoch) {
+    // Training with intermediate validation
+    std::cout << "\n=== Starting Training with Validation ===" << std::endl;
+    int total_epochs = 100;
+    int validation_interval = 10;
+    float best_validation_loss = std::numeric_limits<float>::max();
+    
+    for (int epoch = 0; epoch < total_epochs; ++epoch) {
+        // Training phase
+        float training_loss = 0.0f;
+        int training_samples = 0;
+        
         for (const auto& sentence : training_data) {
             resetCursor();
             transformer->train(sentence);
+            training_samples++;
         }
-        std::cout << "Epoch " << (epoch + 1) << "/5 completed" << std::endl;
+        
+        // Validation phase (every validation_interval epochs)
+        if ((epoch + 1) % validation_interval == 0) {
+            std::cout << "\n--- Epoch " << (epoch + 1) << "/" << total_epochs << " ---" << std::endl;
+            
+            // Test generation on validation prompts
+            std::cout << "Validation Generation Tests:" << std::endl;
+            for (const auto& prompt : test_prompts) {
+                std::string generated = prompt;
+                std::string full_generated = prompt;
+                
+                // Generate 3-5 tokens
+                for (int i = 0; i < 5; ++i) {
+                    std::string next_token = transformer->eval(generated);
+                    
+                    if (next_token == "<EOS>" || next_token.empty()) {
+                        break;
+                    }
+                    
+                    full_generated += next_token;
+                    generated = full_generated; // Use full context for next prediction
+                    
+                    // Stop if too long
+                    if (full_generated.length() > 50) break;
+                }
+                
+                std::cout << "  '" << prompt << "' -> '" << full_generated << "'" << std::endl;
+            }
+            
+            // Test specific patterns
+            std::cout << "\nPattern Recognition Tests:" << std::endl;
+            
+            // Test repetition pattern
+            std::string rep_test = "hello";
+            std::string rep_result = rep_test;
+            for (int i = 0; i < 3; ++i) {
+                std::string next = transformer->eval(rep_result);
+                if (next != "<EOS>" && !next.empty()) {
+                    rep_result += next;
+                }
+            }
+            std::cout << "  Repetition: '" << rep_test << "' -> '" << rep_result << "'" << std::endl;
+            
+            // Test continuation pattern
+            std::string cont_test = "the cat";
+            std::string cont_result = cont_test;
+            for (int i = 0; i < 3; ++i) {
+                std::string next = transformer->eval(cont_result);
+                if (next != "<EOS>" && !next.empty()) {
+                    cont_result += next;
+                }
+            }
+            std::cout << "  Continuation: '" << cont_test << "' -> '" << cont_result << "'" << std::endl;
+            
+            // Test question pattern
+            std::string q_test = "what is";
+            std::string q_result = q_test;
+            for (int i = 0; i < 3; ++i) {
+                std::string next = transformer->eval(q_result);
+                if (next != "<EOS>" && !next.empty()) {
+                    q_result += next;
+                }
+            }
+            std::cout << "  Question: '" << q_test << "' -> '" << q_result << "'" << std::endl;
+            
+            // Test special token handling
+            std::cout << "\nSpecial Token Tests:" << std::endl;
+            
+            // Test EOS token prediction (should predict EOS after complete sentences)
+            std::string eos_test = "hello world";
+            std::string eos_result = eos_test;
+            for (int i = 0; i < 5; ++i) {
+                std::string next = transformer->eval(eos_result);
+                if (next == "<EOS>") {
+                    std::cout << "  EOS Prediction: '" << eos_test << "' -> EOS predicted correctly" << std::endl;
+                    break;
+                } else if (next.empty()) {
+                    std::cout << "  EOS Prediction: '" << eos_test << "' -> Empty token (issue)" << std::endl;
+                    break;
+                } else {
+                    eos_result += next;
+                }
+            }
+            
+            // Test PAD token handling (should not generate PAD tokens)
+            std::string pad_test = "";
+            std::string pad_result = transformer->eval(pad_test);
+            if (pad_result == "<PAD>") {
+                std::cout << "  PAD Generation: WARNING - PAD token generated (should not happen)" << std::endl;
+            } else {
+                std::cout << "  PAD Generation: OK - No PAD token generated" << std::endl;
+            }
+            
+            // Test SOS token handling
+            std::string sos_test = "<SOS>";
+            std::string sos_result = transformer->eval(sos_test);
+            if (sos_result == "<SOS>") {
+                std::cout << "  SOS Generation: WARNING - SOS token generated (should not happen)" << std::endl;
+            } else {
+                std::cout << "  SOS Generation: OK - No SOS token generated" << std::endl;
+            }
+        }
+        
+        // Progress indicator
+        if ((epoch + 1) % 5 == 0) {
+            std::cout << "Epoch " << (epoch + 1) << "/" << total_epochs << " completed" << std::endl;
+        }
     }
 
-    // Test generation
-    std::cout << "\nTesting generation..." << std::endl;
-    std::string generated_text = test_input;
-    int max_tokens = 10; // Limit generation length
+    // Final comprehensive test
+    std::cout << "\n=== Final Comprehensive Test ===" << std::endl;
     
-    for (int i = 0; i < max_tokens; ++i) {
-        std::string next_token = transformer->eval(generated_text);
+    std::vector<std::pair<std::string, std::string>> final_tests = {
+        {"hello", "Basic greeting continuation"},
+        {"the quick", "Complex phrase continuation"},
+        {"birds fly", "Action continuation"},
+        {"what is", "Question continuation"},
+        {"if you", "Conditional continuation"},
+        {"one two", "Sequence continuation"},
+        {"big and", "Contrast continuation"},
+        {"sun shines", "Description continuation"}
+    };
+    
+    for (const auto& test : final_tests) {
+        std::string generated = test.first;
+        std::string full_generated = test.first;
         
-        if (next_token == "<EOS>" || next_token.empty()) {
-            std::cout << "Generation stopped (EOS or empty token)" << std::endl;
-            break;
+        std::cout << "\n" << test.second << ":" << std::endl;
+        std::cout << "  Input: '" << test.first << "'" << std::endl;
+        
+        for (int i = 0; i < 8; ++i) {
+            std::string next_token = transformer->eval(generated);
+            
+            if (next_token == "<EOS>" || next_token.empty()) {
+                std::cout << "  Stopped: EOS or empty token" << std::endl;
+                break;
+            }
+            
+            full_generated += next_token;
+            generated = full_generated;
+            
+            if (full_generated.length() > 100) {
+                std::cout << "  Stopped: Max length reached" << std::endl;
+                break;
+            }
         }
         
-        generated_text.append(next_token);
-        std::cout << "Generated: '" << generated_text << "'" << std::endl;
-        
-        // Simple stop condition
-        if (generated_text.length() > 50) {
-            std::cout << "Generation stopped (max length reached)" << std::endl;
-            break;
-        }
+        std::cout << "  Output: '" << full_generated << "'" << std::endl;
     }
 
-    std::cout << "\nFinal generated text: '" << generated_text << "'" << std::endl;
-    std::cout << "=== Simplified Transformer Test Complete ===" << std::endl;
+    std::cout << "\n=== Enhanced Transformer Training Complete ===" << std::endl;
 }
 
 // ============================================================================
@@ -1217,8 +1430,8 @@ int main() {
     // Run comprehensive unit tests
     //runAllUnitTests();
     
-    //transformer_simplified();
-    transformer();
+    transformer_simplified();
+    //transformer();
     //digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;

@@ -11,22 +11,29 @@ uniform int output_size;
 uniform int batch_size;
 
 void main() {
-    uint batch_idx = gl_GlobalInvocationID.x;
-    uint input_idx = gl_GlobalInvocationID.y;
+    uint batch_idx = gl_GlobalInvocationID.x;  // batch sample index
+    uint input_neuron_idx = gl_GlobalInvocationID.y;  // input neuron index
 
-    if (batch_idx >= batch_size || input_idx >= input_size) return;
+    if (batch_idx >= batch_size || input_neuron_idx >= input_size) return;
 
-    float grad = 0.0;
-    for (int o = 0; o < output_size; o++) {
-        uint delta_idx = batch_idx * output_size + o;
-        uint weight_idx = o * input_size + input_idx;
+    // Compute gradient w.r.t. input: dL/dx = deltas @ weights^T
+    float input_gradient = 0.0;
+    for (int output_neuron_idx = 0; output_neuron_idx < output_size; output_neuron_idx++) {
+        // Row-major indexing for batch processing
+        uint delta_idx = batch_idx * output_size + output_neuron_idx;
+        uint weight_idx = output_neuron_idx * input_size + input_neuron_idx;
         float delta_val = next_deltas[delta_idx];
         float weight_val = weights[weight_idx];
+        
+        // NaN check for debugging
         if (isnan(delta_val) || isnan(weight_val)) {
-            grad = 0.5; // Use a different debug value
+            input_gradient = 0.5; // Use a different debug value
             break;
         }
-        grad += delta_val * weight_val;
+        input_gradient += delta_val * weight_val;
     }
-    input_deltas[batch_idx * input_size + input_idx] = grad;
+    
+    // Store input gradient with row-major indexing: [batch * input_size + input_neuron]
+    uint input_delta_idx = batch_idx * input_size + input_neuron_idx;
+    input_deltas[input_delta_idx] = input_gradient;
 } 

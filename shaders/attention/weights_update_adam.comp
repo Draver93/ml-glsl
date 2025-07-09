@@ -16,19 +16,20 @@ uniform int ADAM_timestep;
 const float epsilon = 1e-8;
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
-    if (idx >= uint(input_dim * head_dim)) return;
+    uint weight_idx = gl_GlobalInvocationID.x;  // flattened weight index
+    if (weight_idx >= uint(input_dim * head_dim)) return;
     
-    float weight_gradient = grad_weight[idx];
+    // Get pre-computed weight gradient from attention backward pass
+    float weight_gradient = grad_weight[weight_idx];
     
-    // ADAM optimization
-    adam_m[idx] = ADAM_beta1 * adam_m[idx] + (1.0 - ADAM_beta1) * weight_gradient;
-    adam_v[idx] = ADAM_beta2 * adam_v[idx] + (1.0 - ADAM_beta2) * weight_gradient * weight_gradient;
+    // ADAM optimizer update
+    adam_m[weight_idx] = ADAM_beta1 * adam_m[weight_idx] + (1.0 - ADAM_beta1) * weight_gradient;
+    adam_v[weight_idx] = ADAM_beta2 * adam_v[weight_idx] + (1.0 - ADAM_beta2) * weight_gradient * weight_gradient;
 
-    // Bias correction
-    float m_hat = adam_m[idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
-    float v_hat = adam_v[idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
+    // Bias correction for ADAM
+    float m_hat = adam_m[weight_idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
+    float v_hat = adam_v[weight_idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
 
     // ADAM update: weight = weight - learning_rate * m_hat / (sqrt(v_hat) + epsilon)
-    weight[idx] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+    weight[weight_idx] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
 } 

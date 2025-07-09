@@ -10,18 +10,21 @@ uniform int batch_size;
 uniform float learning_rate;
 
 void main() {
-    uint output_idx = gl_GlobalInvocationID.x;
+    uint output_neuron_idx = gl_GlobalInvocationID.x;  // output neuron index
     
-    if (output_idx >= output_size) return;
+    if (output_neuron_idx >= output_size) return;
     
+    // Compute bias gradient: dL/db = sum(deltas) across batch
     float bias_gradient = 0.0;
     
-    // Accumulate bias gradients across batch
-    for (int b = 0; b < batch_size; b++) {
-        bias_gradient += deltas[b * output_size + output_idx];
+    // Accumulate gradients across all batch samples
+    for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
+        // Row-major indexing for batch processing: [batch * output_size + output_neuron]
+        uint delta_idx = batch_idx * output_size + output_neuron_idx;
+        bias_gradient += deltas[delta_idx];
     }
     
-    // Average gradient and update bias
+    // Average gradient across batch and update bias
     bias_gradient /= float(batch_size);
-    biases[output_idx] -= learning_rate * bias_gradient;
+    biases[output_neuron_idx] -= learning_rate * bias_gradient;
 }

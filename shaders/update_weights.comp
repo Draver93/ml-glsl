@@ -20,38 +20,44 @@ uniform float learning_rate;
 const float epsilon = 1e-8;
 
 void main() {
-    uint input_idx = gl_GlobalInvocationID.x;
-    uint output_idx = gl_GlobalInvocationID.y;
-    uint idx = input_idx * output_size + output_idx;
+    uint input_neuron_idx = gl_GlobalInvocationID.x;  // input neuron index
+    uint output_neuron_idx = gl_GlobalInvocationID.y; // output neuron index
+    uint weight_idx = input_neuron_idx * output_size + output_neuron_idx;
 
-    if (input_idx >= input_size || output_idx >= output_size) return;
+    if (input_neuron_idx >= input_size || output_neuron_idx >= output_size) return;
     
+    // Compute weight gradient: dL/dw = input^T @ delta (accumulated across batch)
     float weight_gradient = 0.0;
     
-    // Accumulate gradients across batch
-    for (int b = 0; b < batch_size; b++) {
-        float input_val = inputs[b * input_size + input_idx];
-        float delta_val = deltas[b * output_size + output_idx];
+    // Accumulate gradients across all batch samples
+    for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
+        // Row-major indexing for batch processing
+        uint input_idx = batch_idx * input_size + input_neuron_idx;
+        uint delta_idx = batch_idx * output_size + output_neuron_idx;
+        float input_val = inputs[input_idx];
+        float delta_val = deltas[delta_idx];
         
         weight_gradient += input_val * delta_val;
     }
 
-    // Average gradient and update weight
+    // Average gradient across batch
     weight_gradient /= float(batch_size);
 
-    adam_m[idx] = ADAM_beta1 * adam_m[idx] + (1.0 - ADAM_beta1) * weight_gradient;
-    adam_v[idx] = ADAM_beta2 * adam_v[idx] + (1.0 - ADAM_beta2) * weight_gradient * weight_gradient;
+    // ADAM optimizer update
+    adam_m[weight_idx] = ADAM_beta1 * adam_m[weight_idx] + (1.0 - ADAM_beta1) * weight_gradient;
+    adam_v[weight_idx] = ADAM_beta2 * adam_v[weight_idx] + (1.0 - ADAM_beta2) * weight_gradient * weight_gradient;
 
-    // Bias correction (optional)
-    float m_hat = adam_m[idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
-    float v_hat = adam_v[idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
+    // Bias correction for ADAM
+    float m_hat = adam_m[weight_idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
+    float v_hat = adam_v[weight_idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
 
     v_hat = max(v_hat, epsilon); // Prevent sqrt of zero or negative
     float denom = sqrt(v_hat) + epsilon;
     if (denom == 0.0) denom = epsilon;
-    weights[idx] -= learning_rate * m_hat / denom;
+    weights[weight_idx] -= learning_rate * m_hat / denom;
     
-    if (isnan(weights[idx]) || isinf(weights[idx])) weights[idx] = 0.0;
+    // NaN/Inf protection
+    if (isnan(weights[weight_idx]) || isinf(weights[weight_idx])) weights[weight_idx] = 0.0;
     
-    //weights[idx] -= learning_rate * weight_gradient; SGD
+    //weights[weight_idx] -= learning_rate * weight_gradient; // SGD alternative
 }

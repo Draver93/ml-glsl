@@ -47,7 +47,13 @@ namespace NNGL {
         std::vector<int> stringToTokenIds(const std::vector<std::string>& tokens);
         std::vector<std::string> tokenIdsToStrings(const std::vector<int>& tokenIds);
 
-        // Caching for embeddings
+        // Special token helper methods
+        int getPadTokenId() const;
+        int getSosTokenId() const;
+        int getEosTokenId() const;
+        bool isSpecialToken(int tokenId) const;
+
+        // Embedding caching
         std::unordered_map<std::string, std::shared_ptr<Matrix>> m_EmbeddingCache;
         std::mutex m_CacheMutex;
         std::shared_ptr<Matrix> getCachedEmbedding(const std::vector<int>& tokens);

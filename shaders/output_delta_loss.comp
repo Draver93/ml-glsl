@@ -23,13 +23,17 @@ float derivative(float z, int type) {
 }
 
 void main() {
-    uint batch_idx = gl_GlobalInvocationID.x;
-    uint neuron_idx = gl_GlobalInvocationID.y;
-    if (batch_idx >= batch_size || neuron_idx >= output_size) return;
-    uint idx = batch_idx * output_size + neuron_idx;
-    float output_val = outputs[idx];
-    float target_val = targets[idx];
-    float preactivation_val = preactivations[idx];
-    float error = 2.0 * (output_val - target_val);
-    deltas[idx] = error * derivative(preactivation_val, activation_type);
+    uint batch_idx = gl_GlobalInvocationID.x;  // batch sample index
+    uint output_neuron_idx = gl_GlobalInvocationID.y;  // output neuron index
+    if (batch_idx >= batch_size || output_neuron_idx >= output_size) return;
+    
+    // Row-major indexing for batch processing: [batch * output_size + output_neuron]
+    uint output_idx = batch_idx * output_size + output_neuron_idx;
+    float output_val = outputs[output_idx];
+    float target_val = targets[output_idx];
+    float preactivation_val = preactivations[output_idx];
+    
+    // Compute gradient for output layer: dL/dz = 2 * (output - target) * activation_derivative
+    float output_error = 2.0 * (output_val - target_val);
+    deltas[output_idx] = output_error * derivative(preactivation_val, activation_type);
 }

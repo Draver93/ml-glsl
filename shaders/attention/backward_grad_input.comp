@@ -10,18 +10,23 @@ uniform int input_dim;
 uniform int head_dim;
 
 void main() {
-    uint row = gl_GlobalInvocationID.x;  // seq_len
-    uint col = gl_GlobalInvocationID.y;  // input_dim
+    uint seq_pos = gl_GlobalInvocationID.x;  // sequence position (row index)
+    uint input_dim_idx = gl_GlobalInvocationID.y;  // input dimension (column index)
     
-    if (row >= seq_len || col >= input_dim) return;
+    if (seq_pos >= seq_len || input_dim_idx >= input_dim) return;
     
-    // grad_input = grad_projection @ weight^T
+    // Compute gradient w.r.t. input: grad_input = grad_projection @ weight^T
+    // Column-major indexing: grad_input[input_dim * seq_len + seq_pos]
     float sum = 0.0;
-    for (uint k = 0; k < head_dim; k++) {
-        uint grad_proj_idx = row * head_dim + k;
-        uint weight_idx = col * head_dim + k;  // weight^T[k,col] = weight[col,k]
-        sum += grad_projection[grad_proj_idx] * weight[weight_idx];
+    for (uint head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
+        // grad_projection indexing: [head_dimension * seq_len + sequence_position]
+        uint grad_proj_col_major_idx = head_dim_idx * seq_len + seq_pos;
+        // weight indexing: weight^T[head_dim_idx, input_dim_idx] = weight[input_dim_idx, head_dim_idx]
+        uint weight_idx = input_dim_idx * head_dim + head_dim_idx;
+        sum += grad_projection[grad_proj_col_major_idx] * weight[weight_idx];
     }
     
-    grad_input[row * input_dim + col] = sum;
+    // Store gradient with column-major indexing: [input_dimension * seq_len + sequence_position]
+    uint grad_input_col_major_idx = input_dim_idx * seq_len + seq_pos;
+    grad_input[grad_input_col_major_idx] = sum;
 }

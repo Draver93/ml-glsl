@@ -9,9 +9,9 @@ uniform int head_dim;
 uniform float learning_rate;
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
-    if (idx >= uint(input_dim * head_dim)) return;
+    uint weight_idx = gl_GlobalInvocationID.x;  // flattened weight index
+    if (weight_idx >= uint(input_dim * head_dim)) return;
     
     // SGD update: weight = weight - learning_rate * grad_weight
-    weight[idx] -= learning_rate * grad_weight[idx];
+    weight[weight_idx] -= learning_rate * grad_weight[weight_idx];
 }

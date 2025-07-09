@@ -24,14 +24,21 @@ float derivative(float z, int type) {
 }
 
 void main() {
-    uint batch_idx = gl_GlobalInvocationID.x;
-    uint neuron_idx = gl_GlobalInvocationID.y;
-    if (batch_idx >= batch_size || neuron_idx >= current_size) return;
-    float error = 0.0;
-    for (int i = 0; i < next_size; i++) {
-        error += next_deltas[batch_idx * next_size + i] * weights[neuron_idx * next_size + i];
+    uint batch_idx = gl_GlobalInvocationID.x;  // batch sample index
+    uint current_neuron_idx = gl_GlobalInvocationID.y;  // current layer neuron index
+    if (batch_idx >= batch_size || current_neuron_idx >= current_size) return;
+    
+    // Compute gradient for hidden layer: dL/dz = (next_deltas @ weights^T) * activation_derivative
+    float gradient_sum = 0.0;
+    for (int next_neuron_idx = 0; next_neuron_idx < next_size; next_neuron_idx++) {
+        // Row-major indexing for batch processing
+        uint next_delta_idx = batch_idx * next_size + next_neuron_idx;
+        uint weight_idx = current_neuron_idx * next_size + next_neuron_idx;
+        gradient_sum += next_deltas[next_delta_idx] * weights[weight_idx];
     }
-    uint idx = batch_idx * current_size + neuron_idx;
-    float preactivation = preactivations[idx];
-    deltas[idx] = error * derivative(preactivation, activation_type);
+    
+    // Apply activation derivative
+    uint current_idx = batch_idx * current_size + current_neuron_idx;
+    float preactivation = preactivations[current_idx];
+    deltas[current_idx] = gradient_sum * derivative(preactivation, activation_type);
 }

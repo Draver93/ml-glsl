@@ -9,35 +9,40 @@ uniform int num_heads;
 uniform int use_mask;
 
 void main() {
-    uint global_row = gl_GlobalInvocationID.x;
-    if (global_row >= uint(num_heads * seq_len)) return;
+    uint attention_row_idx = gl_GlobalInvocationID.x;  // attention row index (head * seq_len + query_pos)
+    if (attention_row_idx >= uint(num_heads * seq_len)) return;
     
-    uint head_idx = global_row / uint(seq_len);
-    uint row = global_row % uint(seq_len);
+    // Extract head index and query position within the head
+    uint head_idx = attention_row_idx / uint(seq_len);
+    uint query_pos = attention_row_idx % uint(seq_len);
     
-    // Find maximum for numerical stability
-    float max_val = -3.402823e38;
-    for (int j = 0; j < seq_len; j++) {
-        if (use_mask == 1 && j > row) continue;
-        float val = input_scores[global_row * seq_len + j];
-        if (val > max_val) max_val = val;
+    // Find maximum for numerical stability (subtract max before exp to prevent overflow)
+    float max_score = -3.402823e38;
+    for (int key_pos = 0; key_pos < seq_len; key_pos++) {
+        if (use_mask == 1 && key_pos > query_pos) continue;  // Apply causal mask
+        uint score_idx = attention_row_idx * seq_len + key_pos;
+        float score_val = input_scores[score_idx];
+        if (score_val > max_score) max_score = score_val;
     }
     
-    // Compute sum of exponentials
+    // Compute sum of exponentials for normalization
     float sum_exp = 0.0;
-    for (int j = 0; j < seq_len; j++) {
-        if (use_mask == 1 && j > row) continue;
-        float val = input_scores[global_row * seq_len + j];
-        sum_exp += exp(val - max_val);
+    for (int key_pos = 0; key_pos < seq_len; key_pos++) {
+        if (use_mask == 1 && key_pos > query_pos) continue;  // Apply causal mask
+        uint score_idx = attention_row_idx * seq_len + key_pos;
+        float score_val = input_scores[score_idx];
+        sum_exp += exp(score_val - max_score);
     }
     
-    // Compute softmax
-    for (int j = 0; j < seq_len; j++) {
-        if (use_mask == 1 && j > row) {
-            output_weights[global_row * seq_len + j] = 0.0;
+    // Compute softmax attention weights
+    for (int key_pos = 0; key_pos < seq_len; key_pos++) {
+        uint weight_idx = attention_row_idx * seq_len + key_pos;
+        if (use_mask == 1 && key_pos > query_pos) {
+            output_weights[weight_idx] = 0.0;  // Zero out future positions in causal mask
         } else {
-            float val = input_scores[global_row * seq_len + j];
-            output_weights[global_row * seq_len + j] = exp(val - max_val) / sum_exp;
+            uint score_idx = attention_row_idx * seq_len + key_pos;
+            float score_val = input_scores[score_idx];
+            output_weights[weight_idx] = exp(score_val - max_score) / sum_exp;
         }
     }
 }

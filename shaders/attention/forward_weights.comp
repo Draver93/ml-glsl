@@ -17,30 +17,41 @@ uniform int head_dim;
 uniform int num_heads;
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
-    if (idx >= uint(seq_len * input_dim)) return;
+    uint global_idx = gl_GlobalInvocationID.x;
+    if (global_idx >= uint(seq_len * input_dim)) return;
     
-    uint seq_idx = idx / uint(input_dim);
-    uint dim_idx = idx % uint(input_dim);
+    // Decompose global index into sequence position and input dimension
+    uint seq_pos = global_idx / uint(input_dim);  // sequence position (row index)
+    uint input_dim_idx = global_idx % uint(input_dim);  // input dimension (column index)
     
-    // Compute Q projection for all heads
+    // Compute Q projection: input_q @ weight_q
+    // Column-major indexing: input_q[input_dim * seq_len + seq_pos], output_q[output_dim * seq_len + seq_pos]
     float q_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
-        q_val += input_q[seq_idx * input_dim + i] * weight_q[i * input_dim + dim_idx];
+        uint input_col_major_idx = i * seq_len + seq_pos;
+        uint weight_idx = i * input_dim + input_dim_idx;
+        q_val += input_q[input_col_major_idx] * weight_q[weight_idx];
     }
-    output_q[seq_idx * input_dim + dim_idx] = q_val;
+    uint output_q_col_major_idx = input_dim_idx * seq_len + seq_pos;
+    output_q[output_q_col_major_idx] = q_val;
     
-    // Compute K projection for all heads
+    // Compute K projection: input_kv @ weight_k
     float k_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
-        k_val += input_kv[seq_idx * input_dim + i] * weight_k[i * input_dim + dim_idx];
+        uint input_col_major_idx = i * seq_len + seq_pos;
+        uint weight_idx = i * input_dim + input_dim_idx;
+        k_val += input_kv[input_col_major_idx] * weight_k[weight_idx];
     }
-    output_k[seq_idx * input_dim + dim_idx] = k_val;
+    uint output_k_col_major_idx = input_dim_idx * seq_len + seq_pos;
+    output_k[output_k_col_major_idx] = k_val;
     
-    // Compute V projection for all heads
+    // Compute V projection: input_kv @ weight_v
     float v_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
-        v_val += input_kv[seq_idx * input_dim + i] * weight_v[i * input_dim + dim_idx];
+        uint input_col_major_idx = i * seq_len + seq_pos;
+        uint weight_idx = i * input_dim + input_dim_idx;
+        v_val += input_kv[input_col_major_idx] * weight_v[weight_idx];
     }
-    output_v[seq_idx * input_dim + dim_idx] = v_val;
+    uint output_v_col_major_idx = input_dim_idx * seq_len + seq_pos;
+    output_v[output_v_col_major_idx] = v_val;
 }
