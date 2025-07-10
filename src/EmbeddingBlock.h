@@ -28,6 +28,11 @@ namespace NNGL {
         std::shared_ptr<Shader> m_ApplyPosEncodingCompute;
         std::shared_ptr<Shader> m_RemovePosEncodingCompute;
 
+        // Training statistics
+        size_t m_TotalUpdates;
+        float m_AverageGradientMagnitude;
+        std::vector<float> m_GradientHistory;
+
         void initializePositionalEncoding();
         void initializeADAMBuffers(const std::string& token);
 
@@ -43,5 +48,18 @@ namespace NNGL {
         
         void save(const std::string& filename) const;
         void load(const std::string& filename);
+
+        // Debugging and statistics
+        void printEmbeddingStats() const;
+        void printTokenEmbedding(const std::string& token) const;
+        float getEmbeddingMagnitude(const std::string& token) const;
+        size_t getVocabSize() const { return m_Embeddings.size(); }
+        std::vector<std::string> getTopTokensByMagnitude(size_t count = 10) const;
+
+        // Training statistics
+        size_t getTotalUpdates() const { return m_TotalUpdates; }
+        float getAverageGradientMagnitude() const { return m_AverageGradientMagnitude; }
+        void resetTrainingStats();
+        void resetPadTokenEmbedding(); // Reset PAD token embedding to prevent explosion
     };
 } 

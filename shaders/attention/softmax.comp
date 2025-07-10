@@ -8,6 +8,9 @@ uniform int seq_len;
 uniform int num_heads;
 uniform int use_mask;
 
+// Padding mask: 1 for real tokens, 0 for PAD tokens
+layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
+
 void main() {
     uint attention_row_idx = gl_GlobalInvocationID.x;  // attention row index (head * seq_len + query_pos)
     if (attention_row_idx >= uint(num_heads * seq_len)) return;
@@ -20,6 +23,7 @@ void main() {
     float max_score = -3.402823e38;
     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
         if (use_mask == 1 && key_pos > query_pos) continue;  // Apply causal mask
+        if (padding_mask[key_pos] == 0) continue;  // Apply padding mask
         uint score_idx = attention_row_idx * seq_len + key_pos;
         float score_val = input_scores[score_idx];
         if (score_val > max_score) max_score = score_val;
@@ -29,6 +33,7 @@ void main() {
     float sum_exp = 0.0;
     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
         if (use_mask == 1 && key_pos > query_pos) continue;  // Apply causal mask
+        if (padding_mask[key_pos] == 0) continue;  // Apply padding mask
         uint score_idx = attention_row_idx * seq_len + key_pos;
         float score_val = input_scores[score_idx];
         sum_exp += exp(score_val - max_score);
@@ -39,6 +44,8 @@ void main() {
         uint weight_idx = attention_row_idx * seq_len + key_pos;
         if (use_mask == 1 && key_pos > query_pos) {
             output_weights[weight_idx] = 0.0;  // Zero out future positions in causal mask
+        } else if (padding_mask[key_pos] == 0) {
+            output_weights[weight_idx] = 0.0;  // Zero out PAD positions
         } else {
             uint score_idx = attention_row_idx * seq_len + key_pos;
             float score_val = input_scores[score_idx];

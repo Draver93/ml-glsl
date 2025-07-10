@@ -23,6 +23,9 @@ namespace NNGL {
         EncoderBlock(int modelDim, int hiddenDim, int seqLen);
 
         std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> x);
+        
+        // New overload with padding mask support
+        std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> x, const std::vector<int>& paddingMask);
         std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
     };
 }

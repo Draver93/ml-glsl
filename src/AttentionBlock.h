@@ -11,6 +11,9 @@ namespace NNGL {
 
         //By spec input_kv we can replace kv for cross attention
         std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv = nullptr);
+        
+        // New overload with padding mask support
+        std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv, const std::vector<int>& paddingMask);
 
         //return GradInput, GradContext
         std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context);
@@ -26,6 +29,9 @@ namespace NNGL {
         int m_ModelDim, m_NumHeads, m_HeadDim, m_SeqLen;
         bool m_UseMask;
         int m_ADAM_Timestep; // ADAM timestep counter
+        
+        // Padding mask storage
+        std::vector<int> m_PaddingMask;
 
         std::shared_ptr<Shader> 
             m_ForwardPassWeightsCompute,

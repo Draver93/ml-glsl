@@ -28,6 +28,14 @@ namespace NNGL {
             std::shared_ptr<Matrix> decoderInput,
             std::shared_ptr<Matrix> encoderOutput
         );
+        
+        // New overload with padding mask support
+        std::shared_ptr<Matrix> forward(
+            std::shared_ptr<Matrix> decoderInput,
+            std::shared_ptr<Matrix> encoderOutput,
+            const std::vector<int>& decoderPaddingMask,
+            const std::vector<int>& encoderPaddingMask
+        );
 
         std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
 

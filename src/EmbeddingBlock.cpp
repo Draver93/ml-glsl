@@ -2,13 +2,18 @@
 #include <cmath>
 #include <stdexcept>
 #include <algorithm>
+#include <iomanip>
+#include <iostream>
+
 
 namespace NNGL {
     EmbeddingBlock::EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen) :
         m_VocabSize(vocabSize), 
         m_ModelDim(modelDim),
         m_MaxSeqLen(maxSeqLen),
-        m_ADAM_Timestep(0) {
+        m_ADAM_Timestep(0),
+        m_TotalUpdates(0),
+        m_AverageGradientMagnitude(0.0f) {
 
         m_Embeddings.reserve(m_VocabSize);
 
@@ -62,9 +67,18 @@ namespace NNGL {
 
         // Update embeddings using ADAM optimization
         size_t minSize = std::min(tokens.size(), static_cast<size_t>(gradOutput->rows));
+        
+        // Track gradient statistics
+        float totalGradientMagnitude = 0.0f;
+        int gradientCount = 0;
 
         for (size_t i = 0; i < minSize; ++i) {
             const std::string& token = tokens[i];
+            
+            // Skip PAD token updates - they should not be updated during training
+            if (token == "<PAD>") {
+                continue;
+            }
             auto it = m_Embeddings.find(token);
 
             if (it != m_Embeddings.end()) {
@@ -75,8 +89,11 @@ namespace NNGL {
                 auto& adamM = m_ADAM_M_Embeddings[token];
                 auto& adamV = m_ADAM_V_Embeddings[token];
 
+                float tokenGradientMagnitude = 0.0f;
+
                 for (size_t j = 0; j < m_ModelDim; ++j) {
                     float gradient = (*gradOutput)(i, j);
+                    tokenGradientMagnitude += gradient * gradient;
                     
                     // ADAM update
                     adamM[j] = beta1 * adamM[j] + (1.0f - beta1) * gradient;
@@ -89,7 +106,39 @@ namespace NNGL {
                     // Update embedding
                     embedding[j] -= learningRate * m_hat / (std::sqrt(v_hat) + epsilon);
                 }
+
+                totalGradientMagnitude += std::sqrt(tokenGradientMagnitude);
+                gradientCount++;
+                m_TotalUpdates++;
+
+                // Debug output (occasionally)
+                static int embedDebugCounter = 0;
+                if (++embedDebugCounter % 200 == 0) { // Print every 200th update
+                    float embeddingMagnitude = 0.0f;
+                    for (float val : embedding) {
+                        embeddingMagnitude += val * val;
+                    }
+                    embeddingMagnitude = std::sqrt(embeddingMagnitude);
+
+                    std::cout << "  [EMBED] Token: '" << token << "' | Grad mag: " << std::fixed << std::setprecision(4)
+                             << std::sqrt(tokenGradientMagnitude) << " | Embed mag: " << std::fixed << std::setprecision(4)
+                             << embeddingMagnitude << " | LR: " << std::fixed << std::setprecision(6) << learningRate << std::endl;
+                }
             }
+        }
+
+        // Update average gradient magnitude
+        if (gradientCount > 0) {
+            float avgGradMag = totalGradientMagnitude / gradientCount;
+            m_GradientHistory.push_back(avgGradMag);
+
+            // Keep history manageable
+            if (m_GradientHistory.size() > 100) {
+                m_GradientHistory.erase(m_GradientHistory.begin());
+            }
+
+            // Update running average
+            m_AverageGradientMagnitude = 0.9f * m_AverageGradientMagnitude + 0.1f * avgGradMag;
         }
 
         // Increment ADAM timestep
@@ -248,6 +297,104 @@ namespace NNGL {
         if (m_ADAM_M_Embeddings.find(token) == m_ADAM_M_Embeddings.end()) {
             m_ADAM_M_Embeddings[token] = std::vector<float>(m_ModelDim, 0.0f);
             m_ADAM_V_Embeddings[token] = std::vector<float>(m_ModelDim, 0.0f);
+        }
+    }
+
+    void EmbeddingBlock::printEmbeddingStats() const {
+        std::cout << "=== Embedding Statistics ===" << std::endl;
+        std::cout << "Vocabulary size: " << m_Embeddings.size() << std::endl;
+        std::cout << "Model dimension: " << m_ModelDim << std::endl;
+        std::cout << "Total updates: " << m_TotalUpdates << std::endl;
+        std::cout << "Average gradient magnitude: " << std::fixed << std::setprecision(4) << m_AverageGradientMagnitude << std::endl;
+
+        if (!m_GradientHistory.empty()) {
+            float recentAvg = 0.0f;
+            int count = std::min(10, (int)m_GradientHistory.size());
+            for (int i = m_GradientHistory.size() - count; i < m_GradientHistory.size(); ++i) {
+                recentAvg += m_GradientHistory[i];
+            }
+            recentAvg /= count;
+            std::cout << "Recent gradient magnitude (last " << count << "): " << std::fixed << std::setprecision(4) << recentAvg << std::endl;
+        }
+    }
+
+    void EmbeddingBlock::printTokenEmbedding(const std::string& token) const {
+        auto it = m_Embeddings.find(token);
+        if (it == m_Embeddings.end()) {
+            std::cout << "Token '" << token << "' not found in vocabulary" << std::endl;
+            return;
+        }
+
+        const auto& embedding = it->second;
+        float magnitude = 0.0f;
+        for (float val : embedding) {
+            magnitude += val * val;
+        }
+        magnitude = std::sqrt(magnitude);
+
+        std::cout << "Token: '" << token << "' | Magnitude: " << std::fixed << std::setprecision(4) << magnitude << std::endl;
+        std::cout << "First 10 values: [";
+        for (size_t i = 0; i < std::min(embedding.size(), (size_t)10); ++i) {
+            if (i > 0) std::cout << ", ";
+            std::cout << std::fixed << std::setprecision(3) << embedding[i];
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    float EmbeddingBlock::getEmbeddingMagnitude(const std::string& token) const {
+        auto it = m_Embeddings.find(token);
+        if (it == m_Embeddings.end()) {
+            return 0.0f;
+        }
+
+        const auto& embedding = it->second;
+        float magnitude = 0.0f;
+        for (float val : embedding) {
+            magnitude += val * val;
+        }
+        return std::sqrt(magnitude);
+    }
+
+    std::vector<std::string> EmbeddingBlock::getTopTokensByMagnitude(size_t count) const {
+        std::vector<std::pair<std::string, float>> tokenMagnitudes;
+
+        for (const auto& [token, embedding] : m_Embeddings) {
+            float magnitude = getEmbeddingMagnitude(token);
+            tokenMagnitudes.emplace_back(token, magnitude);
+        }
+
+        // Sort by magnitude (descending)
+        std::sort(tokenMagnitudes.begin(), tokenMagnitudes.end(),
+                  [](const auto& a, const auto& b) { return a.second > b.second; });
+
+        // Return top tokens
+        std::vector<std::string> result;
+        for (size_t i = 0; i < std::min(count, tokenMagnitudes.size()); ++i) {
+            result.push_back(tokenMagnitudes[i].first);
+        }
+
+        return result;
+    }
+
+    void EmbeddingBlock::resetTrainingStats() {
+        m_TotalUpdates = 0;
+        m_AverageGradientMagnitude = 0.0f;
+        m_GradientHistory.clear();
+    }
+
+    void EmbeddingBlock::resetPadTokenEmbedding() {
+        auto it = m_Embeddings.find("<PAD>");
+        if (it != m_Embeddings.end()) {
+            // Reset PAD token embedding to small random values
+            for (size_t i = 0; i < m_ModelDim; ++i) {
+                it->second[i] = m_Distribution(m_Generator) * 0.1f; // Small random values
+            }
+
+            // Reset ADAM buffers for PAD token
+            m_ADAM_M_Embeddings.erase("<PAD>");
+            m_ADAM_V_Embeddings.erase("<PAD>");
+
+            std::cout << "  [EMBED] Reset PAD token embedding to small values" << std::endl;
         }
     }
 } 

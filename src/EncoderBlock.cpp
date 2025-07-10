@@ -32,6 +32,17 @@ namespace NNGL {
         return addNorm2Out;
     }
 
+    std::shared_ptr<Matrix> EncoderBlock::forward(std::shared_ptr<Matrix> x, const std::vector<int>& paddingMask) {
+        m_CachedInput->copyFrom(x);
+        std::shared_ptr<Matrix> attentionOutput = m_Attention->forward(x, nullptr, paddingMask);
+        auto addNorm1Out = m_AddNorm1->forward(attentionOutput, x);
+        m_CachedAttentionOutput->copyFrom(addNorm1Out);
+        m_CachedFfnInput->copyFrom(addNorm1Out);
+        std::shared_ptr<Matrix> mlpOut = m_FeedForward->forward(addNorm1Out);
+        auto addNorm2Out = m_AddNorm2->forward(mlpOut, addNorm1Out);
+        return addNorm2Out;
+    }
+
     std::shared_ptr<Matrix> EncoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
         // Backprop through addNorm2
         std::shared_ptr<Matrix> gradMlpOut, gradAddNorm1Out, gradGamma2, gradBeta2;

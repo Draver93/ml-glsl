@@ -11,6 +11,9 @@ uniform int num_heads;
 uniform int use_mask;
 uniform float inv_sqrt_head_dim;
 
+// Padding mask: 1 for real tokens, 0 for PAD tokens
+layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
+
 void main() {
     uint query_pos = gl_GlobalInvocationID.x;  // query sequence position
     uint key_pos = gl_GlobalInvocationID.y;    // key sequence position
@@ -20,6 +23,16 @@ void main() {
     // Apply causal mask if enabled (for autoregressive attention)
     if (use_mask == 1 && key_pos > query_pos) {
         // Set -infinity for all heads at this position to mask future tokens
+        for (int head = 0; head < num_heads; head++) {
+            uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
+            scores[attention_score_idx] = -3.402823e38;
+        }
+        return;
+    }
+    
+    // Apply padding mask - mask out PAD tokens
+    if (padding_mask[key_pos] == 0) {
+        // Set -infinity for all heads at this position to mask PAD tokens
         for (int head = 0; head < num_heads; head++) {
             uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
             scores[attention_score_idx] = -3.402823e38;

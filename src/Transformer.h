@@ -16,8 +16,19 @@ namespace NNGL {
     public:
         Transformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen);
 
-        void train(const std::string& inputText);
-        std::string eval(std::string& inputText);
+        void train(const std::string& inputText, float learningRate = 0.001f);
+        std::string eval(const std::string& inputText);
+        std::string evalWithTemperature(const std::string& inputText, float temperature = 1.0f, int maxLength = 50);
+
+        // Training statistics
+        float getCurrentLoss() const { return m_CurrentLoss; }
+        int getTrainingSteps() const { return m_TrainingSteps; }
+        const std::vector<float>& getLossHistory() const { return m_LossHistory; }
+        void resetTrainingStats();
+        void resetPadTokenEmbedding(); // Reset PAD token embedding to prevent explosion
+
+        // Public method for training on specific token sequences
+        void trainOnTokenSequence(const std::vector<std::string>& tokenSequence, float learningRate = 0.001f);
 
     private:
         void trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize = 0, float learningRate = 0.001f);
@@ -40,8 +51,12 @@ namespace NNGL {
             int targetTokenId,
             float learningRate);
 
-        int predictToken(std::shared_ptr<Matrix> probabilities);
+                int predictToken(std::shared_ptr<Matrix> probabilities);
+        int sampleTokenWithTemperature(std::shared_ptr<Matrix> logits, float temperature);
         void printGradientHeatmap(std::shared_ptr<Matrix> mat);
+
+        // Loss calculation
+        float calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId);
 
         // Token conversion helpers
         std::vector<int> stringToTokenIds(const std::vector<std::string>& tokens);
@@ -52,6 +67,9 @@ namespace NNGL {
         int getSosTokenId() const;
         int getEosTokenId() const;
         bool isSpecialToken(int tokenId) const;
+        
+        // Padding mask helper
+        std::vector<int> createPaddingMask(const std::vector<int>& tokenIds) const;
 
         // Embedding caching
         std::unordered_map<std::string, std::shared_ptr<Matrix>> m_EmbeddingCache;
@@ -67,5 +85,12 @@ namespace NNGL {
 
         int m_SeqLen;
         int m_VocabSize;
+
+        // Training statistics
+        std::vector<float> m_LossHistory;
+        int m_TrainingSteps;
+        float m_CurrentLoss;
+        
+
     };
 }

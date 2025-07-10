@@ -43,6 +43,30 @@ namespace NNGL {
         return addNorm3Out;
     }
 
+    std::shared_ptr<Matrix> DecoderBlock::forward(
+        std::shared_ptr<Matrix> decoderInput,
+        std::shared_ptr<Matrix> encoderOutput,
+        const std::vector<int>& decoderPaddingMask,
+        const std::vector<int>& encoderPaddingMask
+    ) {
+        m_CachedDecoderInput->copyFrom(decoderInput);
+        m_CachedEncoderOutput->copyFrom(encoderOutput);
+        
+        // Masked self-attention with decoder padding mask
+        auto maskedOut = m_MaskedSelfAttn->forward(decoderInput, nullptr, decoderPaddingMask);
+        auto addNorm1Out = m_AddNorm1->forward(maskedOut, decoderInput);
+        m_CachedMaskedOut->copyFrom(addNorm1Out);
+        
+        // Cross-attention with encoder padding mask
+        auto crossOut = m_CrossAttn->forward(addNorm1Out, encoderOutput, encoderPaddingMask);
+        auto addNorm2Out = m_AddNorm2->forward(crossOut, addNorm1Out);
+        m_CachedCrossOut->copyFrom(addNorm2Out);
+        
+        auto mlpOut = m_FeedForward->forward(addNorm2Out);
+        auto addNorm3Out = m_AddNorm3->forward(mlpOut, addNorm2Out);
+        return addNorm3Out;
+    }
+
     std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
         // Backprop through addNorm3
         std::shared_ptr<Matrix> gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3;
