@@ -19,7 +19,6 @@ namespace NNGL {
         int modelDim = input->cols;
         m_CachedInput = std::make_shared<Matrix>(*input);
         m_CachedResidual = std::make_shared<Matrix>(*residual);
-        // Compute and cache mean/var for (input + residual)
         m_CachedMean = std::make_shared<Matrix>(seqLen, 1);
         m_CachedVariance = std::make_shared<Matrix>(seqLen, 1);
         for (int i = 0; i < seqLen; ++i) {
@@ -68,6 +67,7 @@ namespace NNGL {
         NNGL::Timer timer("LayerNorm::backward");
         int seqLen = input->rows;
         int modelDim = input->cols;
+
         gradInput = std::make_shared<Matrix>(seqLen, modelDim);
         gradResidual = std::make_shared<Matrix>(seqLen, modelDim);
         gradGamma = std::make_shared<Matrix>(modelDim, 1);

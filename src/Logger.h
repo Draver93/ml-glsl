@@ -65,7 +65,7 @@ namespace NNGL {
 
     class Timer {
     public:
-        Timer(const std::string& name, LogLevel level = LogLevel::LL_INFO)
+        Timer(const std::string& name, LogLevel level = LogLevel::LL_TRACE)
             : m_Name(name), m_Level(level), m_Stopped(false) {
             m_Start = std::chrono::high_resolution_clock::now();
         }

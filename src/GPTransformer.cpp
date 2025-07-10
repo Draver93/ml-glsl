@@ -78,6 +78,7 @@ namespace NNGL {
             if (contextTokens.size() > 5) std::cout << ", ...";
             std::cout << "]" << std::endl;
         }
+
         std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize);
         for (int i = 0; i < m_VocabSize; ++i) (*targetMat)(0, i) = 0.0f;
         (*targetMat)(0, targetTokenId) = 1.0f;
@@ -220,6 +221,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, dummyEncoderOutput, paddingMask, std::vector<int>(m_SeqLen, 1));
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+
         return m_OutputProjection->forward(lastTokenRep);
     }
 

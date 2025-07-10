@@ -230,7 +230,7 @@ namespace NNGL {
                 glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 
                 // Log GPU data read for testing
-                LOG("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
+                LOG_TRACE("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
                     " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
             }
 
@@ -271,7 +271,7 @@ namespace NNGL {
         if (mapped) {
             std::memcpy(forwardMatOutput->raw(), mapped, forwardMatOutput->byteSize());
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            LOG("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) +
+            LOG_TRACE("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) +
                 " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
         }
         else throw std::runtime_error("data failed to map");
@@ -286,7 +286,7 @@ namespace NNGL {
             glGenBuffers(1, &m_InputGradBuffer);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
             glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * firstLayer->getSize().x * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-            LOG("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradBuffer) +
+            LOG_TRACE("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradBuffer) +
                 " (" + std::to_string(m_BatchSize * firstLayer->getSize().x * sizeof(float)) + " bytes)");
         }
 
@@ -318,7 +318,6 @@ namespace NNGL {
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
-        // Return gradient matrix to pool after use
         std::shared_ptr<Matrix> result = inputGradMat;
         returnMatrixToPool(inputGradMat);
         return result;
@@ -339,7 +338,6 @@ namespace NNGL {
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
-        // Return gradient matrix to pool after use
         std::shared_ptr<Matrix> result = inputGradMat;
         returnMatrixToPool(inputGradMat);
         return result;
@@ -350,7 +348,7 @@ namespace NNGL {
         glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->flatVec.size() * sizeof(float), targetLoss->flatVec.data(), GL_DYNAMIC_DRAW);
         
         // Log target loss upload
-        LOG("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->flatVec.size() * sizeof(float)) + 
+        LOG_TRACE("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->flatVec.size() * sizeof(float)) + 
             " bytes) uploaded to delta buffer " + std::to_string(m_Layers.back()->m_DeltaBuffer));
     }
 

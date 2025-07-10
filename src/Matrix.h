@@ -6,6 +6,8 @@ extern "C" {
 }
 #include <cstring>
 #include <memory>
+#include <queue>
+#include <mutex>
 
 namespace NNGL {
     struct Matrix {

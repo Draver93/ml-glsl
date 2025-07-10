@@ -2069,7 +2069,7 @@ int main(int argc, char** argv) {
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::INFO);   // Default
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::WARN);   // Warnings only
     NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::LL_INFO);
-    NNGL::Logger::getInstance().setEnabled(false);
+    NNGL::Logger::getInstance().setEnabled(true);
 
     //new tokenizer
     // take a byte convert it in vector of 8 float where each float is bit 1.0f or 0.0f
@@ -2118,7 +2118,7 @@ int main(int argc, char** argv) {
     // 2. Meaningful word predictions
     // 3. Sequence-to-sequence translation
     
-    int choice = 0; // Change this to test different functions
+    int choice = 4; // Change this to test different functions
     
     switch (choice) {
         case 0:
