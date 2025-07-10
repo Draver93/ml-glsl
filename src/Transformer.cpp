@@ -82,6 +82,7 @@ namespace NNGL {
         std::vector<std::string> decoderTokens = contextTokens;
         // Forward pass
         std::shared_ptr<Matrix> logits = forwardPass(contextTokens, decoderTokens);
+
         // Calculate loss before backward pass
         int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
         float loss = calculateLoss(logits, targetTokenId);
@@ -112,6 +113,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize);
         for (int i = 0; i < m_VocabSize; ++i) (*targetMat)(0, i) = 0.0f;
         (*targetMat)(0, targetTokenId) = 1.0f;
+
         backwardPass(contextTokens, decoderTokens, targetMat, learningRate);
     }
 

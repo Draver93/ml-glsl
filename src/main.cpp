@@ -16,7 +16,7 @@
 #include <random>
 
 #include <glm/glm.hpp>
-
+#include "GPTransformer.h"
 #include "ActivationFunctions.h"
 #include "AttentionBlock.h"
 #include "Transformer.h"
@@ -31,6 +31,7 @@
 #include <vector>
 #include <cstdint>
 #include <cmath>
+#include <cassert>
 
 uint32_t hash32(const std::string& str) {
     const uint32_t FNV_PRIME = 0x01000193; //   16777619
@@ -1778,6 +1779,101 @@ void testTransformerClass() {
     }
 }
 
+void test_embeddingblock_gpu_update() {
+    using namespace NNGL;
+    std::cout << "\n[UnitTest] EmbeddingBlock GPU Update\n";
+    size_t modelDim = 3;
+    EmbeddingBlock embedder(10, modelDim, 10);
+    float lr = 0.1f;
+
+    // Test 1: Single token
+    std::vector<std::string> tokens1 = { "A" };
+    embedder.forward(tokens1); // ensure "A" is initialized
+    auto beforeA = embedder.forward(tokens1);
+    std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(1, modelDim);
+    (*grad1)(0, 0) = 1; (*grad1)(0, 1) = 2; (*grad1)(0, 2) = 3;
+    embedder.backward(tokens1, grad1, lr);
+    auto afterA = embedder.forward(tokens1);
+    std::cout << "A before: "; beforeA->print();
+    std::cout << "A after:  "; afterA->print();
+    for (int j = 0; j < modelDim; ++j) {
+        assert(std::abs((*afterA)(0, j) - ((*beforeA)(0, j) - lr * (*grad1)(0, j))) < 1e-4);
+    }
+
+    // Test 2: Repeated token
+    std::vector<std::string> tokens2 = { "B", "B" };
+    embedder.forward(tokens2);
+    std::vector<std::string> singleB = { "B" };
+    auto beforeB = embedder.forward(singleB);
+    std::shared_ptr<Matrix> grad2 = std::make_shared<Matrix>(2, modelDim);
+    (*grad2)(0, 0) = 1; (*grad2)(0, 1) = 2; (*grad2)(0, 2) = 3;
+    (*grad2)(1, 0) = 4; (*grad2)(1, 1) = 5; (*grad2)(1, 2) = 6;
+    embedder.backward(tokens2, grad2, lr);
+    auto afterB = embedder.forward(singleB);
+    std::cout << "B before: "; beforeB->print();
+    std::cout << "B after:  "; afterB->print();
+    for (int j = 0; j < modelDim; ++j) {
+        float expected = (*beforeB)(0, j) - lr * ((*grad2)(0, j) + (*grad2)(1, j));
+        assert(std::abs((*afterB)(0, j) - expected) < 1e-4);
+    }
+
+    // Test 3: Multiple tokens
+    std::vector<std::string> tokens3 = { "C", "D" };
+    embedder.forward(tokens3);
+    std::vector<std::string> singleC = { "C" };
+    std::vector<std::string> singleD = { "D" };
+    auto beforeC = embedder.forward(singleC);
+    auto beforeD = embedder.forward(singleD);
+    std::shared_ptr<Matrix> grad3 = std::make_shared<Matrix>(2, modelDim);
+    (*grad3)(0, 0) = 1; (*grad3)(0, 1) = 2; (*grad3)(0, 2) = 3;
+    (*grad3)(1, 0) = 4; (*grad3)(1, 1) = 5; (*grad3)(1, 2) = 6;
+    embedder.backward(tokens3, grad3, lr);
+    auto afterC = embedder.forward(singleC);
+    auto afterD = embedder.forward(singleD);
+    std::cout << "C before: "; beforeC->print();
+    std::cout << "C after:  "; afterC->print();
+    std::cout << "D before: "; beforeD->print();
+    std::cout << "D after:  "; afterD->print();
+    for (int j = 0; j < modelDim; ++j) {
+        assert(std::abs((*afterC)(0, j) - ((*beforeC)(0, j) - lr * (*grad3)(0, j))) < 1e-4);
+        assert(std::abs((*afterD)(0, j) - ((*beforeD)(0, j) - lr * (*grad3)(1, j))) < 1e-4);
+    }
+    std::cout << "[UnitTest] EmbeddingBlock GPU Update PASSED\n";
+}
+
+void test_positional_encoding() {
+    using namespace NNGL;
+    std::cout << "\n[UnitTest] EmbeddingBlock Positional Encoding\n";
+    size_t seqLen = 4;
+    size_t modelDim = 3;
+    EmbeddingBlock embedder(10, modelDim, seqLen);
+    // Create a known input matrix
+    std::vector<std::vector<float>> inputVec(seqLen, std::vector<float>(modelDim));
+    float val = 1.0f;
+    for (size_t i = 0; i < seqLen; ++i) {
+        for (size_t j = 0; j < modelDim; ++j) {
+            inputVec[i][j] = val++;
+        }
+    }
+    auto inputMat = std::make_shared<Matrix>(inputVec);
+    auto originalMat = std::make_shared<Matrix>(inputVec); // for comparison
+    std::cout << "Input before positional encoding:" << std::endl;
+    inputMat->print();
+    embedder.applyPositionalEncoding(inputMat);
+    std::cout << "After applyPositionalEncoding:" << std::endl;
+    inputMat->print();
+    embedder.removePositionalEncoding(inputMat);
+    std::cout << "After removePositionalEncoding:" << std::endl;
+    inputMat->print();
+    // Assert that inputMat matches originalMat (within tolerance)
+    for (size_t i = 0; i < seqLen; ++i) {
+        for (size_t j = 0; j < modelDim; ++j) {
+            assert(std::abs((*inputMat)(i, j) - (*originalMat)(i, j)) < 1e-4);
+        }
+    }
+    std::cout << "[UnitTest] EmbeddingBlock Positional Encoding PASSED\n";
+}
+
 void runAllUnitTests() {
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "RUNNING COMPREHENSIVE UNIT TESTS" << std::endl;
@@ -1790,6 +1886,8 @@ void runAllUnitTests() {
     testEncoderBlockClass();
     testDecoderBlockClass();
     testTransformerClass();
+    test_embeddingblock_gpu_update(); // Register new embedding GPU test
+    test_positional_encoding();
     
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "UNIT TESTS COMPLETED" << std::endl;
@@ -1869,7 +1967,101 @@ void transformer() {
     }
 }
 
-int main() {
+void gptransformer_simplified() {
+    // Simple GPTransformer (GPT-style, decoder-only) training
+    NNGL::Logger::getInstance().setEnabled(false);
+    std::srand(42);
+    std::cout << "=== Simple GPTransformer Training ===" << std::endl;
+    int d_model = 128;
+    int d_hidden = d_model * 4;
+    int seq_len = 32;
+    std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(5000);
+    // Use multiple real sentences for meaningful training
+    std::vector<std::string> training_data = {
+        "hello world",
+        "how are you",
+        "goodbye world",
+        "hello there",
+        "how is the weather"
+    };
+    std::vector<std::string> test_inputs = {"hello", "how", "goodbye", "hello world", "how are"};
+    std::cout << "Training BPE on examples..." << std::endl;
+    for (int iteration = 0; iteration < 10; ++iteration) {
+        for (const auto& text : training_data) {
+            bpe->trainFromString(text, true);
+        }
+    }
+    bpe->reduceVocab(200);
+    bpe->addToken("<PAD>");
+    bpe->addToken("<SOS>");
+    bpe->addToken("<EOS>");
+    std::cout << "BPE vocabulary size: " << bpe->getVocabSize() << std::endl;
+    std::string bpe_file = "simple_bpe.checkpoint";
+    bpe->save(bpe_file);
+    std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(
+        bpe_file, d_model, d_hidden, seq_len);
+    std::cout << "\n=== Initial Predictions (Before Training) ===" << std::endl;
+    for (const auto& input : test_inputs) {
+        std::string result = gpt->eval(input);
+        std::cout << "  '" << input << "' -> '" << result << "'" << std::endl;
+    }
+    std::cout << "  Expected: meaningful continuations (after training)" << std::endl;
+    std::cout << "\n=== Training ===" << std::endl;
+    int epochs = 1000;
+    float learning_rate = 0.001f;
+    for (int epoch = 0; epoch < epochs; ++epoch) {
+        for (const auto& text : training_data) {
+            std::vector<std::string> tokens = bpe->tokenizeInput(text.c_str(), text.size());
+            std::vector<std::string> sequence = {"<SOS>"};
+            sequence.insert(sequence.end(), tokens.begin(), tokens.end());
+            sequence.push_back("<EOS>");
+            // Train on next-token prediction for each position
+            for (size_t i = 1; i < sequence.size(); ++i) {
+                std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
+                std::string target = sequence[i];
+                std::vector<std::string> train_seq = context;
+                train_seq.push_back(target);
+                gpt->trainOnTokenSequence(train_seq, learning_rate);
+            }
+        }
+        if ((epoch + 1) % 10 == 0) {
+            std::cout << "Epoch " << (epoch + 1) << "/" << epochs << " (LR: " << learning_rate << ")" << std::endl;
+            if ((epoch + 1) % 50 == 0) {
+                gpt->resetPadTokenEmbedding();
+            }
+            float avgLoss = 0.0f;
+            const auto& lossHistory = gpt->getLossHistory();
+            if (!lossHistory.empty()) {
+                int steps = std::min(10, (int)lossHistory.size());
+                for (int i = lossHistory.size() - steps; i < lossHistory.size(); ++i) {
+                    avgLoss += lossHistory[i];
+                }
+                avgLoss /= steps;
+            }
+            std::cout << "  Training stats - Steps: " << gpt->getTrainingSteps()
+                     << " | Current Loss: " << std::fixed << std::setprecision(4) << gpt->getCurrentLoss()
+                     << " | Avg Loss (last 10): " << std::fixed << std::setprecision(4) << avgLoss 
+                     << " | LR: " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
+            std::cout << "  Generation test:" << std::endl;
+            for (const auto& input : test_inputs) {
+                std::string result = gpt->eval(input);
+                std::cout << "    '" << input << "' -> '" << result << "'" << std::endl;
+            }
+            std::cout << std::endl;
+        }
+        if ((epoch + 1) % 100 == 0) {
+            learning_rate *= 0.98f;
+        }
+    }
+    std::cout << "\n=== Final Results ===" << std::endl;
+    for (const auto& input : test_inputs) {
+        std::string result = gpt->eval(input);
+        std::cout << "  '" << input << "' -> '" << result << "'" << std::endl;
+    }
+    std::cout << "\n=== Training Complete ===" << std::endl;
+}
+
+int main(int argc, char** argv) {
     srand(time(nullptr));
     
     // Set log level (can be changed to control verbosity)
@@ -1921,14 +2113,14 @@ int main() {
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     
     // Run comprehensive unit tests
-    //runAllUnitTests();
+    runAllUnitTests();
     
     // Choose which transformer function to run:
     // 1. Simple EOS prediction (original)
     // 2. Meaningful word predictions
     // 3. Sequence-to-sequence translation
     
-    int choice = 2; // Change this to test different functions
+    int choice = 4; // Change this to test different functions
     
     switch (choice) {
         case 1:
@@ -1951,7 +2143,12 @@ int main() {
             std::cout << std::string(60, '=') << std::endl;
             transformer_sequence_to_sequence();
             break;
-            
+        case 4:
+            std::cout << "\n" << std::string(60, '=') << std::endl;
+            std::cout << "RUNNING GPT TRANSLATION" << std::endl;
+            std::cout << std::string(60, '=') << std::endl;
+            gptransformer_simplified();
+            break;
         default:
             std::cout << "Invalid choice, running simple EOS prediction..." << std::endl;
             transformer_simplified();

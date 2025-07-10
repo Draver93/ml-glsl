@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
+#include <unordered_map> // Added for unordered_map
 
 
 namespace NNGL {
@@ -28,6 +29,7 @@ namespace NNGL {
         // Load compute shaders for positional encoding
         m_ApplyPosEncodingCompute = ShaderManager::getInstance().getShader("shaders/embedding/apply_pos_encoding.comp");
         m_RemovePosEncodingCompute = ShaderManager::getInstance().getShader("shaders/embedding/remove_pos_encoding.comp");
+        m_EmbeddingUpdateCompute = ShaderManager::getInstance().getShader("shaders/embedding/embedding_update.comp");
     }
 
     std::vector<float> EmbeddingBlock::initializeRandomVec() {
@@ -52,99 +54,112 @@ namespace NNGL {
         return std::make_shared<Matrix>(tmpVec);
     }
 
+    std::vector<int> EmbeddingBlock::getTokenIndices(const std::vector<std::string>& tokens) const {
+        std::vector<int> indices;
+        indices.reserve(tokens.size());
+        for (const auto& token : tokens) {
+            if (token == "<PAD>") {
+                indices.push_back(-1); // skip PAD
+            } else {
+                auto it = m_Embeddings.find(token);
+                if (it != m_Embeddings.end()) {
+                    // Find index in embedding table
+                    int idx = std::distance(m_Embeddings.begin(), m_Embeddings.find(token));
+                    indices.push_back(idx);
+                } else {
+                    indices.push_back(-1);
+                }
+            }
+        }
+        return indices;
+    }
+
     std::shared_ptr<Matrix> EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
         if (!gradOutput || gradOutput->cols != m_ModelDim) {
             throw std::runtime_error("Invalid gradient dimensions");
         }
-
-        // Download gradients from GPU
-        gradOutput->downloadFromGPU();
-
-        // ADAM parameters
-        const float beta1 = 0.9f;
-        const float beta2 = 0.999f;
-        const float epsilon = 1e-8f;
-
-        // Update embeddings using ADAM optimization
-        size_t minSize = std::min(tokens.size(), static_cast<size_t>(gradOutput->rows));
-        
-        // Track gradient statistics
-        float totalGradientMagnitude = 0.0f;
-        int gradientCount = 0;
-
-        for (size_t i = 0; i < minSize; ++i) {
+        // 1. Accumulate gradients for each unique token
+        std::unordered_map<std::string, std::vector<float>> gradSums;
+        for (size_t i = 0; i < tokens.size(); ++i) {
             const std::string& token = tokens[i];
-            
-            // Skip PAD token updates - they should not be updated during training
-            if (token == "<PAD>") {
-                continue;
+            if (token == "<PAD>") continue;
+            auto& sum = gradSums[token];
+            if (sum.empty()) sum.resize(m_ModelDim, 0.0f);
+            for (size_t j = 0; j < m_ModelDim; ++j) {
+                sum[j] += (*gradOutput)(i, j);
             }
-            auto it = m_Embeddings.find(token);
-
-            if (it != m_Embeddings.end()) {
-                // Initialize ADAM buffers if needed
-                initializeADAMBuffers(token);
-                
-                auto& embedding = it->second;
-                auto& adamM = m_ADAM_M_Embeddings[token];
-                auto& adamV = m_ADAM_V_Embeddings[token];
-
-                float tokenGradientMagnitude = 0.0f;
-
-                for (size_t j = 0; j < m_ModelDim; ++j) {
-                    float gradient = (*gradOutput)(i, j);
-                    tokenGradientMagnitude += gradient * gradient;
-                    
-                    // ADAM update
-                    adamM[j] = beta1 * adamM[j] + (1.0f - beta1) * gradient;
-                    adamV[j] = beta2 * adamV[j] + (1.0f - beta2) * gradient * gradient;
-                    
-                    // Bias correction
-                    float m_hat = adamM[j] / (1.0f - std::pow(beta1, m_ADAM_Timestep + 1));
-                    float v_hat = adamV[j] / (1.0f - std::pow(beta2, m_ADAM_Timestep + 1));
-                    
-                    // Update embedding
-                    embedding[j] -= learningRate * m_hat / (std::sqrt(v_hat) + epsilon);
-                }
-
-                totalGradientMagnitude += std::sqrt(tokenGradientMagnitude);
-                gradientCount++;
-                m_TotalUpdates++;
-
-                // Debug output (occasionally)
-                static int embedDebugCounter = 0;
-                if (++embedDebugCounter % 200 == 0) { // Print every 200th update
-                    float embeddingMagnitude = 0.0f;
-                    for (float val : embedding) {
-                        embeddingMagnitude += val * val;
-                    }
-                    embeddingMagnitude = std::sqrt(embeddingMagnitude);
-
-                    std::cout << "  [EMBED] Token: '" << token << "' | Grad mag: " << std::fixed << std::setprecision(4)
-                             << std::sqrt(tokenGradientMagnitude) << " | Embed mag: " << std::fixed << std::setprecision(4)
-                             << embeddingMagnitude << " | LR: " << std::fixed << std::setprecision(6) << learningRate << std::endl;
-                }
+        }
+        // 2. Prepare unique token list and gradient buffer
+        std::vector<std::string> uniqueTokens;
+        std::vector<float> gradBuffer;
+        for (const auto& [token, grad] : gradSums) {
+            uniqueTokens.push_back(token);
+            gradBuffer.insert(gradBuffer.end(), grad.begin(), grad.end());
+        }
+        // 3. Prepare embedding buffer (flattened)
+        std::vector<float> embeddingBuffer(m_VocabSize * m_ModelDim, 0.0f);
+        std::vector<std::string> vocabTokens;
+        vocabTokens.reserve(m_Embeddings.size());
+        for (const auto& [token, vec] : m_Embeddings) {
+            int idx = vocabTokens.size();
+            vocabTokens.push_back(token);
+            for (size_t j = 0; j < m_ModelDim; ++j) {
+                embeddingBuffer[idx * m_ModelDim + j] = vec[j];
+            }
+        }
+        // 4. Prepare token index buffer (indices into vocabTokens)
+        std::vector<int> tokenIndices;
+        for (const auto& token : uniqueTokens) {
+            auto it = std::find(vocabTokens.begin(), vocabTokens.end(), token);
+            if (it != vocabTokens.end()) {
+                int idx = std::distance(vocabTokens.begin(), it);
+                tokenIndices.push_back(idx);
+            } else {
+                tokenIndices.push_back(-1);
             }
         }
 
-        // Update average gradient magnitude
-        if (gradientCount > 0) {
-            float avgGradMag = totalGradientMagnitude / gradientCount;
-            m_GradientHistory.push_back(avgGradMag);
-
-            // Keep history manageable
-            if (m_GradientHistory.size() > 100) {
-                m_GradientHistory.erase(m_GradientHistory.begin());
+        // 5. Upload buffers to GPU
+        GLuint embeddingSSBO;
+        glGenBuffers(1, &embeddingSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, embeddingSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, embeddingBuffer.size() * sizeof(float), embeddingBuffer.data(), GL_DYNAMIC_DRAW);
+        GLuint gradSSBO;
+        glGenBuffers(1, &gradSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, gradSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, gradBuffer.size() * sizeof(float), gradBuffer.data(), GL_DYNAMIC_DRAW);
+        GLuint tokenIdxSSBO;
+        glGenBuffers(1, &tokenIdxSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, tokenIdxSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, tokenIndices.size() * sizeof(int), tokenIndices.data(), GL_DYNAMIC_DRAW);
+        // Bind buffers
+        m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", embeddingSSBO);
+        m_EmbeddingUpdateCompute->bindBuffer(1, "GradBuffer", gradSSBO);
+        m_EmbeddingUpdateCompute->bindBuffer(2, "TokenIdxBuffer", tokenIdxSSBO);
+        m_EmbeddingUpdateCompute->setUniform("batch_size", (int)uniqueTokens.size());
+        m_EmbeddingUpdateCompute->setUniform("vocab_size", (int)m_VocabSize);
+        m_EmbeddingUpdateCompute->setUniform("model_dim", (int)m_ModelDim);
+        m_EmbeddingUpdateCompute->setUniform("learning_rate", learningRate);
+        // Dispatch
+        int workgroupsX = (uniqueTokens.size() + 15) / 16;
+        int workgroupsY = (m_ModelDim + 15) / 16;
+        m_EmbeddingUpdateCompute->dispatch(workgroupsX, workgroupsY, 1);
+        // Download updated embeddings
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, embeddingSSBO);
+        float* updatedEmbeds = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+        for (size_t i = 0; i < vocabTokens.size(); ++i) {
+            auto& vec = m_Embeddings[vocabTokens[i]];
+            for (size_t j = 0; j < m_ModelDim; ++j) {
+                vec[j] = updatedEmbeds[i * m_ModelDim + j];
             }
-
-            // Update running average
-            m_AverageGradientMagnitude = 0.9f * m_AverageGradientMagnitude + 0.1f * avgGradMag;
         }
 
-        // Increment ADAM timestep
-        m_ADAM_Timestep++;
-
-        // Return the gradient (no further backprop beyond embeddings)
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        // Cleanup
+        glDeleteBuffers(1, &embeddingSSBO);
+        glDeleteBuffers(1, &gradSSBO);
+        glDeleteBuffers(1, &tokenIdxSSBO);
+        // Return nullptr (no further backprop)
         return nullptr;
     }
 

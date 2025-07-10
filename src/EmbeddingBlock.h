@@ -27,6 +27,7 @@ namespace NNGL {
 
         std::shared_ptr<Shader> m_ApplyPosEncodingCompute;
         std::shared_ptr<Shader> m_RemovePosEncodingCompute;
+        std::shared_ptr<Shader> m_EmbeddingUpdateCompute; // NEW: embedding update shader
 
         // Training statistics
         size_t m_TotalUpdates;
@@ -35,6 +36,7 @@ namespace NNGL {
 
         void initializePositionalEncoding();
         void initializeADAMBuffers(const std::string& token);
+        std::vector<int> getTokenIndices(const std::vector<std::string>& tokens) const;
 
     public:
         EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen = 512);

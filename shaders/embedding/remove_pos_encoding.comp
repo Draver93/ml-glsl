@@ -2,11 +2,11 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(std430, binding = 0) restrict buffer EmbeddingsBuffer {
+layout(std430) restrict buffer EmbeddingsBuffer {
     float embeddings[];
 };
 
-layout(std430, binding = 1) readonly buffer PositionalEncodingBuffer {
+layout(std430) readonly buffer PositionalEncodingBuffer {
     float positional_encoding[];
 };
 
