@@ -2008,8 +2008,8 @@ void gptransformer_simplified() {
     }
     std::cout << "  Expected: meaningful continuations (after training)" << std::endl;
     std::cout << "\n=== Training ===" << std::endl;
-    int epochs = 1000;
-    float learning_rate = 0.001f;
+    int epochs = 10000;
+    float learning_rate = 0.005f;
     for (int epoch = 0; epoch < epochs; ++epoch) {
         for (const auto& text : training_data) {
             std::vector<std::string> tokens = bpe->tokenizeInput(text.c_str(), text.size());
@@ -2051,7 +2051,7 @@ void gptransformer_simplified() {
             std::cout << std::endl;
         }
         if ((epoch + 1) % 100 == 0) {
-            learning_rate *= 0.98f;
+            learning_rate *= 0.99f;
         }
     }
     std::cout << "\n=== Final Results ===" << std::endl;

@@ -202,7 +202,7 @@ namespace NNGL {
             int workgroups_x = (input->rows + 15) / 16;
             int workgroups_y = (m_ModelDim + 15) / 16;
             m_ForwardPassOutCompute->dispatch(workgroups_x, workgroups_y, 1);
-
+            
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
         //we don't download data we leave them in gpu so no need to worry that array is empty

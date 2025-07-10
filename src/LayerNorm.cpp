@@ -17,8 +17,8 @@ namespace NNGL {
         NNGL::Timer timer("LayerNorm::forward");
         int seqLen = input->rows;
         int modelDim = input->cols;
-        m_CachedInput = std::make_shared<Matrix>(*input);
-        m_CachedResidual = std::make_shared<Matrix>(*residual);
+        m_CachedInput = input;
+        m_CachedResidual = residual;
         m_CachedMean = std::make_shared<Matrix>(seqLen, 1);
         m_CachedVariance = std::make_shared<Matrix>(seqLen, 1);
         for (int i = 0; i < seqLen; ++i) {

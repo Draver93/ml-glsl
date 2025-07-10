@@ -68,6 +68,7 @@ namespace NNGL {
 
     Matrix::Matrix(const Matrix& other)
         : rows(other.rows), cols(other.cols), flatVec(other.flatVec), buffer(0) {
+        allocateBufferGPU();
     }
 
     Matrix& Matrix::operator=(const Matrix& other) {
@@ -75,6 +76,35 @@ namespace NNGL {
             rows = other.rows;
             cols = other.cols;
             flatVec = other.flatVec;
+        }
+        return *this;
+    }
+
+    Matrix::Matrix(Matrix&& other) noexcept
+        : rows(other.rows), cols(other.cols), flatVec(std::move(other.flatVec)), buffer(other.buffer), m_Dirty(other.m_Dirty) {
+        other.buffer = 0;
+        other.rows = 0;
+        other.cols = 0;
+        other.m_Dirty = true;
+        // Do not increment COUNT on move
+    }
+
+    Matrix& Matrix::operator=(Matrix&& other) noexcept {
+        if (this != &other) {
+            // Free existing GPU buffer
+            if (buffer != 0) {
+                glDeleteBuffers(1, &buffer);
+            }
+            rows = other.rows;
+            cols = other.cols;
+            flatVec = std::move(other.flatVec);
+            buffer = other.buffer;
+            m_Dirty = other.m_Dirty;
+            other.buffer = 0;
+            other.rows = 0;
+            other.cols = 0;
+            other.m_Dirty = true;
+            // Do not increment COUNT on move
         }
         return *this;
     }

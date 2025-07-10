@@ -25,8 +25,10 @@ namespace NNGL {
         Matrix(const std::vector<std::vector<float>>& vec2d);
         Matrix(int r, int c, const float* data);
         Matrix(const Matrix& other);
+        Matrix(Matrix&& other) noexcept;
         ~Matrix();
         Matrix& operator=(const Matrix& other);
+        Matrix& operator=(Matrix&& other) noexcept;
 
         // Element access
         float& operator()(int r, int c); // Sets dirty on write
