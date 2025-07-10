@@ -207,7 +207,8 @@ namespace NNGL {
 
         int getIdByToken(const std::string& token) const {
             auto it = m_TokenToId.find(token);
-            if (it == m_TokenToId.end()) throw std::runtime_error("Token not found");
+            if (it == m_TokenToId.end()) 
+                throw std::runtime_error("Token not found");
             return it->second;
         }
 

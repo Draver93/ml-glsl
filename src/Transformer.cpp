@@ -42,10 +42,7 @@ namespace NNGL {
 
         // Add EOS token to the end for proper training
         tokens.push_back("<EOS>");
-
-        // Convert to integer tokens for optimized training
-        std::vector<int> tokenIds = stringToTokenIds(tokens);
-        trainOnSequenceInt(tokenIds, 0, learningRate);
+        trainOnSequence(tokens, 0, learningRate);
     }
 
     void Transformer::trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize, float learningRate) {
@@ -66,96 +63,56 @@ namespace NNGL {
         }
     }
 
-    void Transformer::trainOnSequenceInt(const std::vector<int>& longSequence, size_t windowSize, float learningRate) {
-        if (windowSize == 0) windowSize = m_SeqLen + 1;
-
-        if (longSequence.size() < windowSize) {
-            trainNextTokenInt(longSequence, learningRate);
-            return;
-        }
-
-        // Optimized sliding window - reuse vectors
-        std::vector<int> window(windowSize);
-        for (size_t i = 0; i <= longSequence.size() - windowSize; ++i) {
-            // Copy window data without creating new vector
-            std::copy(longSequence.begin() + i, longSequence.begin() + i + windowSize, window.begin());
-            trainNextTokenInt(window, learningRate);
-        }
-    }
-
     void Transformer::trainNextToken(const std::vector<std::string>& inputTokens, float learningRate) {
         if (inputTokens.size() < 2) {
             throw std::runtime_error("Need at least 2 tokens for next-token prediction");
         }
-
-        // Convert to integer tokens and use optimized version
-        std::vector<int> tokenIds = stringToTokenIds(inputTokens);
-        trainNextTokenInt(tokenIds, learningRate);
-    }
-
-    void Transformer::trainNextTokenInt(const std::vector<int>& inputTokens, float learningRate) {
-        if (inputTokens.size() < 2) {
-            throw std::runtime_error("Need at least 2 tokens for next-token prediction");
-        }
-
         // Prepare input sequence (all tokens except the last one)
-        std::vector<int> contextTokens(inputTokens.begin(), inputTokens.end() - 1);
-
+        std::vector<std::string> contextTokens(inputTokens.begin(), inputTokens.end() - 1);
         // Target is the last token (what we want to predict)
-        int targetTokenId = inputTokens.back();
-
+        std::string targetToken = inputTokens.back();
         // Pad or truncate context to sequence length
         while (contextTokens.size() < m_SeqLen) {
-            contextTokens.push_back(getPadTokenId()); // Use proper PAD token ID
+            contextTokens.push_back("<PAD>");
         }
         if (contextTokens.size() > m_SeqLen) {
-            contextTokens = std::vector<int>(contextTokens.end() - m_SeqLen, contextTokens.end());
+            contextTokens = std::vector<std::string>(contextTokens.end() - m_SeqLen, contextTokens.end());
         }
-
         // For decoder-only architecture, use the same tokens for encoder and decoder
-        std::vector<int> decoderTokens = contextTokens;
-
+        std::vector<std::string> decoderTokens = contextTokens;
         // Forward pass
-        std::shared_ptr<Matrix> logits = forwardPassInt(contextTokens, decoderTokens);
-
+        std::shared_ptr<Matrix> logits = forwardPass(contextTokens, decoderTokens);
         // Calculate loss before backward pass
+        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
         float loss = calculateLoss(logits, targetTokenId);
-        
         // Update training statistics
         m_CurrentLoss = loss;
         m_TrainingSteps++;
         m_LossHistory.push_back(loss);
-        
-        // Keep loss history manageable
         if (m_LossHistory.size() > 1000) {
             m_LossHistory.erase(m_LossHistory.begin());
         }
-        
-        // Get predicted token for debugging
         int predictedTokenId = predictToken(logits);
         std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-        std::string targetToken = m_Tokenizer->getTokenById(targetTokenId);
-        
         // Debug output (only print occasionally to avoid spam)
         static int debugCounter = 0;
-        if (++debugCounter % 100 == 0) { // Print every 100th training step
+        if (++debugCounter % 100 == 0) {
             std::cout << "  [DEBUG] Loss: " << std::fixed << std::setprecision(4) << loss 
-                     << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
-                     << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
-                     << " | Context: [";
-            
-            // Show context tokens
+                      << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
+                      << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
+                      << " | Context: [";
             for (size_t i = 0; i < std::min(contextTokens.size(), (size_t)5); ++i) {
                 if (i > 0) std::cout << ", ";
-                std::string token = m_Tokenizer->getTokenById(contextTokens[i]);
-                std::cout << "'" << token << "'";
+                std::cout << "'" << contextTokens[i] << "'";
             }
             if (contextTokens.size() > 5) std::cout << ", ...";
             std::cout << "]" << std::endl;
         }
-
-        // Backward pass with integer target
-        backwardPassInt(contextTokens, decoderTokens, targetTokenId, learningRate);
+        // Backward pass
+        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize);
+        for (int i = 0; i < m_VocabSize; ++i) (*targetMat)(0, i) = 0.0f;
+        (*targetMat)(0, targetTokenId) = 1.0f;
+        backwardPass(contextTokens, decoderTokens, targetMat, learningRate);
     }
 
     std::string Transformer::eval(const std::string& inputText) {
@@ -182,7 +139,7 @@ namespace NNGL {
         
         for (int step = 0; step < maxLength; ++step) {
             // Forward pass
-            auto logits = forwardPassInt(encTokenIds, decTokenIds);
+            auto logits = forwardPass(encInputTokens, decInputTokens);
             
             // Predict next token
             int nextTokenId = predictToken(logits);
@@ -241,7 +198,7 @@ namespace NNGL {
         
         for (int step = 0; step < maxLength; ++step) {
             // Forward pass
-            auto logits = forwardPassInt(encTokenIds, decTokenIds);
+            auto logits = forwardPass(encInputTokens, decInputTokens);
             
             // Apply temperature and sample
             int nextTokenId = sampleTokenWithTemperature(logits, temperature);
@@ -389,36 +346,23 @@ namespace NNGL {
 
 
     std::shared_ptr<Matrix> Transformer::forwardPass(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens) {
-        // Convert to integer tokens and use optimized version
-        std::vector<int> encTokenIds = stringToTokenIds(encInputTokens);
-        std::vector<int> decTokenIds = stringToTokenIds(decInputTokens);
-        return forwardPassInt(encTokenIds, decTokenIds);
-    }
-
-    std::shared_ptr<Matrix> Transformer::forwardPassInt(const std::vector<int>& encInputTokens, const std::vector<int>& decInputTokens) {
-        // 1. Get cached embeddings or create new ones
-        std::shared_ptr<Matrix> encInputMat = getCachedEmbedding(encInputTokens);
+        // 1. Get embeddings
+        std::shared_ptr<Matrix> encInputMat = m_Embedder->forward(encInputTokens);
         m_Embedder->applyPositionalEncoding(encInputMat);
-
-        std::shared_ptr<Matrix> decInputMat = getCachedEmbedding(decInputTokens);
+        std::shared_ptr<Matrix> decInputMat = m_Embedder->forward(decInputTokens);
         m_Embedder->applyPositionalEncoding(decInputMat);
-
         // 2. Create padding masks
-        std::vector<int> encPaddingMask = createPaddingMask(encInputTokens);
-        std::vector<int> decPaddingMask = createPaddingMask(decInputTokens);
-
-        // 3. Encode input with padding mask
+        std::vector<int> encPaddingMask = createPaddingMask(stringToTokenIds(encInputTokens));
+        std::vector<int> decPaddingMask = createPaddingMask(stringToTokenIds(decInputTokens));
+        // 3. Forward through encoder
         std::shared_ptr<Matrix> encOutputMat = m_Encoder->forward(encInputMat, encPaddingMask);
-
-        // 4. Decode with padding masks
+        // 4. Forward through decoder
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(decInputMat, encOutputMat, decPaddingMask, encPaddingMask);
-
         // 5. Extract only the last token's representation for next token prediction
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) {
             (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
         }
-
         // 6. Project decoder output to vocab logits
         return m_OutputProjection->forward(lastTokenRep);
     }
@@ -428,108 +372,43 @@ namespace NNGL {
         std::shared_ptr<Matrix> targetMat,
         float learningRate) {
 
-        // Convert to integer tokens and use optimized version
-        std::vector<int> encTokenIds = stringToTokenIds(encInputTokens);
-        std::vector<int> decTokenIds = stringToTokenIds(decInputTokens);
-
-        // Extract target token ID from one-hot vector
-        int targetTokenId = -1;
-        for (int i = 0; i < targetMat->cols; i++) {
-            if ((*targetMat)(0, i) > 0.5f) {
-                targetTokenId = i;
-                break;
-            }
-        }
-
-        backwardPassInt(encTokenIds, decTokenIds, targetTokenId, learningRate);
-    }
-
-    void Transformer::backwardPassInt(const std::vector<int>& encInputTokens,
-        const std::vector<int>& decInputTokens,
-        int targetTokenId,
-        float learningRate) {
-
-        // 1. Get cached embeddings
-        std::shared_ptr<Matrix> encInputMat = getCachedEmbedding(encInputTokens);
+        // 1. Get embeddings
+        std::shared_ptr<Matrix> encInputMat = m_Embedder->forward(const_cast<std::vector<std::string>&>(encInputTokens));
         m_Embedder->applyPositionalEncoding(encInputMat);
-
-        std::shared_ptr<Matrix> decInputMat = getCachedEmbedding(decInputTokens);
+        std::shared_ptr<Matrix> decInputMat = m_Embedder->forward(const_cast<std::vector<std::string>&>(decInputTokens));
         m_Embedder->applyPositionalEncoding(decInputMat);
-
-        // 2. Create padding masks (same as forward pass)
-        std::vector<int> encPaddingMask = createPaddingMask(encInputTokens);
-        std::vector<int> decPaddingMask = createPaddingMask(decInputTokens);
-
-        // 3. Forward through encoder with padding mask
+        // 2. Create padding masks
+        std::vector<int> encPaddingMask = createPaddingMask(stringToTokenIds(encInputTokens));
+        std::vector<int> decPaddingMask = createPaddingMask(stringToTokenIds(decInputTokens));
+        // 3. Forward through encoder
         std::shared_ptr<Matrix> encOutputMat = m_Encoder->forward(encInputMat, encPaddingMask);
-
-        // 4. Forward through decoder with padding masks
+        // 4. Forward through decoder
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(decInputMat, encOutputMat, decPaddingMask, encPaddingMask);
-
-        // 5. Create sparse target (much more efficient than one-hot)
-        std::vector<float> targetSparse(m_VocabSize, 0.0f);
-        if (targetTokenId >= 0 && targetTokenId < m_VocabSize) {
-            targetSparse[targetTokenId] = 1.0f;
-        }
-        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, targetSparse.data());
-
-        // 6. Backward through output projection
+        // 5. Backward through output projection
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) {
             (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
         }
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
-
-        // 7. Expand gradient back to full sequence length for decoder backward pass
+        // 6. Expand gradient back to full sequence length for decoder backward pass
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols);
-        decOutputGrad->clear(); // Initialize to zero
-        // Only the last token gets the gradient
+        decOutputGrad->clear();
         for (int i = 0; i < decOutputMat->cols; ++i) {
             (*decOutputGrad)(decOutputMat->rows - 1, i) = (*outputGrad)(0, i);
         }
-
-        // Debug: Show gradient magnitude for target token
-        static int backpropCounter = 0;
-        if (++backpropCounter % 100 == 0) { // Print every 100th backprop
-            float targetGrad = 0.0f;
-            if (targetTokenId >= 0 && targetTokenId < m_VocabSize) {
-                targetGrad = (*outputGrad)(0, targetTokenId);
-            }
-            
-            // Calculate gradient magnitude
-            float gradMagnitude = 0.0f;
-            for (int i = 0; i < outputGrad->cols; ++i) {
-                gradMagnitude += (*outputGrad)(0, i) * (*outputGrad)(0, i);
-            }
-            gradMagnitude = std::sqrt(gradMagnitude);
-            
-            std::cout << "  [BACKPROP] Target token ID: " << targetTokenId 
-                     << " | Target grad: " << std::fixed << std::setprecision(4) << targetGrad
-                     << " | Grad magnitude: " << std::fixed << std::setprecision(4) << gradMagnitude << std::endl;
-        }
-
-        //printGradientHeatmap(outputGrad);
-
         // 7. Backward through decoder
         std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> decoderGrads =
             m_Decoder->backwardWithEncoderGrad(decOutputGrad, learningRate);
-
         std::shared_ptr<Matrix> decGrad = decoderGrads.first;
         std::shared_ptr<Matrix> encOutputGrad = decoderGrads.second;
-
         // Update decoder embeddings
         m_Embedder->removePositionalEncoding(decGrad);
-        // Note: We need to convert back to strings for embedding backward pass
-        std::vector<std::string> decInputStrings = tokenIdsToStrings(decInputTokens);
-        m_Embedder->backward(decInputStrings, decGrad, learningRate);
-
+        m_Embedder->backward(decInputTokens, decGrad, learningRate);
         // 8. Backward through encoder
         std::shared_ptr<Matrix> encGrad = m_Encoder->backward(encOutputGrad, learningRate);
-
         // Update encoder embeddings
         m_Embedder->removePositionalEncoding(encGrad);
-        std::vector<std::string> encInputStrings = tokenIdsToStrings(encInputTokens);
-        m_Embedder->backward(encInputStrings, encGrad, learningRate);
+        m_Embedder->backward(encInputTokens, encGrad, learningRate);
     }
 
     int Transformer::predictToken(std::shared_ptr<Matrix> probabilities) {
