@@ -2120,7 +2120,7 @@ int main(int argc, char** argv) {
     // 2. Meaningful word predictions
     // 3. Sequence-to-sequence translation
     
-    int choice = 0; // Change this to test different functions
+    int choice = 4; // Change this to test different functions
     
     switch (choice) {
         case 0:

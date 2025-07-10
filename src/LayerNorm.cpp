@@ -35,8 +35,10 @@ namespace NNGL {
             }
             (*m_CachedVariance)(i, 0) = v / modelDim;
         }
-        // Prepare output
-        m_CachedOutput = std::make_shared<Matrix>(seqLen, modelDim);
+        // Prepare output: reuse m_CachedOutput if possible
+        if (!m_CachedOutput || m_CachedOutput->rows != seqLen || m_CachedOutput->cols != modelDim) {
+            m_CachedOutput = std::make_shared<Matrix>(seqLen, modelDim);
+        }
         input->uploadToGPU();
         residual->uploadToGPU();
         m_Gamma->uploadToGPU();
@@ -68,10 +70,16 @@ namespace NNGL {
         int seqLen = input->rows;
         int modelDim = input->cols;
 
-        gradInput = std::make_shared<Matrix>(seqLen, modelDim);
-        gradResidual = std::make_shared<Matrix>(seqLen, modelDim);
-        gradGamma = std::make_shared<Matrix>(modelDim, 1);
-        gradBeta = std::make_shared<Matrix>(modelDim, 1);
+        // Reuse gradient matrices if possible
+        if (!gradInput || gradInput->rows != seqLen || gradInput->cols != modelDim)
+            gradInput = std::make_shared<Matrix>(seqLen, modelDim);
+        if (!gradResidual || gradResidual->rows != seqLen || gradResidual->cols != modelDim)
+            gradResidual = std::make_shared<Matrix>(seqLen, modelDim);
+        if (!gradGamma || gradGamma->rows != modelDim || gradGamma->cols != 1)
+            gradGamma = std::make_shared<Matrix>(modelDim, 1);
+        if (!gradBeta || gradBeta->rows != modelDim || gradBeta->cols != 1)
+            gradBeta = std::make_shared<Matrix>(modelDim, 1);
+
         gradOutput->uploadToGPU();
         input->uploadToGPU();
         residual->uploadToGPU();

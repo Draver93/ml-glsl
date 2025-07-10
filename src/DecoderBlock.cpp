@@ -17,10 +17,9 @@ namespace NNGL {
         m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::LRELU);
 
         // Initialize cache matrices
-        m_CachedMaskedOut = std::make_shared<Matrix>(seqLen, modelDim);
-        m_CachedCrossOut = std::make_shared<Matrix>(seqLen, modelDim);
         m_CachedDecoderInput = std::make_shared<Matrix>(seqLen, modelDim);
         m_CachedEncoderOutput = std::make_shared<Matrix>(seqLen, modelDim);
+
         m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
         m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
         m_AddNorm3 = std::make_unique<LayerNorm>(modelDim);
@@ -31,14 +30,13 @@ namespace NNGL {
         std::shared_ptr<Matrix> encoderOutput
     ) {
         NNGL::Timer timer("DecoderBlock::forward");
-        m_CachedDecoderInput->copyFrom(decoderInput);
-        m_CachedEncoderOutput->copyFrom(encoderOutput);
+        m_CachedDecoderInput = decoderInput;
+        m_CachedEncoderOutput = encoderOutput;
         auto maskedOut = m_MaskedSelfAttn->forward(decoderInput);
+        // Use AddNorm output directly; no need to cache at block level
         auto addNorm1Out = m_AddNorm1->forward(maskedOut, decoderInput);
-        m_CachedMaskedOut->copyFrom(addNorm1Out);
         auto crossOut = m_CrossAttn->forward(addNorm1Out, encoderOutput);
         auto addNorm2Out = m_AddNorm2->forward(crossOut, addNorm1Out);
-        m_CachedCrossOut->copyFrom(addNorm2Out);
         auto mlpOut = m_FeedForward->forward(addNorm2Out);
         auto addNorm3Out = m_AddNorm3->forward(mlpOut, addNorm2Out);
         return addNorm3Out;
@@ -51,19 +49,13 @@ namespace NNGL {
         const std::vector<int>& encoderPaddingMask
     ) {
         NNGL::Timer timer("DecoderBlock::forward (with mask)");
-        m_CachedDecoderInput->copyFrom(decoderInput);
-        m_CachedEncoderOutput->copyFrom(encoderOutput);
-        
-        // Masked self-attention with decoder padding mask
+        m_CachedDecoderInput = decoderInput;
+        m_CachedEncoderOutput = encoderOutput;
         auto maskedOut = m_MaskedSelfAttn->forward(decoderInput, nullptr, decoderPaddingMask);
+        // Use AddNorm output directly; no need to cache at block level
         auto addNorm1Out = m_AddNorm1->forward(maskedOut, decoderInput);
-        m_CachedMaskedOut->copyFrom(addNorm1Out);
-        
-        // Cross-attention with encoder padding mask
         auto crossOut = m_CrossAttn->forward(addNorm1Out, encoderOutput, encoderPaddingMask);
         auto addNorm2Out = m_AddNorm2->forward(crossOut, addNorm1Out);
-        m_CachedCrossOut->copyFrom(addNorm2Out);
-        
         auto mlpOut = m_FeedForward->forward(addNorm2Out);
         auto addNorm3Out = m_AddNorm3->forward(mlpOut, addNorm2Out);
         return addNorm3Out;
@@ -73,17 +65,17 @@ namespace NNGL {
         NNGL::Timer timer("DecoderBlock::backward");
         // Backprop through addNorm3
         std::shared_ptr<Matrix> gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3;
-        m_AddNorm3->backward(gradOutput, m_CachedCrossOut, m_CachedCrossOut, gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);
+        m_AddNorm3->backward(gradOutput, m_AddNorm2->getCachedOutput(), m_AddNorm2->getCachedOutput(), gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);
         // Backprop through FFN
-        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_CachedCrossOut, gradMlpOut, learningRate);
+        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_AddNorm2->getCachedOutput(), gradMlpOut, learningRate);
         // Backprop through addNorm2
         std::shared_ptr<Matrix> gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2;
-        m_AddNorm2->backward(gradAddNorm2Out, m_CachedCrossOut, m_CachedMaskedOut, gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2);
+        m_AddNorm2->backward(gradAddNorm2Out, m_AddNorm1->getCachedOutput(), m_AddNorm1->getCachedOutput(), gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2);
         // Backprop through Cross-Attention
-        auto [gradFromCross, gradContext] = m_CrossAttn->backward(gradCrossOut, m_CachedMaskedOut, m_CachedEncoderOutput);
+        auto [gradFromCross, gradContext] = m_CrossAttn->backward(gradCrossOut, m_AddNorm1->getCachedOutput(), m_CachedEncoderOutput);
         // Backprop through addNorm1
         std::shared_ptr<Matrix> gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1;
-        m_AddNorm1->backward(gradAddNorm1Out, m_CachedMaskedOut, m_CachedDecoderInput, gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1);
+        m_AddNorm1->backward(gradAddNorm1Out, m_CachedDecoderInput, m_CachedDecoderInput, gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1);
         // Backprop through Masked Self-Attention
         auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr);
         return gradDecoderInput;
@@ -95,21 +87,21 @@ namespace NNGL {
         NNGL::Timer timer("DecoderBlock::backwardWithEncoderGrad");
         // ---- 1. Backprop through AddNorm3 (final residual + normalization) ----
         std::shared_ptr<Matrix> gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3;
-        m_AddNorm3->backward(gradOutput, m_CachedCrossOut, m_CachedCrossOut, gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);
+        m_AddNorm3->backward(gradOutput, m_AddNorm2->getCachedOutput(), m_AddNorm2->getCachedOutput(), gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);
         
         // Backprop through MLP
-        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_CachedCrossOut, gradMlpOut, learningRate);
+        auto gradFromMlp = m_FeedForward->backward_with_targetloss(m_AddNorm2->getCachedOutput(), gradMlpOut, learningRate);
 
         // ---- 2. Backprop through AddNorm2 (cross-attention residual + normalization) ----
         std::shared_ptr<Matrix> gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2;
-        m_AddNorm2->backward(gradFromMlp, m_CachedCrossOut, m_CachedMaskedOut, gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2);
+        m_AddNorm2->backward(gradFromMlp, m_AddNorm1->getCachedOutput(), m_AddNorm1->getCachedOutput(), gradCrossOut, gradAddNorm1Out, gradGamma2, gradBeta2);
         
         // Backprop through Cross-Attention
-        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossOut, m_CachedMaskedOut, m_CachedEncoderOutput);
+        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossOut, m_AddNorm1->getCachedOutput(), m_CachedEncoderOutput);
 
         // ---- 3. Backprop through AddNorm1 (masked self-attention residual + normalization) ----
         std::shared_ptr<Matrix> gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1;
-        m_AddNorm1->backward(gradFromCrossQuery, m_CachedMaskedOut, m_CachedDecoderInput, gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1);
+        m_AddNorm1->backward(gradFromCrossQuery, m_CachedDecoderInput, m_CachedDecoderInput, gradMaskedOut, gradDecoderInput, gradGamma1, gradBeta1);
         
         // Backprop through Masked Self-Attention
         auto [gradFromMaskedSelf, gradFromMaskedEncoder] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr);

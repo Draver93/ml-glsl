@@ -34,6 +34,8 @@ namespace NNGL {
         float m_AverageGradientMagnitude;
         std::vector<float> m_GradientHistory;
 
+        std::shared_ptr<Matrix> m_CachedOutput; // Cached output matrix for forward()
+
         void initializePositionalEncoding();
         void initializeADAMBuffers(const std::string& token);
         std::vector<int> getTokenIndices(const std::vector<std::string>& tokens) const;
@@ -63,5 +65,6 @@ namespace NNGL {
         float getAverageGradientMagnitude() const { return m_AverageGradientMagnitude; }
         void resetTrainingStats();
         void resetPadTokenEmbedding(); // Reset PAD token embedding to prevent explosion
+        std::shared_ptr<Matrix> getCachedOutput() { return m_CachedOutput; }
     };
 } 

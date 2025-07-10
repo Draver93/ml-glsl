@@ -27,6 +27,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> getBeta() { return m_Beta; }
         std::shared_ptr<Matrix> getCachedMean() { return m_CachedMean; }
         std::shared_ptr<Matrix> getCachedVar() { return m_CachedVariance; }
+        std::shared_ptr<Matrix> getCachedOutput() { return m_CachedOutput; }
 
     private:
         int m_NormalizedShape;
