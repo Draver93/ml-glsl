@@ -86,23 +86,38 @@ namespace NNGL {
     }
 
     std::string GPTransformer::eval(const std::string& inputText) {
+        // 1. Tokenize input text
         std::vector<std::string> inputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+
+        // 2. Build initial decoder input: <SOS> + input tokens + <PAD> ...
         std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
         decInputTokens[0] = "<SOS>";
+        int inputLen = std::min((int)inputTokens.size(), m_SeqLen - 1);
+        for (int i = 0; i < inputLen; ++i) {
+            decInputTokens[i + 1] = inputTokens[i];
+        }
         std::vector<int> decTokenIds = stringToTokenIds(decInputTokens);
+
         std::vector<std::string> generatedTokens;
         int maxLength = m_SeqLen - 1;
         int eosTokenId = getEosTokenId();
-        for (int step = 0; step < maxLength; ++step) {
+
+        // 3. Start generation after the input context
+        int contextLen = inputLen + 1; // <SOS> + input tokens
+        for (int step = contextLen; step < maxLength; ++step) {
             auto logits = forwardPass(decInputTokens);
             int nextTokenId = predictToken(logits);
             if (nextTokenId == eosTokenId) break;
             std::string nextToken = m_Tokenizer->getTokenById(nextTokenId);
             generatedTokens.push_back(nextToken);
+
+            // Shift left and append new token
             for (int i = 0; i < m_SeqLen - 1; ++i) decTokenIds[i] = decTokenIds[i + 1];
             decTokenIds[m_SeqLen - 1] = nextTokenId;
             decInputTokens = tokenIdsToStrings(decTokenIds);
         }
+
+        // 4. Build output string (skip special tokens)
         std::string result;
         for (const auto& token : generatedTokens) {
             if (token != "<PAD>" && token != "<SOS>" && token != "<EOS>") {
@@ -214,8 +229,8 @@ namespace NNGL {
     std::shared_ptr<Matrix> GPTransformer::forwardPass(std::vector<std::string>& inputTokens) {
         NNGL::Timer timer("GPTransformer::forwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
-        m_Embedder->applyPositionalEncoding(inputMat);
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
+        m_Embedder->applyPositionalEncoding(inputMat);
         // Pass a dummy encoder output (zeros) to DecoderBlock
         std::shared_ptr<Matrix> dummyEncoderOutput = std::make_shared<Matrix>(m_SeqLen, inputMat->cols, 0.0f);
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, dummyEncoderOutput, paddingMask, std::vector<int>(m_SeqLen, 1));
@@ -228,8 +243,8 @@ namespace NNGL {
     void GPTransformer::backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate) {
         NNGL::Timer timer("GPTransformer::backwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(const_cast<std::vector<std::string>&>(inputTokens)); 
-        m_Embedder->applyPositionalEncoding(inputMat);
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
+        m_Embedder->applyPositionalEncoding(inputMat);
         std::shared_ptr<Matrix> dummyEncoderOutput = std::make_shared<Matrix>(m_SeqLen, inputMat->cols, 0.0f);
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, dummyEncoderOutput, paddingMask, std::vector<int>(m_SeqLen, 1));
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
