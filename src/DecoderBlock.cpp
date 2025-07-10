@@ -74,13 +74,13 @@ namespace NNGL {
         auto gradCrossOut = m_AddNorm2->getGradInput();
         auto gradAddNorm1Out = m_AddNorm2->getGradResidual();
         // Backprop through Cross-Attention
-        auto [gradFromCross, gradContext] = m_CrossAttn->backward(gradCrossOut, m_AddNorm1->getCachedOutput(), m_CachedEncoderOutput);
+        auto [gradFromCross, gradContext] = m_CrossAttn->backward(gradCrossOut, m_AddNorm1->getCachedOutput(), m_CachedEncoderOutput, learningRate);
         // Backprop through addNorm1
         m_AddNorm1->backward(gradAddNorm1Out, m_CachedDecoderInput, m_CachedDecoderInput);
         auto gradMaskedOut = m_AddNorm1->getGradInput();
         auto gradDecoderInput = m_AddNorm1->getGradResidual();
         // Backprop through Masked Self-Attention
-        auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr);
+        auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr, learningRate);
         return gradDecoderInput;
     }
 
@@ -100,14 +100,14 @@ namespace NNGL {
         auto gradCrossOut = m_AddNorm2->getGradInput();
         auto gradAddNorm1Out = m_AddNorm2->getGradResidual();
         // Backprop through Cross-Attention
-        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossOut, m_AddNorm1->getCachedOutput(), m_CachedEncoderOutput);
+        auto [gradFromCrossQuery, gradFromCrossEncoder] = m_CrossAttn->backward(gradCrossOut, m_AddNorm1->getCachedOutput(), m_CachedEncoderOutput, learningRate);
 
         // ---- 3. Backprop through AddNorm1 (masked self-attention residual + normalization) ----
         m_AddNorm1->backward(gradFromCrossQuery, m_CachedDecoderInput, m_CachedDecoderInput);
         auto gradMaskedOut = m_AddNorm1->getGradInput();
         auto gradDecoderInput = m_AddNorm1->getGradResidual();
         // Backprop through Masked Self-Attention
-        auto [gradFromMaskedSelf, gradFromMaskedEncoder] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr);
+        auto [gradFromMaskedSelf, gradFromMaskedEncoder] = m_MaskedSelfAttn->backward(gradMaskedOut, m_CachedDecoderInput, nullptr, learningRate);
 
         // Return BOTH gradients: decoder input gradient AND encoder output gradient
         return std::make_pair(gradFromMaskedSelf, gradFromCrossEncoder);

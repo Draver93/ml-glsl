@@ -218,7 +218,7 @@ namespace NNGL {
         return forward(input, input_kv);
     }
  
-    std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context ) {
+    std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context, float learningRate ) {
         NNGL::Timer timer("AttentionBlock::backward");
         gradOutput->uploadToGPU();
         const int seqLen = input->rows;
@@ -334,9 +334,9 @@ namespace NNGL {
         }
 
         // === STEP 5: Update weights with ADAM ===
-        updateWeights(m_WeightQueryMat, m_GradWeightQueryMat, m_ADAM_M_QueryMat, m_ADAM_V_QueryMat, 0.001f);
-        updateWeights(m_WeightKeyMat, m_GradWeightKeyMat, m_ADAM_M_KeyMat, m_ADAM_V_KeyMat, 0.001f);
-        updateWeights(m_WeightValueMat, m_GradWeightValueMat, m_ADAM_M_ValueMat, m_ADAM_V_ValueMat, 0.001f);
+        updateWeights(m_WeightQueryMat, m_GradWeightQueryMat, m_ADAM_M_QueryMat, m_ADAM_V_QueryMat, learningRate);
+        updateWeights(m_WeightKeyMat, m_GradWeightKeyMat, m_ADAM_M_KeyMat, m_ADAM_V_KeyMat, learningRate);
+        updateWeights(m_WeightValueMat, m_GradWeightValueMat, m_ADAM_M_ValueMat, m_ADAM_V_ValueMat, learningRate);
 
         // Increment ADAM timestep
         m_ADAM_Timestep++;

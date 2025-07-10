@@ -16,7 +16,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv, const std::vector<int>& paddingMask);
 
         //return GradInput, GradContext
-        std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context);
+        std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context, float learningRate);
  
         void updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, 
                          const std::shared_ptr<Matrix>& adamM, const std::shared_ptr<Matrix>& adamV, float learningRate);

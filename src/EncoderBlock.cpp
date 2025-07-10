@@ -72,7 +72,7 @@ namespace NNGL {
         auto gradAttentionOut = m_AddNorm1->getGradInput();
         auto gradInput = m_AddNorm1->getGradResidual();
         // Backprop through Attention
-        auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionOut, m_CachedInput, nullptr);
+        auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionOut, m_CachedInput, nullptr, learningRate);
         return gradInput;
     }
 }
