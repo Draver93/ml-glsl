@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <unordered_map> // Added for unordered_map
+#include "Logger.h"
 
 
 namespace NNGL {
@@ -42,6 +43,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> EmbeddingBlock::forward(std::vector<std::string>& tokens) {
+        NNGL::Timer timer("EmbeddingBlock::forward");
         std::vector<std::vector<float>> tmpVec; 
         tmpVec.reserve(tokens.size());
 
@@ -75,6 +77,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
+        NNGL::Timer timer("EmbeddingBlock::backward");
         if (!gradOutput || gradOutput->cols != m_ModelDim) {
             throw std::runtime_error("Invalid gradient dimensions");
         }

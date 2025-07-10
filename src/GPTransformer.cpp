@@ -211,6 +211,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> GPTransformer::forwardPass(std::vector<std::string>& inputTokens) {
+        NNGL::Timer timer("GPTransformer::forwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
         m_Embedder->applyPositionalEncoding(inputMat);
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
@@ -223,6 +224,7 @@ namespace NNGL {
     }
 
     void GPTransformer::backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate) {
+        NNGL::Timer timer("GPTransformer::backwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(const_cast<std::vector<std::string>&>(inputTokens));
         m_Embedder->applyPositionalEncoding(inputMat);
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));

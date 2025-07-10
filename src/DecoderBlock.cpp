@@ -30,6 +30,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> decoderInput,
         std::shared_ptr<Matrix> encoderOutput
     ) {
+        NNGL::Timer timer("DecoderBlock::forward");
         m_CachedDecoderInput->copyFrom(decoderInput);
         m_CachedEncoderOutput->copyFrom(encoderOutput);
         auto maskedOut = m_MaskedSelfAttn->forward(decoderInput);
@@ -49,6 +50,7 @@ namespace NNGL {
         const std::vector<int>& decoderPaddingMask,
         const std::vector<int>& encoderPaddingMask
     ) {
+        NNGL::Timer timer("DecoderBlock::forward (with mask)");
         m_CachedDecoderInput->copyFrom(decoderInput);
         m_CachedEncoderOutput->copyFrom(encoderOutput);
         
@@ -68,6 +70,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
+        NNGL::Timer timer("DecoderBlock::backward");
         // Backprop through addNorm3
         std::shared_ptr<Matrix> gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3;
         m_AddNorm3->backward(gradOutput, m_CachedCrossOut, m_CachedCrossOut, gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);
@@ -89,6 +92,7 @@ namespace NNGL {
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> DecoderBlock::backwardWithEncoderGrad(
         std::shared_ptr<Matrix> gradOutput, float learningRate) {
 
+        NNGL::Timer timer("DecoderBlock::backwardWithEncoderGrad");
         // ---- 1. Backprop through AddNorm3 (final residual + normalization) ----
         std::shared_ptr<Matrix> gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3;
         m_AddNorm3->backward(gradOutput, m_CachedCrossOut, m_CachedCrossOut, gradMlpOut, gradAddNorm2Out, gradGamma3, gradBeta3);

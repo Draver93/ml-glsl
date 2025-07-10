@@ -14,6 +14,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual) {
+        NNGL::Timer timer("LayerNorm::forward");
         int seqLen = input->rows;
         int modelDim = input->cols;
         m_CachedInput = std::make_shared<Matrix>(*input);
@@ -64,6 +65,7 @@ namespace NNGL {
         std::shared_ptr<Matrix>& gradGamma,
         std::shared_ptr<Matrix>& gradBeta
     ) {
+        NNGL::Timer timer("LayerNorm::backward");
         int seqLen = input->rows;
         int modelDim = input->cols;
         gradInput = std::make_shared<Matrix>(seqLen, modelDim);

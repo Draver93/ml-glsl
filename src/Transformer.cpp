@@ -348,6 +348,7 @@ namespace NNGL {
 
 
     std::shared_ptr<Matrix> Transformer::forwardPass(std::vector<std::string>& encInputTokens, std::vector<std::string>& decInputTokens) {
+        NNGL::Timer timer("Transformer::forwardPass");
         // 1. Get embeddings
         std::shared_ptr<Matrix> encInputMat = m_Embedder->forward(encInputTokens);
         m_Embedder->applyPositionalEncoding(encInputMat);
@@ -373,7 +374,7 @@ namespace NNGL {
         const std::vector<std::string>& decInputTokens,
         std::shared_ptr<Matrix> targetMat,
         float learningRate) {
-
+        NNGL::Timer timer("Transformer::backwardPass");
         // 1. Get embeddings
         std::shared_ptr<Matrix> encInputMat = m_Embedder->forward(const_cast<std::vector<std::string>&>(encInputTokens));
         m_Embedder->applyPositionalEncoding(encInputMat);

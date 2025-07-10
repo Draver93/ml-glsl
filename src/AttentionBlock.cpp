@@ -1,4 +1,5 @@
 #include "AttentionBlock.h"
+#include "Logger.h"
 
 namespace NNGL {
     AttentionBlock::AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask)
@@ -87,6 +88,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context) {
+        NNGL::Timer timer("AttentionBlock::forward");
         // CACHE INPUT FOR BACKPROP
         m_CachedInput->copyFrom(input);
         if (context) {
@@ -207,6 +209,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv, const std::vector<int>& paddingMask) {
+        NNGL::Timer timer("AttentionBlock::forward (with mask)");
         // Store padding mask for use in shaders
         m_PaddingMask = paddingMask;
         
@@ -215,6 +218,7 @@ namespace NNGL {
     }
  
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context ) {
+        NNGL::Timer timer("AttentionBlock::backward");
         gradOutput->uploadToGPU();
         const int seqLen = input->rows;
         const int inputDim = input->cols;

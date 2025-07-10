@@ -1969,7 +1969,6 @@ void transformer() {
 
 void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) training
-    NNGL::Logger::getInstance().setEnabled(false);
     std::srand(42);
     std::cout << "=== Simple GPTransformer Training ===" << std::endl;
     int d_model = 128;
@@ -2069,8 +2068,7 @@ int main(int argc, char** argv) {
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::DEBUG);  // Debug info
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::INFO);   // Default
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::WARN);   // Warnings only
-    // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::ERROR);  // Errors only
-    
+    NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::LL_INFO);
     NNGL::Logger::getInstance().setEnabled(false);
 
     //new tokenizer
@@ -2113,16 +2111,23 @@ int main(int argc, char** argv) {
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     
     // Run comprehensive unit tests
-    runAllUnitTests();
+    //runAllUnitTests();
     
     // Choose which transformer function to run:
     // 1. Simple EOS prediction (original)
     // 2. Meaningful word predictions
     // 3. Sequence-to-sequence translation
     
-    int choice = 4; // Change this to test different functions
+    int choice = 0; // Change this to test different functions
     
     switch (choice) {
+        case 0:
+            std::cout << "\n" << std::string(60, '=') << std::endl;
+            std::cout << "RUNNING DIGIT RECOGN" << std::endl;
+            std::cout << std::string(60, '=') << std::endl;
+            digit_recognition();
+            break;
+
         case 1:
             std::cout << "\n" << std::string(60, '=') << std::endl;
             std::cout << "RUNNING SIMPLE EOS PREDICTION" << std::endl;
@@ -2156,7 +2161,6 @@ int main(int argc, char** argv) {
     }
     
     //transformer();
-    //digit_recognition();
 
     std::cout << "Goodbye!" << std::endl;
 

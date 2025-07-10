@@ -57,7 +57,7 @@ namespace NNGL {
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding_point, buffer);
         
         // Log buffer binding
-        LOG("[SHADER BIND] Bound buffer " + std::to_string(buffer) + 
+        LOG_TRACE("[SHADER BIND] Bound buffer " + std::to_string(buffer) + 
             " to binding point " + std::to_string(binding_point) + 
             " with name '" + name + "'");
     }
@@ -89,7 +89,7 @@ namespace NNGL {
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         
         // Log compute shader dispatch
-        LOG("[COMPUTE DISPATCH] Executed compute shader with workgroups: " + 
+        LOG_TRACE("[COMPUTE DISPATCH] Executed compute shader with workgroups: " +
             std::to_string(x) + "x" + std::to_string(y) + "x" + std::to_string(z));
     }
 

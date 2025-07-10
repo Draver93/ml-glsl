@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include <chrono>
 
 namespace NNGL {
     enum class LogLevel {
@@ -60,6 +61,28 @@ namespace NNGL {
 
         bool m_enabled;
         LogLevel m_currentLevel;
+    };
+
+    class Timer {
+    public:
+        Timer(const std::string& name, LogLevel level = LogLevel::LL_INFO)
+            : m_Name(name), m_Level(level), m_Stopped(false) {
+            m_Start = std::chrono::high_resolution_clock::now();
+        }
+        ~Timer() {
+            if (!m_Stopped) stop();
+        }
+        void stop() {
+            auto end = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - m_Start).count();
+            Logger::getInstance().log(m_Name + " took " + std::to_string(duration / 1000.0) + " ms", m_Level);
+            m_Stopped = true;
+        }
+    private:
+        std::string m_Name;
+        LogLevel m_Level;
+        std::chrono::high_resolution_clock::time_point m_Start;
+        bool m_Stopped;
     };
 
     // Convenience macros for logging
