@@ -1377,8 +1377,10 @@ void testLayerNormClass() {
         auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
         (*gradOutput)(0, 0) = 0.1f; (*gradOutput)(0, 1) = 0.2f;
         (*gradOutput)(1, 0) = 0.3f; (*gradOutput)(1, 1) = 0.4f;
-        std::shared_ptr<NNGL::Matrix> gradInput, gradResidual, gradGamma, gradBeta;
-        layerNorm.backward(gradOutput, input, residual, gradInput, gradResidual, gradGamma, gradBeta);
+        layerNorm.backward(gradOutput, input, residual);
+        auto gradInput = layerNorm.getGradInput();
+        auto gradResidual = layerNorm.getGradResidual();
+
         if (gradInput->rows != seqLen || gradInput->cols != batchSize ||
             gradResidual->rows != seqLen || gradResidual->cols != batchSize) {
             std::cout << "  [FAIL] Gradient input/residual dimensions incorrect." << std::endl;
@@ -1416,8 +1418,7 @@ void testLayerNormClass() {
         auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
         (*gradOutput)(0, 0) = 0.1f; (*gradOutput)(0, 1) = 0.2f;
         (*gradOutput)(1, 0) = 0.3f; (*gradOutput)(1, 1) = 0.4f;
-        std::shared_ptr<NNGL::Matrix> gradInput, gradResidual, gradGamma, gradBeta;
-        layerNorm.backward(gradOutput, input, residual, gradInput, gradResidual, gradGamma, gradBeta);
+        layerNorm.backward(gradOutput, input, residual);
         std::cout << "  [PASS] Learnable parameters update (backward pass completed)" << std::endl;
     }
     // Test 5: Identity transformation with learned parameters (input + residual)
@@ -1442,8 +1443,7 @@ void testLayerNormClass() {
                     (*gradOutput)(i, j) = (*output)(i, j) - (*target)(i, j);
                 }
             }
-            std::shared_ptr<NNGL::Matrix> gradInput, gradResidual, gradGamma, gradBeta;
-            layerNorm.backward(gradOutput, input, residual, gradInput, gradResidual, gradGamma, gradBeta);
+            layerNorm.backward(gradOutput, input, residual);
         }
         auto finalOutput = layerNorm.forward(input, residual);
         float initialDiff = 0.0f;
@@ -2071,7 +2071,7 @@ int main(int argc, char** argv) {
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::INFO);   // Default
     // NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::WARN);   // Warnings only
     NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::LL_INFO);
-    NNGL::Logger::getInstance().setEnabled(true);
+    NNGL::Logger::getInstance().setEnabled(false);
 
     //new tokenizer
     // take a byte convert it in vector of 8 float where each float is bit 1.0f or 0.0f

@@ -44,16 +44,21 @@ namespace NNGL {
 
     std::shared_ptr<Matrix> EmbeddingBlock::forward(std::vector<std::string>& tokens) {
         NNGL::Timer timer("EmbeddingBlock::forward");
-        std::vector<std::vector<float>> tmpVec; 
-        tmpVec.reserve(tokens.size());
-
-        for (auto& t : tokens) {
+        size_t seqLen = tokens.size();
+        // Reuse m_CachedOutput if possible
+        if (!m_CachedOutput || m_CachedOutput->rows != seqLen || m_CachedOutput->cols != m_ModelDim) {
+            m_CachedOutput = std::make_shared<Matrix>(seqLen, m_ModelDim);
+        }
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            const auto& t = tokens[i];
             if (m_Embeddings.find(t) == m_Embeddings.end()) {
                 m_Embeddings[t] = initializeRandomVec();
             }
-            tmpVec.push_back(m_Embeddings[t]);
+            for (size_t j = 0; j < m_ModelDim; ++j) {
+                (*m_CachedOutput)(i, j) = m_Embeddings[t][j];
+            }
         }
-        return std::make_shared<Matrix>(tmpVec);
+        return m_CachedOutput;
     }
 
     std::vector<int> EmbeddingBlock::getTokenIndices(const std::vector<std::string>& tokens) const {

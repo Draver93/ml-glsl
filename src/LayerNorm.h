@@ -15,11 +15,7 @@ namespace NNGL {
         void backward(
             const std::shared_ptr<Matrix>& gradOutput,
             const std::shared_ptr<Matrix>& input,
-            const std::shared_ptr<Matrix>& residual,
-            std::shared_ptr<Matrix>& gradInput,
-            std::shared_ptr<Matrix>& gradResidual,
-            std::shared_ptr<Matrix>& gradGamma,
-            std::shared_ptr<Matrix>& gradBeta
+            const std::shared_ptr<Matrix>& residual
         );
 
         void setLearningRate(float lr) { m_LearningRate = lr; }
@@ -28,6 +24,10 @@ namespace NNGL {
         std::shared_ptr<Matrix> getCachedMean() { return m_CachedMean; }
         std::shared_ptr<Matrix> getCachedVar() { return m_CachedVariance; }
         std::shared_ptr<Matrix> getCachedOutput() { return m_CachedOutput; }
+        std::shared_ptr<Matrix> getGradInput() { return m_GradInput; }
+        std::shared_ptr<Matrix> getGradResidual() { return m_GradResidual; }
+        std::shared_ptr<Matrix> getGradGamma() { return m_GradGamma; }
+        std::shared_ptr<Matrix> getGradBeta() { return m_GradBeta; }
 
     private:
         int m_NormalizedShape;
@@ -44,6 +44,12 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_CachedMean;
         std::shared_ptr<Matrix> m_CachedVariance;
         std::shared_ptr<Matrix> m_CachedOutput;
+
+        // Gradient matrices for backprop
+        std::shared_ptr<Matrix> m_GradInput;
+        std::shared_ptr<Matrix> m_GradResidual;
+        std::shared_ptr<Matrix> m_GradGamma;
+        std::shared_ptr<Matrix> m_GradBeta;
 
         // GPU shader resources
         std::shared_ptr<Shader> m_ForwardShader;

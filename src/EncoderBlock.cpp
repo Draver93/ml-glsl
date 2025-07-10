@@ -62,13 +62,15 @@ namespace NNGL {
     std::shared_ptr<Matrix> EncoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
         NNGL::Timer timer("EncoderBlock::backward");
         // Backprop through addNorm2
-        std::shared_ptr<Matrix> gradMlpOut, gradAddNorm1Out, gradGamma2, gradBeta2;
-        m_AddNorm2->backward(gradOutput, m_AddNorm1->getCachedOutput(), m_AddNorm1->getCachedOutput(), gradMlpOut, gradAddNorm1Out, gradGamma2, gradBeta2);
+        m_AddNorm2->backward(gradOutput, m_AddNorm1->getCachedOutput(), m_AddNorm1->getCachedOutput());
+        auto gradMlpOut = m_AddNorm2->getGradInput();
+        auto gradAddNorm1Out = m_AddNorm2->getGradResidual();
         // Backprop through FFN
-        auto gradFromFfn = m_FeedForward->backward_with_targetloss(m_AddNorm1->getCachedOutput(), gradMlpOut, learningRate);
+        m_FeedForward->backward_with_targetloss(m_AddNorm1->getCachedOutput(), gradMlpOut, learningRate);
         // Backprop through addNorm1
-        std::shared_ptr<Matrix> gradAttentionOut, gradInput, gradGamma1, gradBeta1;
-        m_AddNorm1->backward(gradAddNorm1Out, m_CachedInput, m_CachedInput, gradAttentionOut, gradInput, gradGamma1, gradBeta1);
+        m_AddNorm1->backward(gradAddNorm1Out, m_CachedInput, m_CachedInput);
+        auto gradAttentionOut = m_AddNorm1->getGradInput();
+        auto gradInput = m_AddNorm1->getGradResidual();
         // Backprop through Attention
         auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionOut, m_CachedInput, nullptr);
         return gradInput;

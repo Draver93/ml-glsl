@@ -60,25 +60,21 @@ namespace NNGL {
     void LayerNorm::backward(
         const std::shared_ptr<Matrix>& gradOutput,
         const std::shared_ptr<Matrix>& input,
-        const std::shared_ptr<Matrix>& residual,
-        std::shared_ptr<Matrix>& gradInput,
-        std::shared_ptr<Matrix>& gradResidual,
-        std::shared_ptr<Matrix>& gradGamma,
-        std::shared_ptr<Matrix>& gradBeta
+        const std::shared_ptr<Matrix>& residual
     ) {
         NNGL::Timer timer("LayerNorm::backward");
         int seqLen = input->rows;
         int modelDim = input->cols;
 
         // Reuse gradient matrices if possible
-        if (!gradInput || gradInput->rows != seqLen || gradInput->cols != modelDim)
-            gradInput = std::make_shared<Matrix>(seqLen, modelDim);
-        if (!gradResidual || gradResidual->rows != seqLen || gradResidual->cols != modelDim)
-            gradResidual = std::make_shared<Matrix>(seqLen, modelDim);
-        if (!gradGamma || gradGamma->rows != modelDim || gradGamma->cols != 1)
-            gradGamma = std::make_shared<Matrix>(modelDim, 1);
-        if (!gradBeta || gradBeta->rows != modelDim || gradBeta->cols != 1)
-            gradBeta = std::make_shared<Matrix>(modelDim, 1);
+        if (!m_GradInput || m_GradInput->rows != seqLen || m_GradInput->cols != modelDim)
+            m_GradInput = std::make_shared<Matrix>(seqLen, modelDim);
+        if (!m_GradResidual || m_GradResidual->rows != seqLen || m_GradResidual->cols != modelDim)
+            m_GradResidual = std::make_shared<Matrix>(seqLen, modelDim);
+        if (!m_GradGamma || m_GradGamma->rows != modelDim || m_GradGamma->cols != 1)
+            m_GradGamma = std::make_shared<Matrix>(modelDim, 1);
+        if (!m_GradBeta || m_GradBeta->rows != modelDim || m_GradBeta->cols != 1)
+            m_GradBeta = std::make_shared<Matrix>(modelDim, 1);
 
         gradOutput->uploadToGPU();
         input->uploadToGPU();
@@ -87,10 +83,10 @@ namespace NNGL {
         m_Beta->uploadToGPU();
         m_CachedMean->uploadToGPU();
         m_CachedVariance->uploadToGPU();
-        gradInput->uploadToGPU();
-        gradResidual->uploadToGPU();
-        gradGamma->uploadToGPU();
-        gradBeta->uploadToGPU();
+        m_GradInput->uploadToGPU();
+        m_GradResidual->uploadToGPU();
+        m_GradGamma->uploadToGPU();
+        m_GradBeta->uploadToGPU();
         m_BackwardShader->bindBuffer(0, "GradOutput", gradOutput->buffer);
         m_BackwardShader->bindBuffer(1, "InputA", input->buffer);
         m_BackwardShader->bindBuffer(2, "InputB", residual->buffer);
@@ -98,17 +94,17 @@ namespace NNGL {
         m_BackwardShader->bindBuffer(4, "Beta", m_Beta->buffer);
         m_BackwardShader->bindBuffer(5, "CachedMean", m_CachedMean->buffer);
         m_BackwardShader->bindBuffer(6, "CachedVar", m_CachedVariance->buffer);
-        m_BackwardShader->bindBuffer(7, "GradInputA", gradInput->buffer);
-        m_BackwardShader->bindBuffer(8, "GradInputB", gradResidual->buffer);
-        m_BackwardShader->bindBuffer(9, "GradGamma", gradGamma->buffer);
-        m_BackwardShader->bindBuffer(10, "GradBeta", gradBeta->buffer);
+        m_BackwardShader->bindBuffer(7, "GradInputA", m_GradInput->buffer);
+        m_BackwardShader->bindBuffer(8, "GradInputB", m_GradResidual->buffer);
+        m_BackwardShader->bindBuffer(9, "GradGamma", m_GradGamma->buffer);
+        m_BackwardShader->bindBuffer(10, "GradBeta", m_GradBeta->buffer);
         m_BackwardShader->setUniform("seq_len", seqLen);
         m_BackwardShader->setUniform("model_dim", modelDim);
         m_BackwardShader->setUniform("epsilon", m_Epsilon);
         m_BackwardShader->dispatch(seqLen, 1, 1);
-        gradInput->downloadFromGPU();
-        gradResidual->downloadFromGPU();
-        gradGamma->downloadFromGPU();
-        gradBeta->downloadFromGPU();
+        m_GradInput->downloadFromGPU();
+        m_GradResidual->downloadFromGPU();
+        m_GradGamma->downloadFromGPU();
+        m_GradBeta->downloadFromGPU();
     }
 } 
