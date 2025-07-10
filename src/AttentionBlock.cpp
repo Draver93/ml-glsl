@@ -15,12 +15,13 @@ namespace NNGL {
         m_WeightKeyMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
         m_WeightValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
         // Randomly initialize weights (using RELU initializer for consistency)
-        for (auto& w : m_WeightQueryMat->flatVec)
-            w = NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions);
-        for (auto& w : m_WeightKeyMat->flatVec)
-            w = NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions);
-        for (auto& w : m_WeightValueMat->flatVec)
-            w = NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions);
+        for (int r = 0; r < modelDimensions; r++) {
+            for (int c = 0; c < modelDimensions; c++) {
+                m_WeightQueryMat->set(r, c, NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
+                m_WeightKeyMat->set(r, c, NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
+                m_WeightValueMat->set(r, c, NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
+            }
+        }
         m_WeightQueryMat->uploadToGPU();
         m_WeightKeyMat->uploadToGPU();
         m_WeightValueMat->uploadToGPU();

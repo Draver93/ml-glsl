@@ -329,14 +329,13 @@ namespace NNGL {
         constexpr int COLOR_COUNT = sizeof(colors) / sizeof(colors[0]) - 1;
         int rows = mat->rows;
         int cols = mat->cols;
-        const float* data = mat->flatVec.data();
         const int displaySize = 20;
         int rowStep = std::max(rows / displaySize, 1);
         int colStep = std::max(cols / displaySize, 1);
         std::vector<float> sampledValues;
         for (int i = 0; i < rows; i += rowStep) {
             for (int j = 0; j < cols; j += colStep) {
-                sampledValues.push_back(data[i * cols + j]);
+                sampledValues.push_back(mat->get(i, j));
             }
         }
         auto [minIt, maxIt] = std::minmax_element(sampledValues.begin(), sampledValues.end());

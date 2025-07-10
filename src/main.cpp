@@ -1513,16 +1513,16 @@ void testMatrixClass() {
         
         std::cout << "Test 2: Column-major indexing - ";
         // Column-major: [1,4,2,5,3,6]
-        if (mat.flatVec[0] == 1.0f && mat.flatVec[1] == 4.0f && 
-            mat.flatVec[2] == 2.0f && mat.flatVec[3] == 5.0f &&
-            mat.flatVec[4] == 3.0f && mat.flatVec[5] == 6.0f) {
+        if (mat.getFlatVec()[0] == 1.0f && mat.getFlatVec()[1] == 4.0f &&
+            mat.getFlatVec()[2] == 2.0f && mat.getFlatVec()[3] == 5.0f &&
+            mat.getFlatVec()[4] == 3.0f && mat.getFlatVec()[5] == 6.0f) {
             std::cout << "PASS" << std::endl;
         } else {
             std::cout << "FAIL" << std::endl;
             std::cout << "Expected: [1,4,2,5,3,6], Got: [";
-            for (size_t i = 0; i < mat.flatVec.size(); ++i) {
-                std::cout << mat.flatVec[i];
-                if (i < mat.flatVec.size() - 1) std::cout << ",";
+            for (size_t i = 0; i < mat.getFlatVec().size(); ++i) {
+                std::cout << mat.getFlatVec()[i];
+                if (i < mat.getFlatVec().size() - 1) std::cout << ",";
             }
             std::cout << "]" << std::endl;
         }
@@ -1551,16 +1551,16 @@ void testMatrixClass() {
         bool pass = true;
         
         // Verify column-major storage is correct
-        if (A.flatVec[0] == 1.0f && A.flatVec[1] == 4.0f && 
-            A.flatVec[2] == 2.0f && A.flatVec[3] == 5.0f &&
-            A.flatVec[4] == 3.0f && A.flatVec[5] == 6.0f) {
+        if (A.getFlatVec()[0] == 1.0f && A.getFlatVec()[1] == 4.0f &&
+            A.getFlatVec()[2] == 2.0f && A.getFlatVec()[3] == 5.0f &&
+            A.getFlatVec()[4] == 3.0f && A.getFlatVec()[5] == 6.0f) {
             std::cout << "PASS" << std::endl;
         } else {
             std::cout << "FAIL" << std::endl;
             std::cout << "Expected A: [1,4,2,5,3,6], Got: [";
-            for (size_t i = 0; i < A.flatVec.size(); ++i) {
-                std::cout << A.flatVec[i];
-                if (i < A.flatVec.size() - 1) std::cout << ",";
+            for (size_t i = 0; i < A.getFlatVec().size(); ++i) {
+                std::cout << A.getFlatVec()[i];
+                if (i < A.getFlatVec().size() - 1) std::cout << ",";
             }
             std::cout << "]" << std::endl;
         }
@@ -1571,12 +1571,12 @@ void testMatrixClass() {
         std::cout << "Test 4: Shader matrix layout validation - ";
         
         // Create matrix as it would be in C++: [features, batch]
-        NNGL::Matrix inputMat(4, 2); // [input_size, batch_size]
-        inputMat.flatVec = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f}; // Column-major
+        std::vector input = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f }; // Column-major
+        NNGL::Matrix inputMat(4, 2, input.data()); // [input_size, batch_size]
         
         // Create weight matrix: [input_size, output_size]
-        NNGL::Matrix weightMat(4, 3); // [input_size, output_size]
-        weightMat.flatVec = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f}; // Column-major
+        std::vector weight = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f }; // Column-major
+        NNGL::Matrix weightMat(4, 3, weight.data()); // [input_size, output_size]
         
         // Expected output: [output_size, batch_size] = [3, 2]
         // Manual calculation for batch_idx=0, neuron_idx=0:
@@ -1585,15 +1585,15 @@ void testMatrixClass() {
         
         std::cout << "PASS (matrix layout confirmed)" << std::endl;
         std::cout << "  Input matrix [4,2] column-major: [";
-        for (size_t i = 0; i < inputMat.flatVec.size(); ++i) {
-            std::cout << inputMat.flatVec[i];
-            if (i < inputMat.flatVec.size() - 1) std::cout << ",";
+        for (size_t i = 0; i < inputMat.getFlatVec().size(); ++i) {
+            std::cout << inputMat.getFlatVec()[i];
+            if (i < inputMat.getFlatVec().size() - 1) std::cout << ",";
         }
         std::cout << "]" << std::endl;
         std::cout << "  Weight matrix [4,3] column-major: [";
-        for (size_t i = 0; i < weightMat.flatVec.size(); ++i) {
-            std::cout << weightMat.flatVec[i];
-            if (i < weightMat.flatVec.size() - 1) std::cout << ",";
+        for (size_t i = 0; i < weightMat.getFlatVec().size(); ++i) {
+            std::cout << weightMat.getFlatVec()[i];
+            if (i < weightMat.getFlatVec().size() - 1) std::cout << ",";
         }
         std::cout << "]" << std::endl;
     }
@@ -1623,15 +1623,15 @@ void testNeuralNetworkClass() {
         nn.addLayer(2, 1, NNGL::ActivationFnType::IDENTITY);
         
         // Create input
-        auto input = std::make_shared<NNGL::Matrix>(2, 1);
-        input->flatVec = {0.5f, 0.7f}; // [2,1] column-major
+        std::vector<float> inputVec = { 0.5f, 0.7f };
+        auto input = std::make_shared<NNGL::Matrix>(2, 1, inputVec.data());
         
         std::cout << "Test 2: Forward pass validation - ";
         try {
             auto output = nn.forward(input);
             if (output && output->rows == 2 && output->cols == 1) {
                 std::cout << "PASS (forward pass completed)" << std::endl;
-                std::cout << "  Output values: [" << output->flatVec[0] << ", " << output->flatVec[1] << "]" << std::endl;
+                std::cout << "  Output values: [" << output->getFlatVec()[0] << ", " << output->getFlatVec()[1] << "]" << std::endl;
             } else {
                 std::cout << "FAIL (wrong output dimensions: expected [2,1], got [" << output->rows << "," << output->cols << "])" << std::endl;
             }
@@ -1648,8 +1648,10 @@ void testNeuralNetworkClass() {
         
         // Set up test batch provider for eval
         nn.onTestBatch([&](std::shared_ptr<NNGL::Matrix>& batchInputs, std::shared_ptr<NNGL::Matrix>& batchTargets, int batchSize) {
-            batchInputs->flatVec = {0.5f, 0.7f}; // [2,1] column-major
-            batchTargets->flatVec = {0.8f}; // [1,1] target
+
+            batchInputs->set(0, 0, 0.5f);
+            batchInputs->set(1, 0, 0.7f);
+            batchTargets->set(0,0, 0.8f);
         });
         
         std::cout << "Test 3: Evaluation test - ";
@@ -2118,7 +2120,7 @@ int main(int argc, char** argv) {
     // 2. Meaningful word predictions
     // 3. Sequence-to-sequence translation
     
-    int choice = 4; // Change this to test different functions
+    int choice = 0; // Change this to test different functions
     
     switch (choice) {
         case 0:

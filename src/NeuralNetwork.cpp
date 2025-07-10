@@ -345,10 +345,10 @@ namespace NNGL {
 
     void NeuralNetwork::setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss) {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->flatVec.size() * sizeof(float), targetLoss->flatVec.data(), GL_DYNAMIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->rows * targetLoss->cols * sizeof(float), targetLoss->getFlatVec().data(), GL_DYNAMIC_DRAW);
         
         // Log target loss upload
-        LOG_TRACE("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->flatVec.size() * sizeof(float)) + 
+        LOG_TRACE("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->rows * targetLoss->cols * sizeof(float)) +
             " bytes) uploaded to delta buffer " + std::to_string(m_Layers.back()->m_DeltaBuffer));
     }
 
@@ -429,7 +429,7 @@ namespace NNGL {
 
                 // Get expected values
                 for (int i = 0; i < outputSize; i++) {
-                    expected[i] = m_OutputBatchMat->flatVec[i];
+                    expected[i] = m_OutputBatchMat->getFlatVec()[i];
                 }
 
                 // Display results
@@ -510,7 +510,7 @@ namespace NNGL {
                         results = softmax(results);
 
                         for (int j = 0; j < outputSize; j++) {
-                            expected[j] = m_OutputBatchMat->flatVec[j];
+                            expected[j] = m_OutputBatchMat->getFlatVec()[j];
                         }
 
                         if (outputSize == 1) {

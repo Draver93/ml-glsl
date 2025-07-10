@@ -82,6 +82,7 @@ namespace NNGL {
     // Column-major indexing: data stored as [col0_all_rows, col1_all_rows, ...]
     float& Matrix::operator()(int r, int c) {
         if (r >= rows || c >= cols) throw std::out_of_range("Matrix index out of bounds");
+        m_Dirty = true; // Mark dirty on write
         return flatVec[c * rows + r];  // Column-major: column_index * num_rows + row_index
     }
 
@@ -97,6 +98,7 @@ namespace NNGL {
         std::uniform_real_distribution<float> dist(min, max);
         for (auto& val : flatVec)
             val = dist(gen);
+        m_Dirty = true;
     }
 
     // Print for debugging
@@ -118,6 +120,7 @@ namespace NNGL {
         for (size_t i = 0; i < flatVec.size(); ++i) {
             flatVec[i] += other.flatVec[i];
         }
+        m_Dirty = true;
     }
 
     void Matrix::add(Matrix& other, float scale) {
@@ -129,6 +132,7 @@ namespace NNGL {
         for (size_t i = 0; i < flatVec.size(); ++i) {
             flatVec[i] += other.flatVec[i] * scale;
         }
+        m_Dirty = true;
     }
 
     // Return raw pointer (useful for GPU upload)
@@ -155,19 +159,21 @@ namespace NNGL {
     }
 
     void Matrix::uploadToGPU() {
+        if (!m_Dirty) return; // Only upload if dirty
         if (buffer == 0) allocateBufferGPU();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
         glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, byteSize(), flatVec.data());
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        m_Dirty = false; // Mark as clean
         
         // Log GPU upload information
-        LOG_TRACE("[GPU UPLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) + 
+        LOG("[GPU UPLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) + 
             " (" + std::to_string(byteSize()) + " bytes) uploaded to GPU buffer " + std::to_string(buffer));
     }
 
     void Matrix::downloadFromGPU() {
         if (buffer == 0) {
-            LOG_TRACE("[GPU DOWNLOAD] Skipped - no GPU buffer allocated");
+            LOG("[GPU DOWNLOAD] Skipped - no GPU buffer allocated");
             return;
         }
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
@@ -175,7 +181,7 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         
         // Log GPU download information
-        LOG_TRACE("[GPU DOWNLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) +
+        LOG("[GPU DOWNLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) +
             " (" + std::to_string(byteSize()) + " bytes) downloaded from GPU buffer " + std::to_string(buffer));
     }
 
@@ -191,6 +197,12 @@ namespace NNGL {
 
         // Copy the data from source matrix's flatVec to this matrix's flatVec
         std::memcpy(this->flatVec.data(), srcMat->flatVec.data(), this->byteSize());
+        m_Dirty = true;
+    }
+
+    void Matrix::clear(float clear_with) {
+        std::fill(flatVec.begin(), flatVec.end(), clear_with);
+        m_Dirty = true;
     }
 
     // Memory management for pooling
@@ -223,5 +235,6 @@ namespace NNGL {
             glDeleteBuffers(1, &buffer);
             buffer = 0;
         }
+        m_Dirty = true;
     }
 }
