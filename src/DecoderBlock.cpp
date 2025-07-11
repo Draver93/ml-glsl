@@ -51,8 +51,9 @@ namespace NNGL {
         NNGL::Timer timer("DecoderBlock::forward (with mask)");
         m_CachedDecoderInput = decoderInput;
         m_CachedEncoderOutput = encoderOutput;
+
         auto maskedOut = m_MaskedSelfAttn->forward(decoderInput, nullptr, decoderPaddingMask);
-        // Use AddNorm output directly; no need to cache at block level
+
         auto addNorm1Out = m_AddNorm1->forward(maskedOut, decoderInput);
         auto crossOut = m_CrossAttn->forward(addNorm1Out, encoderOutput, encoderPaddingMask);
         auto addNorm2Out = m_AddNorm2->forward(crossOut, addNorm1Out);

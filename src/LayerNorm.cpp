@@ -54,6 +54,11 @@ namespace NNGL {
         m_ForwardShader->setUniform("epsilon", m_Epsilon);
         m_ForwardShader->dispatch(seqLen, 1, 1);
         m_CachedOutput->downloadFromGPU();
+        // Unbind buffers
+        for (int i = 0; i <= 5; ++i) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+        }
+
         return m_CachedOutput;
     }
 
@@ -106,5 +111,10 @@ namespace NNGL {
         m_GradResidual->downloadFromGPU();
         m_GradGamma->downloadFromGPU();
         m_GradBeta->downloadFromGPU();
+
+        // Unbind buffers
+        for (int i = 0; i <= 10; ++i) {
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+        }
     }
 } 

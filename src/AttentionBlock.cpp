@@ -10,6 +10,10 @@ namespace NNGL {
             throw std::runtime_error("Model dimension must be divisible by number of heads");
         }
 
+        glGenBuffers(1, &m_PaddingMaskBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, seqLen * sizeof(int), nullptr, GL_STATIC_DRAW);
+
         // Initialize weight matrices
         m_WeightQueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
         m_WeightKeyMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
@@ -101,6 +105,11 @@ namespace NNGL {
 
         const auto& input_kv = context ? context : input;
 
+        if (!m_PaddingMask.empty()) {
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
+        }
+
         // === STEP 1: Compute Q, K, V projections ===
         {
             input->uploadToGPU();
@@ -135,17 +144,7 @@ namespace NNGL {
             m_ForwardPassScoreCompute->bindBuffer(0, "BufferQ", m_CachedQ->buffer);
             m_ForwardPassScoreCompute->bindBuffer(1, "BufferK", m_CachedK->buffer);
             m_ForwardPassScoreCompute->bindBuffer(2, "RawScores", m_CachedScores->buffer);  // CACHE THIS
-            
-            // Bind padding mask if available
-            if (!m_PaddingMask.empty()) {
-                // Create a buffer for the padding mask
-                GLuint paddingMaskBuffer;
-                glGenBuffers(1, &paddingMaskBuffer);
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, paddingMaskBuffer);
-                glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
-                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, paddingMaskBuffer);
-                m_ForwardPassScoreCompute->bindBuffer(3, "PaddingMask", paddingMaskBuffer);
-            }
+            if (!m_PaddingMask.empty()) m_ForwardPassScoreCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
             m_ForwardPassScoreCompute->setUniform("seq_len", input->rows);
             m_ForwardPassScoreCompute->setUniform("head_dim", m_HeadDim);
@@ -166,17 +165,7 @@ namespace NNGL {
             // Apply softmax to cached scores, store in cached attention weights
             m_SoftmaxCompute->bindBuffer(0, "Input", m_CachedScores->buffer);
             m_SoftmaxCompute->bindBuffer(1, "Output", m_CachedAttentionWeights->buffer);  // CACHE THIS
-            
-            // Bind padding mask if available
-            if (!m_PaddingMask.empty()) {
-                // Create a buffer for the padding mask
-                GLuint paddingMaskBuffer;
-                glGenBuffers(1, &paddingMaskBuffer);
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, paddingMaskBuffer);
-                glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
-                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, paddingMaskBuffer);
-                m_SoftmaxCompute->bindBuffer(2, "PaddingMask", paddingMaskBuffer);
-            }
+            if (!m_PaddingMask.empty()) m_SoftmaxCompute->bindBuffer(2, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
             m_SoftmaxCompute->setUniform("seq_len", input->rows);
             m_SoftmaxCompute->setUniform("num_heads", m_NumHeads);
@@ -224,6 +213,10 @@ namespace NNGL {
         const int seqLen = input->rows;
         const int inputDim = input->cols;
         const int headDim = m_HeadDim;
+        if (!m_PaddingMask.empty()) {
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
+        }
 
         // === STEP 1: Backward through final matmul (grad_output -> grad_attention_weights, grad_V) ===
         {
@@ -255,17 +248,7 @@ namespace NNGL {
             m_BackwardScoresCompute->bindBuffer(0, "GradAttentionWeights", m_GradAttentionWeights->buffer);
             m_BackwardScoresCompute->bindBuffer(1, "CachedAttentionWeights", m_CachedAttentionWeights->buffer);
             m_BackwardScoresCompute->bindBuffer(2, "GradScores", m_GradScores->buffer);
-            
-            // Bind padding mask if available
-            if (!m_PaddingMask.empty()) {
-                // Create a buffer for the padding mask
-                GLuint paddingMaskBuffer;
-                glGenBuffers(1, &paddingMaskBuffer);
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, paddingMaskBuffer);
-                glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
-                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, paddingMaskBuffer);
-                m_BackwardScoresCompute->bindBuffer(3, "PaddingMask", paddingMaskBuffer);
-            }
+            if (!m_PaddingMask.empty()) m_BackwardScoresCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
             m_BackwardScoresCompute->setUniform("seq_len", seqLen);
             m_BackwardScoresCompute->setUniform("num_heads", m_NumHeads);

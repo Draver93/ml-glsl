@@ -79,9 +79,9 @@ namespace NNGL {
             std::cout << "]" << std::endl;
         }
 
-        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize);
-        for (int i = 0; i < m_VocabSize; ++i) (*targetMat)(0, i) = 0.0f;
-        (*targetMat)(0, targetTokenId) = 1.0f;
+        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
+        targetMat->set(0, targetTokenId, 1.0f);
+
         backwardPass(contextTokens, targetMat, learningRate);
     }
 
@@ -98,6 +98,7 @@ namespace NNGL {
         }
         std::vector<int> decTokenIds = stringToTokenIds(decInputTokens);
 
+
         std::vector<std::string> generatedTokens;
         int maxLength = m_SeqLen - 1;
         int eosTokenId = getEosTokenId();
@@ -110,7 +111,7 @@ namespace NNGL {
             if (nextTokenId == eosTokenId) break;
             std::string nextToken = m_Tokenizer->getTokenById(nextTokenId);
             generatedTokens.push_back(nextToken);
-
+            
             // Shift left and append new token
             for (int i = 0; i < m_SeqLen - 1; ++i) decTokenIds[i] = decTokenIds[i + 1];
             decTokenIds[m_SeqLen - 1] = nextTokenId;
@@ -231,6 +232,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
         m_Embedder->applyPositionalEncoding(inputMat);
+
         // Pass a dummy encoder output (zeros) to DecoderBlock
         std::shared_ptr<Matrix> dummyEncoderOutput = std::make_shared<Matrix>(m_SeqLen, inputMat->cols, 0.0f);
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, dummyEncoderOutput, paddingMask, std::vector<int>(m_SeqLen, 1));
@@ -250,9 +252,11 @@ namespace NNGL {
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
+
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols);
         decOutputGrad->clear();
         for (int i = 0; i < decOutputMat->cols; ++i) (*decOutputGrad)(decOutputMat->rows - 1, i) = (*outputGrad)(0, i);
+
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
         m_Embedder->removePositionalEncoding(decGrad);
         m_Embedder->backward(inputTokens, decGrad, learningRate);

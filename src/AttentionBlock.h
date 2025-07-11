@@ -32,6 +32,8 @@ namespace NNGL {
         
         // Padding mask storage
         std::vector<int> m_PaddingMask;
+        GLuint m_PaddingMaskBuffer;
+
 
         std::shared_ptr<Shader> 
             m_ForwardPassWeightsCompute,
