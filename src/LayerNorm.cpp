@@ -55,7 +55,7 @@ namespace NNGL {
         m_ForwardShader->dispatch(seqLen, 1, 1);
         m_CachedOutput->downloadFromGPU();
         // Unbind buffers
-        for (int i = 0; i <= 5; ++i) {
+        for (int i = 0; i <= 4; ++i) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 

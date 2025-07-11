@@ -1791,11 +1791,11 @@ void test_embeddingblock_gpu_update() {
     // Test 1: Single token
     std::vector<std::string> tokens1 = { "A" };
     embedder.forward(tokens1); // ensure "A" is initialized
-    auto beforeA = embedder.forward(tokens1);
+    auto beforeA = std::make_shared<Matrix>(*embedder.forward(tokens1)); // deep copy
     std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(1, modelDim);
     (*grad1)(0, 0) = 1; (*grad1)(0, 1) = 2; (*grad1)(0, 2) = 3;
     embedder.backward(tokens1, grad1, lr);
-    auto afterA = embedder.forward(tokens1);
+    auto afterA = std::make_shared<Matrix>(*embedder.forward(tokens1)); // deep copy
     std::cout << "A before: "; beforeA->print();
     std::cout << "A after:  "; afterA->print();
     for (int j = 0; j < modelDim; ++j) {
@@ -1806,12 +1806,12 @@ void test_embeddingblock_gpu_update() {
     std::vector<std::string> tokens2 = { "B", "B" };
     embedder.forward(tokens2);
     std::vector<std::string> singleB = { "B" };
-    auto beforeB = embedder.forward(singleB);
+    auto beforeB = std::make_shared<Matrix>(*embedder.forward(singleB)); // deep copy
     std::shared_ptr<Matrix> grad2 = std::make_shared<Matrix>(2, modelDim);
     (*grad2)(0, 0) = 1; (*grad2)(0, 1) = 2; (*grad2)(0, 2) = 3;
     (*grad2)(1, 0) = 4; (*grad2)(1, 1) = 5; (*grad2)(1, 2) = 6;
     embedder.backward(tokens2, grad2, lr);
-    auto afterB = embedder.forward(singleB);
+    auto afterB = std::make_shared<Matrix>(*embedder.forward(singleB)); // deep copy
     std::cout << "B before: "; beforeB->print();
     std::cout << "B after:  "; afterB->print();
     for (int j = 0; j < modelDim; ++j) {
@@ -1824,14 +1824,14 @@ void test_embeddingblock_gpu_update() {
     embedder.forward(tokens3);
     std::vector<std::string> singleC = { "C" };
     std::vector<std::string> singleD = { "D" };
-    auto beforeC = embedder.forward(singleC);
-    auto beforeD = embedder.forward(singleD);
+    auto beforeC = std::make_shared<Matrix>(*embedder.forward(singleC)); // deep copy
+    auto beforeD = std::make_shared<Matrix>(*embedder.forward(singleD)); // deep copy
     std::shared_ptr<Matrix> grad3 = std::make_shared<Matrix>(2, modelDim);
     (*grad3)(0, 0) = 1; (*grad3)(0, 1) = 2; (*grad3)(0, 2) = 3;
     (*grad3)(1, 0) = 4; (*grad3)(1, 1) = 5; (*grad3)(1, 2) = 6;
     embedder.backward(tokens3, grad3, lr);
-    auto afterC = embedder.forward(singleC);
-    auto afterD = embedder.forward(singleD);
+    auto afterC = std::make_shared<Matrix>(*embedder.forward(singleC)); // deep copy
+    auto afterD = std::make_shared<Matrix>(*embedder.forward(singleD)); // deep copy
     std::cout << "C before: "; beforeC->print();
     std::cout << "C after:  "; afterC->print();
     std::cout << "D before: "; beforeD->print();
@@ -1970,27 +1970,19 @@ void transformer() {
 }
 
 void gptransformer_simplified() {
-    // Simple GPTransformer (GPT-style, decoder-only) training
+    // Simple GPTransformer (GPT-style, decoder-only) overfit test on a single example
     std::srand(42);
-    std::cout << "=== Simple GPTransformer Training ===" << std::endl;
+    std::cout << "=== Simple GPTransformer Overfit Test ===" << std::endl;
     int d_model = 128;
     int d_hidden = d_model * 4;
     int seq_len = 32;
     std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(5000);
-    // Use multiple real sentences for meaningful training
-    std::vector<std::string> training_data = {
-        "hello world",
-        "how are you",
-        "goodbye world",
-        "hello there",
-        "how is the weather"
-    };
-    std::vector<std::string> test_inputs = {"hello", "how", "goodbye", "hello world", "how are"};
-    std::cout << "Training BPE on examples..." << std::endl;
+    // Overfit on a single example
+    std::string single_example = "hello world";
+    std::vector<std::string> training_data = {single_example};
+    std::cout << "Training BPE on single example..." << std::endl;
     for (int iteration = 0; iteration < 10; ++iteration) {
-        for (const auto& text : training_data) {
-            bpe->trainFromString(text, true);
-        }
+        bpe->trainFromString(single_example, true);
     }
     bpe->reduceVocab(200);
     bpe->addToken("<PAD>");
@@ -2001,65 +1993,35 @@ void gptransformer_simplified() {
     bpe->save(bpe_file);
     std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(
         bpe_file, d_model, d_hidden, seq_len);
-    std::cout << "\n=== Initial Predictions (Before Training) ===" << std::endl;
-    for (const auto& input : test_inputs) {
-        std::string result = gpt->eval(input);
-        std::cout << "  '" << input << "' -> '" << result << "'" << std::endl;
-    }
-    std::cout << "  Expected: meaningful continuations (after training)" << std::endl;
-    std::cout << "\n=== Training ===" << std::endl;
-    int epochs = 10000;
-    float learning_rate = 0.005f;
+    std::cout << "\n=== Initial Prediction (Before Training) ===" << std::endl;
+    std::string result = gpt->eval(single_example);
+    std::cout << "  '" << single_example << "' -> '" << result << "'" << std::endl;
+    std::cout << "  Expected: 'world' or '<EOS>' (after training)" << std::endl;
+    std::cout << "\n=== Training (Overfitting on Single Example) ===" << std::endl;
+    int epochs = 1000;
+    float learning_rate = 0.01f;
+    std::vector<std::string> tokens = bpe->tokenizeInput(single_example.c_str(), single_example.size());
+    std::vector<std::string> sequence = {"<SOS>"};
+    sequence.insert(sequence.end(), tokens.begin(), tokens.end());
+    sequence.push_back("<EOS>");
     for (int epoch = 0; epoch < epochs; ++epoch) {
-        for (const auto& text : training_data) {
-            std::vector<std::string> tokens = bpe->tokenizeInput(text.c_str(), text.size());
-            std::vector<std::string> sequence = {"<SOS>"};
-            sequence.insert(sequence.end(), tokens.begin(), tokens.end());
-            sequence.push_back("<EOS>");
-            // Train on next-token prediction for each position
-            for (size_t i = 1; i < sequence.size(); ++i) {
-                std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
-                std::string target = sequence[i];
-                std::vector<std::string> train_seq = context;
-                train_seq.push_back(target);
-                gpt->trainOnTokenSequence(train_seq, learning_rate);
-            }
+        // Train on next-token prediction for each position in the sequence
+        for (size_t i = 1; i < sequence.size(); ++i) {
+            std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
+            std::string target = sequence[i];
+            std::vector<std::string> train_seq = context;
+            train_seq.push_back(target);
+            gpt->trainOnTokenSequence(train_seq, learning_rate);
         }
-        if ((epoch + 1) % 10 == 0) {
-            std::cout << "Epoch " << (epoch + 1) << "/" << epochs << " (LR: " << learning_rate << ")" << std::endl;
-            if ((epoch + 1) % 50 == 0) {
-                gpt->resetPadTokenEmbedding();
-            }
-            float avgLoss = 0.0f;
-            const auto& lossHistory = gpt->getLossHistory();
-            if (!lossHistory.empty()) {
-                int steps = std::min(10, (int)lossHistory.size());
-                for (int i = lossHistory.size() - steps; i < lossHistory.size(); ++i) {
-                    avgLoss += lossHistory[i];
-                }
-                avgLoss /= steps;
-            }
-            std::cout << "  Training stats - Steps: " << gpt->getTrainingSteps()
-                     << " | Current Loss: " << std::fixed << std::setprecision(4) << gpt->getCurrentLoss()
-                     << " | Avg Loss (last 10): " << std::fixed << std::setprecision(4) << avgLoss 
-                     << " | LR: " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
-            std::cout << "  Generation test:" << std::endl;
-            for (const auto& input : test_inputs) {
-                std::string result = gpt->eval(input);
-                std::cout << "    '" << input << "' -> '" << result << "'" << std::endl;
-            }
-            std::cout << std::endl;
-        }
-        if ((epoch + 1) % 100 == 0) {
-            learning_rate *= 0.99f;
+        // Print prediction after each epoch
+        if ((epoch + 1) % 10 == 0 || epoch == 0) {
+            std::string pred = gpt->eval(single_example);
+            std::cout << "Epoch " << (epoch + 1) << ": '" << single_example << "' -> '" << pred << "'" << std::endl;
         }
     }
-    std::cout << "\n=== Final Results ===" << std::endl;
-    for (const auto& input : test_inputs) {
-        std::string result = gpt->eval(input);
-        std::cout << "  '" << input << "' -> '" << result << "'" << std::endl;
-    }
-    std::cout << "\n=== Training Complete ===" << std::endl;
+    std::cout << "\n=== Overfit Test Complete ===" << std::endl;
+    std::string final_pred = gpt->eval(single_example);
+    std::cout << "Final prediction for '" << single_example << "': '" << final_pred << "'" << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -2113,7 +2075,7 @@ int main(int argc, char** argv) {
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     
     // Run comprehensive unit tests
-    //runAllUnitTests();
+    runAllUnitTests();
     
     // Choose which transformer function to run:
     // 1. Simple EOS prediction (original)
