@@ -38,7 +38,7 @@ namespace NNGL {
         int getSosTokenId() const;
         int getEosTokenId() const;
         bool isSpecialToken(int tokenId) const;
-        std::vector<int> createPaddingMask(const std::vector<int>& tokenIds) const;
+        std::vector<int> createPaddingMask(const std::vector<int>& tokenIds, int& len) const;
         std::shared_ptr<Matrix> getCachedEmbedding(const std::vector<int>& tokens);
         void printGradientHeatmap(std::shared_ptr<Matrix> mat);
         void trainOnTokenSequence(const std::vector<std::string>& tokenSequence, float learningRate);

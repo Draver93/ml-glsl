@@ -44,12 +44,14 @@ namespace NNGL {
         EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen = 512);
         
         std::vector<float> initializeRandomVec();
-        std::shared_ptr<Matrix> forward(std::vector<std::string>& tokens);
+        std::shared_ptr<Matrix> forward(const std::vector<std::string>& tokens);
         std::shared_ptr<Matrix> backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate);
         
         void applyPositionalEncoding(std::shared_ptr<Matrix> embeddings);
         void removePositionalEncoding(std::shared_ptr<Matrix> embeddings);
-        
+        void applyPositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask);
+        void removePositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask);
+
         void save(const std::string& filename) const;
         void load(const std::string& filename);
 

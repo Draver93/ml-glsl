@@ -1,14 +1,18 @@
 #version 430
 
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) restrict buffer EmbeddingsBuffer {
+// Embeddings: [seq_len, model_dim]
+layout(std430) buffer EmbeddingsBuffer {
     float embeddings[];
 };
-
+// Positional encoding: [seq_len, model_dim]
 layout(std430) readonly buffer PositionalEncodingBuffer {
     float positional_encoding[];
 };
+// Padding mask: 1 for real tokens, 0 for PAD tokens
+layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
+uniform bool has_padding_mask = false;
 
 uniform int seq_len;
 uniform int model_dim;
@@ -18,10 +22,9 @@ void main() {
     uint model_dim_idx = gl_GlobalInvocationID.y;  // model dimension (column index)
     
     // Bounds check
-    if (seq_pos >= seq_len || model_dim_idx >= model_dim) {
-        return;
-    }
-    
+    if (seq_pos >= seq_len || model_dim_idx >= model_dim) {  return; }
+    if (has_padding_mask && padding_mask[seq_pos] == 0) return;
+
     // Column-major indexing: [model_dimension * seq_len + sequence_position]
     // This accesses the embedding value at [seq_pos, model_dim_idx]
     uint embedding_col_major_idx = model_dim_idx * seq_len + seq_pos;

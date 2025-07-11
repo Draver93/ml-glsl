@@ -144,6 +144,8 @@ namespace NNGL {
             m_ForwardPassScoreCompute->bindBuffer(0, "BufferQ", m_CachedQ->buffer);
             m_ForwardPassScoreCompute->bindBuffer(1, "BufferK", m_CachedK->buffer);
             m_ForwardPassScoreCompute->bindBuffer(2, "RawScores", m_CachedScores->buffer);  // CACHE THIS
+
+            m_ForwardPassScoreCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
             if (!m_PaddingMask.empty()) m_ForwardPassScoreCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
             m_ForwardPassScoreCompute->setUniform("seq_len", input->rows);
@@ -165,6 +167,8 @@ namespace NNGL {
             // Apply softmax to cached scores, store in cached attention weights
             m_SoftmaxCompute->bindBuffer(0, "Input", m_CachedScores->buffer);
             m_SoftmaxCompute->bindBuffer(1, "Output", m_CachedAttentionWeights->buffer);  // CACHE THIS
+
+            m_SoftmaxCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
             if (!m_PaddingMask.empty()) m_SoftmaxCompute->bindBuffer(2, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
             m_SoftmaxCompute->setUniform("seq_len", input->rows);
@@ -236,7 +240,8 @@ namespace NNGL {
             int workgroups_x = (seqLen + 15) / 16;
             int workgroups_y = (seqLen + 15) / 16;
             m_BackwardOutputCompute->dispatch(workgroups_x, workgroups_y, 1);
-
+            m_GradV->downloadFromGPU();
+            m_GradAttentionWeights->downloadFromGPU();
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 
@@ -248,7 +253,9 @@ namespace NNGL {
             m_BackwardScoresCompute->bindBuffer(0, "GradAttentionWeights", m_GradAttentionWeights->buffer);
             m_BackwardScoresCompute->bindBuffer(1, "CachedAttentionWeights", m_CachedAttentionWeights->buffer);
             m_BackwardScoresCompute->bindBuffer(2, "GradScores", m_GradScores->buffer);
-            if (!m_PaddingMask.empty()) m_BackwardScoresCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
+
+            m_BackwardScoresCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
+            if (!m_PaddingMask.empty())m_BackwardScoresCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
             m_BackwardScoresCompute->setUniform("seq_len", seqLen);
             m_BackwardScoresCompute->setUniform("num_heads", m_NumHeads);
@@ -256,7 +263,7 @@ namespace NNGL {
 
             int workgroups_x = (seqLen + 15) / 16;
             m_BackwardScoresCompute->dispatch(workgroups_x, 1, 1);
-
+            m_GradScores->downloadFromGPU();
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 
@@ -279,6 +286,8 @@ namespace NNGL {
 
             int workgroups_x = (seqLen * m_ModelDim + 31) / 32;
             m_BackwardProjectionsCompute->dispatch(workgroups_x, 1, 1);
+            m_GradQ->downloadFromGPU();
+            m_GradK->downloadFromGPU();
 
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
@@ -289,16 +298,20 @@ namespace NNGL {
         // Query gradients (always from input)
         computeProjectionGradients(m_GradQ, m_CachedInput, m_WeightQueryMat,
             m_GradInput, m_GradWeightQueryMat);
-
+        m_GradInput->downloadFromGPU();
+        m_GradWeightQueryMat->downloadFromGPU();
         // Key gradients (from input or context)
         if (context) {
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 m_GradContext, m_GradWeightKeyMat);
+            m_GradContext->downloadFromGPU();
+            m_GradWeightKeyMat->downloadFromGPU();
         }
         else {
             auto tempGradInput = std::make_shared<Matrix>(seqLen, inputDim, 0);
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 tempGradInput, m_GradWeightKeyMat);
+            m_GradWeightKeyMat->downloadFromGPU();
             m_GradInput->add(*tempGradInput);
         }
 
@@ -307,12 +320,14 @@ namespace NNGL {
             auto tempGradContext = std::make_shared<Matrix>(seqLen, inputDim, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradContext, m_GradWeightValueMat);
+            m_GradWeightValueMat->downloadFromGPU();
             m_GradContext->add(*tempGradContext);
         }
         else {
             auto tempGradInput = std::make_shared<Matrix>(seqLen, inputDim, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradInput, m_GradWeightValueMat);
+            m_GradWeightValueMat->downloadFromGPU();
             m_GradInput->add(*tempGradInput);
         }
 
@@ -323,8 +338,6 @@ namespace NNGL {
 
         // Increment ADAM timestep
         m_ADAM_Timestep++;
-
-        // Return gradient w.r.t. input
         return std::make_pair(m_GradInput, m_GradContext);
     }
 
@@ -388,7 +401,6 @@ namespace NNGL {
             int workgroups_x = (seq_len + 15) / 16;
             int workgroups_y = (input_dim + 15) / 16;
             m_GradInputCompute->dispatch(workgroups_x, workgroups_y, 1);
-
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 

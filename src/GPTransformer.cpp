@@ -230,7 +230,8 @@ namespace NNGL {
     std::shared_ptr<Matrix> GPTransformer::forwardPass(std::vector<std::string>& inputTokens) {
         NNGL::Timer timer("GPTransformer::forwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
-        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
+        int paddingLen = 0;
+        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat);
 
         // Pass a dummy encoder output (zeros) to DecoderBlock
@@ -244,9 +245,11 @@ namespace NNGL {
 
     void GPTransformer::backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate) {
         NNGL::Timer timer("GPTransformer::backwardPass");
-        std::shared_ptr<Matrix> inputMat = m_Embedder->forward(const_cast<std::vector<std::string>&>(inputTokens)); 
-        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
-        m_Embedder->applyPositionalEncoding(inputMat);
+        std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens); 
+        int paddingLen = 0;
+        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+
+        m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
         std::shared_ptr<Matrix> dummyEncoderOutput = std::make_shared<Matrix>(m_SeqLen, inputMat->cols, 0.0f);
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, dummyEncoderOutput, paddingMask, std::vector<int>(m_SeqLen, 1));
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
@@ -255,10 +258,11 @@ namespace NNGL {
 
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols);
         decOutputGrad->clear();
-        for (int i = 0; i < decOutputMat->cols; ++i) (*decOutputGrad)(decOutputMat->rows - 1, i) = (*outputGrad)(0, i);
+        for (int i = 0; i < decOutputMat->cols; ++i) 
+            decOutputGrad->set(paddingLen - 1, i, outputGrad->get(0, i)); // outputGrad 1 * modelDim
 
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
-        m_Embedder->removePositionalEncoding(decGrad);
+        m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }
 
@@ -312,12 +316,18 @@ namespace NNGL {
     bool GPTransformer::isSpecialToken(int tokenId) const {
         return tokenId == getPadTokenId() || tokenId == getSosTokenId() || tokenId == getEosTokenId();
     }
-    std::vector<int> GPTransformer::createPaddingMask(const std::vector<int>& tokenIds) const {
-        std::vector<int> mask(tokenIds.size(), 1);
+    std::vector<int> GPTransformer::createPaddingMask(const std::vector<int>& tokenIds, int &len) const {
+        std::vector<int> mask(tokenIds.size(), 0);
         int padTokenId = getPadTokenId();
+        bool lenFound = false;
         for (size_t i = 0; i < tokenIds.size(); ++i) {
-            if (tokenIds[i] == padTokenId) mask[i] = 0;
+            if (tokenIds[i] != padTokenId) mask[i] = 1;
+            else {
+                len = i;
+                return mask;
+            }
         }
+        len = tokenIds.size();
         return mask;
     }
     std::shared_ptr<Matrix> GPTransformer::getCachedEmbedding(const std::vector<int>& tokens) {

@@ -82,6 +82,16 @@ namespace NNGL {
         glUniform1i(location, value);
     }
 
+    void Shader::setUniform(const std::string& name, bool value) {
+        glUseProgram(m_Program);  // Make sure shader is active
+        GLint location = glGetUniformLocation(m_Program, name.c_str());
+        if (location == -1) {
+            // Uniform not found in shader - handle error or ignore
+            return;
+        }
+        glUniform1i(location, value ? 1 : 0);
+    }
+
     // Dispatch compute shader with given workgroup sizes
     void Shader::dispatch(GLuint x, GLuint y, GLuint z) {
         glUseProgram(m_Program);

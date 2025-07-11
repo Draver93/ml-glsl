@@ -43,6 +43,7 @@ namespace NNGL {
         void add(Matrix& other);
         void add(Matrix& other, float scale);
         void print() const;
+        void print(int rowStart, int rowEnd, int colStart, int colEnd) const;
 
         float* raw(); // For GPU upload only
         const float* raw() const;

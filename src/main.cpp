@@ -1876,6 +1876,60 @@ void test_positional_encoding() {
     std::cout << "[UnitTest] EmbeddingBlock Positional Encoding PASSED\n";
 }
 
+void testDecoderBlockBackward() {
+    using namespace NNGL;
+    std::cout << "\n[UnitTest] DecoderBlock Backward Gradient Check\n";
+    int modelDim = 8;
+    int hiddenDim = 8;
+    int seqLen = 3;
+    float epsilon = 1e-4f;
+    float tolerance = 1e-2f;
+    DecoderBlock decoder(modelDim, hiddenDim, seqLen);
+    // Create dummy input and dummy encoder output
+    auto input = std::make_shared<Matrix>(seqLen, modelDim);
+    auto encoderOutput = std::make_shared<Matrix>(seqLen, modelDim);
+    // Fill with small random values
+    for (int i = 0; i < seqLen; ++i) {
+        for (int j = 0; j < modelDim; ++j) {
+            (*input)(i, j) = 0.1f * (i + 1) + 0.01f * (j + 1);
+            (*encoderOutput)(i, j) = 0.05f * (i + 1) - 0.01f * (j + 1);
+        }
+    }
+    // Forward pass
+    auto output = decoder.forward(input, encoderOutput);
+    // Create dummy loss: sum of all outputs
+    float loss = 0.0f;
+    for (int i = 0; i < output->rows; ++i)
+        for (int j = 0; j < output->cols; ++j)
+            loss += (*output)(i, j);
+    // Analytical gradient: dL/dOutput is all ones
+    auto gradOutput = std::make_shared<Matrix>(output->rows, output->cols, 1.0f);
+
+    // Backward pass: get dL/dInput
+    auto gradInput = decoder.backward(gradOutput, 0.0f); // learningRate=0 to avoid weight update
+    // Numerical gradient check for a single input element
+    int test_i = 1, test_j = 2;
+    float orig = (*input)(test_i, test_j);
+    (*input)(test_i, test_j) = orig + epsilon;
+    auto out_plus = decoder.forward(input, encoderOutput);
+    float loss_plus = 0.0f;
+    for (int i = 0; i < out_plus->rows; ++i)
+        for (int j = 0; j < out_plus->cols; ++j)
+            loss_plus += (*out_plus)(i, j);
+    (*input)(test_i, test_j) = orig - epsilon;
+    auto out_minus = decoder.forward(input, encoderOutput);
+    float loss_minus = 0.0f;
+    for (int i = 0; i < out_minus->rows; ++i)
+        for (int j = 0; j < out_minus->cols; ++j)
+            loss_minus += (*out_minus)(i, j);
+    (*input)(test_i, test_j) = orig;
+    float num_grad = (loss_plus - loss_minus) / (2 * epsilon);
+    float analytic_grad = (*gradInput)(test_i, test_j);
+    std::cout << "Analytic grad: " << analytic_grad << ", Numerical grad: " << num_grad << std::endl;
+    assert(std::abs(num_grad - analytic_grad) < tolerance);
+    std::cout << "[UnitTest] DecoderBlock Backward Gradient Check PASSED\n";
+}
+
 void runAllUnitTests() {
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "RUNNING COMPREHENSIVE UNIT TESTS" << std::endl;
@@ -1890,6 +1944,7 @@ void runAllUnitTests() {
     testTransformerClass();
     test_embeddingblock_gpu_update(); // Register new embedding GPU test
     test_positional_encoding();
+    testDecoderBlockBackward();
     
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "UNIT TESTS COMPLETED" << std::endl;

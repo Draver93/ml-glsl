@@ -42,7 +42,7 @@ namespace NNGL {
         return vec;
     }
 
-    std::shared_ptr<Matrix> EmbeddingBlock::forward(std::vector<std::string>& tokens) {
+    std::shared_ptr<Matrix> EmbeddingBlock::forward(const std::vector<std::string>& tokens) {
         NNGL::Timer timer("EmbeddingBlock::forward");
         size_t seqLen = tokens.size();
         // Reuse m_CachedOutput if possible
@@ -171,68 +171,76 @@ namespace NNGL {
         return nullptr;
     }
 
-    void EmbeddingBlock::applyPositionalEncoding(std::shared_ptr<Matrix> embeddings) {
+    void EmbeddingBlock::applyPositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask) {
         if (!embeddings || embeddings->cols != m_ModelDim) {
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding");
         }
-
         size_t seqLen = std::min(static_cast<size_t>(embeddings->rows), m_MaxSeqLen);
-
-        // Upload matrices to GPU
         embeddings->uploadToGPU();
         m_PositionalEncodingMat->uploadToGPU();
-
+        // Upload padding mask buffer
+        GLuint maskSSBO;
+        glGenBuffers(1, &maskSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, maskSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, paddingMask.size() * sizeof(int), paddingMask.data(), GL_DYNAMIC_DRAW);
         // Bind buffers
         m_ApplyPosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", embeddings->buffer);
         m_ApplyPosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", m_PositionalEncodingMat->buffer);
-
+        m_ApplyPosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
         // Set uniforms
         m_ApplyPosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
         m_ApplyPosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
-
         // Dispatch compute shader
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
-
         embeddings->downloadFromGPU();
-
+        glDeleteBuffers(1, &maskSSBO);
         // Unbind buffers
-        for (int i = 0; i <= 1; ++i) {
+        for (int i = 0; i <= 2; ++i) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
     }
+    // Overload for backward compatibility (no mask = all ones)
+    void EmbeddingBlock::applyPositionalEncoding(std::shared_ptr<Matrix> embeddings) {
+        std::vector<int> mask(embeddings->rows, 1);
+        applyPositionalEncoding(embeddings, mask);
+    }
 
-    void EmbeddingBlock::removePositionalEncoding(std::shared_ptr<Matrix> embeddings) {
+    void EmbeddingBlock::removePositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask) {
         if (!embeddings || embeddings->cols != m_ModelDim) {
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding removal");
         }
-
         size_t seqLen = std::min(static_cast<size_t>(embeddings->rows), m_MaxSeqLen);
-
-        // Upload matrices to GPU
         embeddings->uploadToGPU();
         m_PositionalEncodingMat->uploadToGPU();
-
+        // Upload padding mask buffer
+        GLuint maskSSBO;
+        glGenBuffers(1, &maskSSBO);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, maskSSBO);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, paddingMask.size() * sizeof(int), paddingMask.data(), GL_DYNAMIC_DRAW);
         // Bind buffers
         m_RemovePosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", embeddings->buffer);
         m_RemovePosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", m_PositionalEncodingMat->buffer);
-
+        m_RemovePosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
         // Set uniforms
         m_RemovePosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
         m_RemovePosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
-
         // Dispatch compute shader
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_RemovePosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
-
         embeddings->downloadFromGPU();
-
+        glDeleteBuffers(1, &maskSSBO);
         // Unbind buffers
-        for (int i = 0; i <= 1; ++i) {
+        for (int i = 0; i <= 2; ++i) {
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
+    }
+    // Overload for backward compatibility (no mask = all ones)
+    void EmbeddingBlock::removePositionalEncoding(std::shared_ptr<Matrix> embeddings) {
+        std::vector<int> mask(embeddings->rows, 1);
+        removePositionalEncoding(embeddings, mask);
     }
 
     void EmbeddingBlock::save(const std::string& filename) const {

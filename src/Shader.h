@@ -21,7 +21,7 @@ namespace NNGL {
 		void bindBuffer(GLuint binding_point, const std::string& name, GLuint buffer);
 		void setUniform(const std::string& name, float value);
 		void setUniform(const std::string& name, int value);
-
+        void setUniform(const std::string& name, bool value);
 		void dispatch(GLuint x, GLuint y = 1, GLuint z = 1);
 
 	private:

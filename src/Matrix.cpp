@@ -131,14 +131,23 @@ namespace NNGL {
         m_Dirty = true;
     }
 
-    // Print for debugging
-    void Matrix::print() const {
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < cols; ++j)
+    // Print for debugging (full or partial)
+    void Matrix::print(int rowStart, int rowEnd, int colStart, int colEnd) const {
+        // Clamp indices to valid range
+        rowStart = std::max(0, rowStart);
+        rowEnd = std::min(rows, rowEnd);
+        colStart = std::max(0, colStart);
+        colEnd = std::min(cols, colEnd);
+        for (int i = rowStart; i < rowEnd; ++i) {
+            for (int j = colStart; j < colEnd; ++j)
                 std::cout << (*this)(i, j) << ' ';
             std::cout << '\n';
         }
         std::cout << '\n';
+    }
+    // Overload: print full matrix
+    void Matrix::print() const {
+        print(0, rows, 0, cols);
     }
 
     void Matrix::add(Matrix& other) {

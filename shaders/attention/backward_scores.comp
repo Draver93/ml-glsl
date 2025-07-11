@@ -10,6 +10,7 @@ uniform int use_mask;
 
 // Padding mask: 1 for real tokens, 0 for PAD tokens
 layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
+uniform bool has_padding_mask = false;
 
 void main() {
     uint row = gl_GlobalInvocationID.x;
@@ -19,7 +20,7 @@ void main() {
     float sum_grad_attn = 0.0;
     for (int j = 0; j < seq_len; j++) {
         if (use_mask == 1 && j > row) continue;  // Apply causal mask
-        if (padding_mask[j] == 0) continue;      // Apply padding mask
+        if (has_padding_mask && padding_mask[j] == 0) continue;      // Apply padding mask
         sum_grad_attn += grad_attn[row * seq_len + j] * cached_attn[row * seq_len + j];
     }
     
@@ -27,7 +28,7 @@ void main() {
     for (int j = 0; j < seq_len; j++) {
         if (use_mask == 1 && j > row) {
             grad_scores[row * seq_len + j] = 0.0;  // Zero out future positions in causal mask
-        } else if (padding_mask[j] == 0) {
+        } else if (has_padding_mask && padding_mask[j] == 0) {
             grad_scores[row * seq_len + j] = 0.0;  // Zero out PAD positions
         } else {
             grad_scores[row * seq_len + j] = cached_attn[row * seq_len + j] * 

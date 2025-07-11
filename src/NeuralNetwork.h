@@ -21,6 +21,7 @@ namespace NNGL {
 		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
 		std::shared_ptr<Matrix> backward_with_targetloss(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> targetLoss, float learningRate);
 		std::shared_ptr<Matrix> forwardMatOutput;
+		std::shared_ptr<Matrix> getCachedOutput() { return forwardMatOutput; }
 	public:
 		void addLayer(int width, int height, ActivationFnType type);
 		void train(float learningRate = 0.01f);
