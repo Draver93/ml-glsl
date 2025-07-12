@@ -21,8 +21,6 @@ namespace NNGL {
         void setLearningRate(float lr) { m_LearningRate = lr; }
         std::shared_ptr<Matrix> getGamma() { return m_Gamma; }
         std::shared_ptr<Matrix> getBeta() { return m_Beta; }
-        std::shared_ptr<Matrix> getCachedMean() { return m_CachedMean; }
-        std::shared_ptr<Matrix> getCachedVar() { return m_CachedVariance; }
         std::shared_ptr<Matrix> getCachedOutput() { return m_CachedOutput; }
         std::shared_ptr<Matrix> getGradInput() { return m_GradInput; }
         std::shared_ptr<Matrix> getGradResidual() { return m_GradResidual; }
@@ -41,8 +39,6 @@ namespace NNGL {
         // Cached values for backprop
         std::shared_ptr<Matrix> m_CachedInput;
         std::shared_ptr<Matrix> m_CachedResidual;
-        std::shared_ptr<Matrix> m_CachedMean;
-        std::shared_ptr<Matrix> m_CachedVariance;
         std::shared_ptr<Matrix> m_CachedOutput;
 
         // Gradient matrices for backprop

@@ -1,7 +1,11 @@
 #include "AttentionBlock.h"
 #include "Logger.h"
+#include "ShaderCPUAnalogs.h"
 
 namespace NNGL {
+    // Static debug flag for validation
+    static bool g_AttentionBlockDebug = false;
+
     AttentionBlock::AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask)
         : m_ModelDim(modelDimensions), m_NumHeads(numHeads), m_HeadDim(modelDimensions / numHeads), m_SeqLen(seqLen), m_UseMask(mask), m_ADAM_Timestep(0) {
 
@@ -127,6 +131,7 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->bindBuffer(7, "OutputV", m_CachedV->buffer);
 
             m_ForwardPassWeightsCompute->setUniform("head_dim", m_HeadDim);
+            m_ForwardPassWeightsCompute->setUniform("model_dim", m_ModelDim);
             m_ForwardPassWeightsCompute->setUniform("num_heads", m_NumHeads);
             m_ForwardPassWeightsCompute->setUniform("input_dim", input->cols);
             m_ForwardPassWeightsCompute->setUniform("seq_len", input->rows);
@@ -135,6 +140,25 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 7; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+            m_CachedQ->downloadFromGPU();
+            m_CachedK->downloadFromGPU();
+            m_CachedV->downloadFromGPU();
+            m_WeightQueryMat->downloadFromGPU();
+            m_WeightKeyMat->downloadFromGPU();
+            m_WeightValueMat->downloadFromGPU();
+
+            if (g_AttentionBlockDebug) {
+                std::vector<float> cpuQ, cpuK, cpuV;
+                std::vector<float> inputQ = input->getFlatVec();
+                std::vector<float> inputKV = input_kv->getFlatVec();
+                std::vector<float> weightQ = m_WeightQueryMat->getFlatVec();
+                std::vector<float> weightK = m_WeightKeyMat->getFlatVec();
+                std::vector<float> weightV = m_WeightValueMat->getFlatVec();
+                NNGL::attentionForwardWeightsCPU(inputQ, inputKV, weightQ, weightK, weightV, cpuQ, cpuK, cpuV, input->rows, input->cols, m_ModelDim);
+                NNGL::compareVectors(cpuQ, m_CachedQ->getFlatVec(), 1e-4f, true);
+                NNGL::compareVectors(cpuK, m_CachedK->getFlatVec(), 1e-4f, true);
+                NNGL::compareVectors(cpuV, m_CachedV->getFlatVec(), 1e-4f, true);
+            }
         }
 
         // === STEP 2: Compute attention scores (Q * K^T / sqrt(d_k)) ===
@@ -160,6 +184,12 @@ namespace NNGL {
             m_ForwardPassScoreCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+            m_CachedScores->downloadFromGPU();
+            if (g_AttentionBlockDebug) {
+                std::vector<float> cpuScores;
+                NNGL::attentionForwardScoreCPU(m_CachedQ->getFlatVec(), m_CachedK->getFlatVec(), cpuScores, input->rows, m_HeadDim, m_NumHeads, m_UseMask, invSqrtHeadDim, m_PaddingMask, !m_PaddingMask.empty());
+                NNGL::compareVectors(cpuScores, m_CachedScores->getFlatVec(), 1e-2f, true);
+            }
         }
 
         // === STEP 3: Apply softmax to get attention weights ===
@@ -175,10 +205,17 @@ namespace NNGL {
             m_SoftmaxCompute->setUniform("num_heads", m_NumHeads);
             m_SoftmaxCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
 
-            int workgroups = (input->rows + 15) / 16;
+            int total_rows = m_NumHeads * input->rows;
+            int workgroups = (total_rows + 15) / 16;
             m_SoftmaxCompute->dispatch(workgroups, 1, 1);
 
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+            m_CachedAttentionWeights->downloadFromGPU();
+            if (g_AttentionBlockDebug) {
+                std::vector<float> cpuAttentionWeights;
+                NNGL::attentionSoftmaxCPU(m_CachedScores->getFlatVec(), cpuAttentionWeights, input->rows, m_NumHeads, m_UseMask, m_PaddingMask, !m_PaddingMask.empty());
+                NNGL::compareVectors(cpuAttentionWeights, m_CachedAttentionWeights->getFlatVec(), 1e-4f, true);
+            }
         }
 
         // === STEP 4: Compute final output (attention_weights @ V) ===
@@ -197,6 +234,12 @@ namespace NNGL {
             m_ForwardPassOutCompute->dispatch(workgroups_x, workgroups_y, 1);
             
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+            m_OutputMat->downloadFromGPU();
+            if (g_AttentionBlockDebug) {
+                std::vector<float> cpuOutput;
+                NNGL::attentionForwardOutputCPU(m_CachedAttentionWeights->getFlatVec(), m_CachedV->getFlatVec(), cpuOutput, input->rows, m_HeadDim, m_NumHeads);
+                NNGL::compareVectors(cpuOutput, m_OutputMat->getFlatVec(), 1e-4f, true);
+            }
         }
         //we don't download data we leave them in gpu so no need to worry that array is empty
         return m_OutputMat;

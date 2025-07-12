@@ -21,7 +21,7 @@ void main() {
     for (int output_neuron_idx = 0; output_neuron_idx < output_size; output_neuron_idx++) {
         // Row-major indexing for batch processing
         uint delta_idx = batch_idx * output_size + output_neuron_idx;
-        uint weight_idx = output_neuron_idx * input_size + input_neuron_idx;
+        uint weight_idx = input_neuron_idx * output_size + output_neuron_idx;
         float delta_val = next_deltas[delta_idx];
         float weight_val = weights[weight_idx];
         

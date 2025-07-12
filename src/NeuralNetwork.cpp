@@ -1,5 +1,6 @@
 #include "NeuralNetwork.h"
 #include "Logger.h"
+#include "ShaderCPUAnalogs.h"
 
 #include <execution>
 #include <iostream>
@@ -7,6 +8,8 @@
 #include <iomanip>
 #include <string>
 #include <tuple>
+
+static bool g_NeuralNetworkDebug = false;
 
 namespace NNGL {
     NeuralNetwork::NeuralNetwork(int batchSize) : m_BatchSize(batchSize), m_ADAM_Timestep(0) {
@@ -48,7 +51,8 @@ namespace NNGL {
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
         inputBatchMat->uploadToGPU();
 		GLuint currentInput = inputBatchMat->buffer;
-		for (auto &layer : m_Layers) {
+		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
+            auto &layer = m_Layers[layerIdx];
 
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
@@ -65,6 +69,68 @@ namespace NNGL {
 			int workgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
 			int workgroupsY = std::min((int)ceil(layer->getSize().y / 16.0f), 65535);
             m_ForwardPassCompute->dispatch(workgroupsX, workgroupsY, 1);
+            // --- CPU vs GPU validation for this layer ---
+            if (g_NeuralNetworkDebug) {
+                // Create Matrix objects to wrap GPU buffers for cleaner access
+                auto gpuWeightsMat = std::make_shared<Matrix>((int)layer->getSize().x, (int)layer->getSize().y);
+                auto gpuBiasesMat = std::make_shared<Matrix>((int)layer->getSize().y, 1);
+                auto gpuOutputMat = std::make_shared<Matrix>(m_BatchSize, (int)layer->getSize().y);
+                
+                // Download GPU data using Matrix methods
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_WeightBuffer);
+                float* weightMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (weightMapped) {
+                    std::memcpy(gpuWeightsMat->raw(), weightMapped, gpuWeightsMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_BiasBuffer);
+                float* biasMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (biasMapped) {
+                    std::memcpy(gpuBiasesMat->raw(), biasMapped, gpuBiasesMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_ActivationBuffer);
+                float* outputMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (outputMapped) {
+                    std::memcpy(gpuOutputMat->raw(), outputMapped, gpuOutputMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                // Get the correct input for this layer
+                std::vector<float> currentInputData;
+                if (layerIdx == 0) {
+                    // First layer uses the input batch matrix
+                    currentInputData = inputBatchMat->getFlatVec();
+                } else {
+                    // Other layers use the previous layer's activation buffer
+                    auto& prevLayer = m_Layers[layerIdx - 1];
+                    auto prevActivationMat = std::make_shared<Matrix>(m_BatchSize, (int)prevLayer->getSize().y);
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationBuffer);
+                    float* prevMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (prevMapped) {
+                        std::memcpy(prevActivationMat->raw(), prevMapped, prevActivationMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    currentInputData = prevActivationMat->getFlatVec();
+                }
+                
+                std::vector<float> cpuOutput, cpuPreactivation;
+                NNGL::forwardPassCPU(
+                    currentInputData,
+                    gpuWeightsMat->getFlatVec(),
+                    gpuBiasesMat->getFlatVec(),
+                    cpuOutput, cpuPreactivation,
+                    (int)layer->getSize().x, (int)layer->getSize().y, m_BatchSize, static_cast<NNGL::ActivationType>(layer->m_ActivationFnType)
+                );
+                
+                bool pass = NNGL::compareVectors(cpuOutput, gpuOutputMat->getFlatVec(), 1e-4f, true);
+                if (!pass) {
+                    LOG_DEBUG("Feedforward CPU/GPU validation failed in forwardPass() at layer " + std::to_string(layerIdx));
+                }
+            }
+            // --- end validation ---
 
 			currentInput = layer->m_ActivationBuffer;
 		}
@@ -90,6 +156,51 @@ namespace NNGL {
 		int outputWorkgroupsY = std::min((int)ceil(m_Layers.back()->getSize().y / 16.0f), 65535);
         m_OutputDeltaCompute->dispatch(outputWorkgroupsX, outputWorkgroupsY, 1);
 
+        // --- CPU vs GPU validation for output delta ---
+        if (g_NeuralNetworkDebug) {
+            // Create Matrix objects to wrap GPU buffers for cleaner access
+            auto gpuActivationsMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers.back()->getSize().y);
+            auto gpuPreactivationsMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers.back()->getSize().y);
+            auto gpuOutputGradMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers.back()->getSize().y);
+            
+            // Download GPU data using Matrix methods
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+            float* actMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (actMapped) {
+                std::memcpy(gpuActivationsMat->raw(), actMapped, gpuActivationsMat->byteSize());
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+            
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_PreactivationBuffer);
+            float* preactMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (preactMapped) {
+                std::memcpy(gpuPreactivationsMat->raw(), preactMapped, gpuPreactivationsMat->byteSize());
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+            
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
+            float* gradMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (gradMapped) {
+                std::memcpy(gpuOutputGradMat->raw(), gradMapped, gpuOutputGradMat->byteSize());
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+            
+            std::vector<float> cpuOutputGrad;
+            NNGL::outputDeltaLossCPU(
+                outputBatchMat->getFlatVec(),
+                gpuActivationsMat->getFlatVec(),
+                gpuPreactivationsMat->getFlatVec(),
+                cpuOutputGrad,
+                (int)m_Layers.back()->getSize().y, m_BatchSize, static_cast<NNGL::ActivationType>(m_Layers.back()->m_ActivationFnType)
+            );
+            
+            bool pass = NNGL::compareVectors(cpuOutputGrad, gpuOutputGradMat->getFlatVec(), 1e-4f, true);
+            if (!pass) {
+                LOG_DEBUG("Output delta CPU/GPU validation failed in targetLayerLossCalc()");
+            }
+        }
+        // --- end validation ---
+
 		// Unbind output delta buffers
 		for (int j = 0; j < 4; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
 
@@ -112,6 +223,59 @@ namespace NNGL {
 			int hiddenWorkgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
 			int hiddenWorkgroupsY = std::min((int)ceil(m_Layers[i]->getSize().y / 16.0f), 65535);
             m_HiddenDeltasCompute->dispatch(hiddenWorkgroupsX, hiddenWorkgroupsY, 1);
+
+            // --- CPU vs GPU validation for hidden delta ---
+            if (g_NeuralNetworkDebug) {
+                // Create Matrix objects to wrap GPU buffers for cleaner access
+                auto gpuNextDeltasMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers[i + 1]->getSize().y);
+                auto gpuNextWeightsMat = std::make_shared<Matrix>((int)m_Layers[i + 1]->getSize().x, (int)m_Layers[i + 1]->getSize().y);
+                auto gpuPreactivationsMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers[i]->getSize().y);
+                auto gpuHiddenGradMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers[i]->getSize().y);
+                
+                // Download GPU data using Matrix methods
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers[i + 1]->m_DeltaBuffer);
+                float* deltaMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (deltaMapped) {
+                    std::memcpy(gpuNextDeltasMat->raw(), deltaMapped, gpuNextDeltasMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers[i + 1]->m_WeightBuffer);
+                float* weightMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (weightMapped) {
+                    std::memcpy(gpuNextWeightsMat->raw(), weightMapped, gpuNextWeightsMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers[i]->m_PreactivationBuffer);
+                float* preactMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (preactMapped) {
+                    std::memcpy(gpuPreactivationsMat->raw(), preactMapped, gpuPreactivationsMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers[i]->m_DeltaBuffer);
+                float* gradMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                if (gradMapped) {
+                    std::memcpy(gpuHiddenGradMat->raw(), gradMapped, gpuHiddenGradMat->byteSize());
+                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                }
+                
+                std::vector<float> cpuHiddenGrad;
+                NNGL::hiddenDeltaLossCPU(
+                    gpuNextDeltasMat->getFlatVec(),
+                    gpuNextWeightsMat->getFlatVec(),
+                    gpuPreactivationsMat->getFlatVec(),
+                    cpuHiddenGrad,
+                    (int)m_Layers[i]->getSize().y, (int)m_Layers[i + 1]->getSize().y, m_BatchSize, static_cast<NNGL::ActivationType>(m_Layers[i]->m_ActivationFnType)
+                );
+                
+                bool pass = NNGL::compareVectors(cpuHiddenGrad, gpuHiddenGradMat->getFlatVec(), 1e-4f, true);
+                if (!pass) {
+                    LOG_DEBUG("Hidden delta CPU/GPU validation failed in hiddenLayersLossCalc() at layer " + std::to_string(i));
+                }
+            }
+            // --- end validation ---
 		}
 
 		// Unbind backward pass buffers
@@ -124,7 +288,8 @@ namespace NNGL {
         inputBatchMat->uploadToGPU();
         GLuint currentInput = inputBatchMat->buffer;
 
-        for (auto& layer : m_Layers) {
+        for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
+            auto& layer = m_Layers[layerIdx];
 
             // --- WEIGHTS UPDATE WITH ADAM ---
             {
@@ -147,6 +312,87 @@ namespace NNGL {
                 int workgroupsY = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
                 m_WeightsCompute->dispatch(workgroupsX, workgroupsY, 1);
 
+                // --- CPU vs GPU validation for weight updates ---
+                if ( g_NeuralNetworkDebug) {
+                    // Create Matrix objects to wrap GPU buffers for cleaner access
+                    auto gpuWeightsMat = std::make_shared<Matrix>((int)layer->getSize().x, (int)layer->getSize().y);
+                    auto gpuAdamMMat = std::make_shared<Matrix>((int)layer->getSize().x, (int)layer->getSize().y);
+                    auto gpuAdamVMat = std::make_shared<Matrix>((int)layer->getSize().x, (int)layer->getSize().y);
+                    auto gpuDeltasMat = std::make_shared<Matrix>(m_BatchSize, (int)layer->getSize().y);
+                    auto updatedGpuWeightsMat = std::make_shared<Matrix>((int)layer->getSize().x, (int)layer->getSize().y);
+                    
+                    // Download GPU data using Matrix methods
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_WeightBuffer);
+                    float* weightMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (weightMapped) {
+                        std::memcpy(gpuWeightsMat->raw(), weightMapped, gpuWeightsMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_ADAM_MBuffer);
+                    float* adamMMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (adamMMapped) {
+                        std::memcpy(gpuAdamMMat->raw(), adamMMapped, gpuAdamMMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_ADAM_VBuffer);
+                    float* adamVMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (adamVMapped) {
+                        std::memcpy(gpuAdamVMat->raw(), adamVMapped, gpuAdamVMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_DeltaBuffer);
+                    float* deltaMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (deltaMapped) {
+                        std::memcpy(gpuDeltasMat->raw(), deltaMapped, gpuDeltasMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    
+                    // Get the correct input for this layer
+                    std::vector<float> currentInputData;
+                    if (layerIdx == 0) {
+                        // First layer uses the input batch matrix
+                        currentInputData = inputBatchMat->getFlatVec();
+                    } else {
+                        // Other layers use the previous layer's activation buffer
+                        auto& prevLayer = m_Layers[layerIdx - 1];
+                        auto prevActivationMat = std::make_shared<Matrix>(m_BatchSize, (int)prevLayer->getSize().y);
+                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationBuffer);
+                        float* prevMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                        if (prevMapped) {
+                            std::memcpy(prevActivationMat->raw(), prevMapped, prevActivationMat->byteSize());
+                            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                        }
+                        currentInputData = prevActivationMat->getFlatVec();
+                    }
+                    
+                    std::vector<float> cpuWeights = gpuWeightsMat->getFlatVec(); // Start with current GPU weights
+                    std::vector<float> cpuAdamM = gpuAdamMMat->getFlatVec();     // Start with current GPU Adam M
+                    std::vector<float> cpuAdamV = gpuAdamVMat->getFlatVec();     // Start with current GPU Adam V
+                    NNGL::updateWeightsCPU(
+                        currentInputData,
+                        gpuDeltasMat->getFlatVec(),
+                        cpuWeights, cpuAdamM, cpuAdamV,
+                        (int)layer->getSize().x, (int)layer->getSize().y, m_BatchSize,
+                        learningRate, 0.9f, 0.999f, m_ADAM_Timestep
+                    );
+                    
+                    // Download updated GPU weights for comparison
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_WeightBuffer);
+                    float* updatedMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (updatedMapped) {
+                        std::memcpy(updatedGpuWeightsMat->raw(), updatedMapped, updatedGpuWeightsMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    bool pass = NNGL::compareVectors(cpuWeights, updatedGpuWeightsMat->getFlatVec(), 1e-3f, true);
+                    if (!pass) {
+                        LOG_DEBUG("Weight update CPU/GPU validation failed in weightsAndBiasesUpdate() at layer " + std::to_string(layerIdx));
+                    }
+                }
+                // --- end validation ---
+
                 // Update input for next layer
                 currentInput = layer->m_ActivationBuffer;
 
@@ -165,6 +411,49 @@ namespace NNGL {
 
                 int biasWorkgroups = std::min((int)ceil((m_BatchSize * layer->getSize().y + 31) / 32), 65535);
                 m_BiasesCompute->dispatch(biasWorkgroups, 1, 1);
+
+                // --- CPU vs GPU validation for bias updates ---
+                if (g_NeuralNetworkDebug) {
+                    // Create Matrix objects to wrap GPU buffers for cleaner access
+                    auto gpuBiasesMat = std::make_shared<Matrix>((int)layer->getSize().y, 1);
+                    auto gpuDeltasMat = std::make_shared<Matrix>(m_BatchSize, (int)layer->getSize().y);
+                    auto updatedGpuBiasesMat = std::make_shared<Matrix>((int)layer->getSize().y, 1);
+                    
+                    // Download GPU data using Matrix methods
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_BiasBuffer);
+                    float* biasMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (biasMapped) {
+                        std::memcpy(gpuBiasesMat->raw(), biasMapped, gpuBiasesMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_DeltaBuffer);
+                    float* deltaMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (deltaMapped) {
+                        std::memcpy(gpuDeltasMat->raw(), deltaMapped, gpuDeltasMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    
+                    std::vector<float> cpuBiases = gpuBiasesMat->getFlatVec(); // Start with current GPU biases
+                    NNGL::updateBiasesCPU(
+                        gpuDeltasMat->getFlatVec(),
+                        cpuBiases,
+                        (int)layer->getSize().y, m_BatchSize, learningRate
+                    );
+                    
+                    // Download updated GPU biases for comparison
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_BiasBuffer);
+                    float* updatedMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+                    if (updatedMapped) {
+                        std::memcpy(updatedGpuBiasesMat->raw(), updatedMapped, updatedGpuBiasesMat->byteSize());
+                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    }
+                    bool pass = NNGL::compareVectors(cpuBiases, updatedGpuBiasesMat->getFlatVec(), 1e-3f, true);
+                    if (!pass) {
+                        LOG_DEBUG("Bias update CPU/GPU validation failed in weightsAndBiasesUpdate() at layer " + std::to_string(layerIdx));
+                    }
+                }
+                // --- end validation ---
 
                 // Unbind bias update buffers
                 for (int j = 0; j < 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
@@ -299,6 +588,51 @@ namespace NNGL {
         int inputWorkgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
         int inputWorkgroupsY = std::min((int)ceil(firstLayer->getSize().x / 16.0f), 65535);
         m_InputDeltaCompute->dispatch(inputWorkgroupsX, inputWorkgroupsY, 1);
+
+        // --- CPU vs GPU validation for input gradient ---
+        if (g_NeuralNetworkDebug) {
+            // Create Matrix objects to wrap GPU buffers for cleaner access
+            auto gpuDeltasMat = std::make_shared<Matrix>(m_BatchSize, (int)firstLayer->getSize().y);
+            auto gpuWeightsMat = std::make_shared<Matrix>((int)firstLayer->getSize().x, (int)firstLayer->getSize().y);
+            auto gpuInputGradMat = std::make_shared<Matrix>(m_BatchSize, (int)firstLayer->getSize().x);
+            
+            // Download GPU data using Matrix methods
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, firstLayer->m_DeltaBuffer);
+            float* deltaMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (deltaMapped) {
+                std::memcpy(gpuDeltasMat->raw(), deltaMapped, gpuDeltasMat->byteSize());
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+            
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, firstLayer->m_WeightBuffer);
+            float* weightMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (weightMapped) {
+                std::memcpy(gpuWeightsMat->raw(), weightMapped, gpuWeightsMat->byteSize());
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+            
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
+            float* gradMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (gradMapped) {
+                std::memcpy(gpuInputGradMat->raw(), gradMapped, gpuInputGradMat->byteSize());
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+            }
+            
+            std::vector<float> cpuInputGrad;
+            NNGL::inputDeltaLossCPU(
+                gpuDeltasMat->getFlatVec(),
+                gpuWeightsMat->getFlatVec(),
+                cpuInputGrad,
+                (int)firstLayer->getSize().x, (int)firstLayer->getSize().y, m_BatchSize
+            );
+            
+            bool pass = NNGL::compareVectors(cpuInputGrad, gpuInputGradMat->getFlatVec(), 1e-4f, true);
+            if (!pass) {
+                LOG_DEBUG("Input gradient CPU/GPU validation failed in inputGradientCalc()");
+            }
+        }
+        // --- end validation ---
+
         for (int j = 0; j < 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
     }
 

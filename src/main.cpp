@@ -1897,11 +1897,7 @@ void testDecoderBlockBackward() {
     }
     // Forward pass
     auto output = decoder.forward(input, encoderOutput);
-    // Create dummy loss: sum of all outputs
-    float loss = 0.0f;
-    for (int i = 0; i < output->rows; ++i)
-        for (int j = 0; j < output->cols; ++j)
-            loss += (*output)(i, j);
+
     // Analytical gradient: dL/dOutput is all ones
     auto gradOutput = std::make_shared<Matrix>(output->rows, output->cols, 1.0f);
 
@@ -1910,12 +1906,14 @@ void testDecoderBlockBackward() {
     // Numerical gradient check for a single input element
     int test_i = 1, test_j = 2;
     float orig = (*input)(test_i, test_j);
+
     (*input)(test_i, test_j) = orig + epsilon;
     auto out_plus = decoder.forward(input, encoderOutput);
     float loss_plus = 0.0f;
     for (int i = 0; i < out_plus->rows; ++i)
         for (int j = 0; j < out_plus->cols; ++j)
             loss_plus += (*out_plus)(i, j);
+
     (*input)(test_i, test_j) = orig - epsilon;
     auto out_minus = decoder.forward(input, encoderOutput);
     float loss_minus = 0.0f;
@@ -1923,6 +1921,7 @@ void testDecoderBlockBackward() {
         for (int j = 0; j < out_minus->cols; ++j)
             loss_minus += (*out_minus)(i, j);
     (*input)(test_i, test_j) = orig;
+
     float num_grad = (loss_plus - loss_minus) / (2 * epsilon);
     float analytic_grad = (*gradInput)(test_i, test_j);
     std::cout << "Analytic grad: " << analytic_grad << ", Numerical grad: " << num_grad << std::endl;

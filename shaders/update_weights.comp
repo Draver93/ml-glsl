@@ -31,13 +31,9 @@ void main() {
     
     // Accumulate gradients across all batch samples
     for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
-        // Row-major indexing for batch processing
         uint input_idx = batch_idx * input_size + input_neuron_idx;
         uint delta_idx = batch_idx * output_size + output_neuron_idx;
-        float input_val = inputs[input_idx];
-        float delta_val = deltas[delta_idx];
-        
-        weight_gradient += input_val * delta_val;
+        weight_gradient += inputs[input_idx] * deltas[delta_idx];
     }
 
     // Average gradient across batch
