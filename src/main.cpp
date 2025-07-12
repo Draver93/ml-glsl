@@ -1904,7 +1904,7 @@ void testDecoderBlockBackward() {
     // Backward pass: get dL/dInput
     auto gradInput = decoder.backward(gradOutput, 0.0f); // learningRate=0 to avoid weight update
     // Numerical gradient check for a single input element
-    int test_i = 1, test_j = 2;
+    int test_i = 0, test_j = 0;
     float orig = (*input)(test_i, test_j);
 
     (*input)(test_i, test_j) = orig + epsilon;
@@ -1920,7 +1920,6 @@ void testDecoderBlockBackward() {
     for (int i = 0; i < out_minus->rows; ++i)
         for (int j = 0; j < out_minus->cols; ++j)
             loss_minus += (*out_minus)(i, j);
-    (*input)(test_i, test_j) = orig;
 
     float num_grad = (loss_plus - loss_minus) / (2 * epsilon);
     float analytic_grad = (*gradInput)(test_i, test_j);

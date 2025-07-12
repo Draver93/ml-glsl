@@ -16,11 +16,12 @@ namespace NNGL {
 
 	public:
 		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat);
-		std::shared_ptr<Matrix> forwardTransformer(std::shared_ptr<Matrix> inputMat); // For transformer blocks that need to preserve sequence length
 		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate);
+		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate); // Standard backward for gradient flow
 		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
 		std::shared_ptr<Matrix> backward_with_targetloss(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> targetLoss, float learningRate);
 		std::shared_ptr<Matrix> forwardMatOutput;
+		std::shared_ptr<Matrix> m_CachedInput; // Cache the input for backward pass
 		std::shared_ptr<Matrix> getCachedOutput() { return forwardMatOutput; }
 	public:
 		void addLayer(int width, int height, ActivationFnType type);

@@ -18,7 +18,6 @@ namespace NNGL {
             const std::shared_ptr<Matrix>& residual
         );
 
-        void setLearningRate(float lr) { m_LearningRate = lr; }
         std::shared_ptr<Matrix> getGamma() { return m_Gamma; }
         std::shared_ptr<Matrix> getBeta() { return m_Beta; }
         std::shared_ptr<Matrix> getCachedOutput() { return m_CachedOutput; }
@@ -30,7 +29,6 @@ namespace NNGL {
     private:
         int m_NormalizedShape;
         float m_Epsilon;
-        float m_LearningRate;
 
         // Learnable parameters
         std::shared_ptr<Matrix> m_Gamma;  // Scale parameter

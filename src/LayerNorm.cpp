@@ -8,7 +8,7 @@ static bool g_LayerNormDebug = false;
 
 namespace NNGL {
     LayerNorm::LayerNorm(int normalizedShape, float epsilon)
-        : m_NormalizedShape(normalizedShape), m_Epsilon(epsilon), m_LearningRate(0.001f) {
+        : m_NormalizedShape(normalizedShape), m_Epsilon(epsilon) {
         m_Gamma = std::make_shared<Matrix>(normalizedShape, 1, 1.0f);
         m_Beta = std::make_shared<Matrix>(normalizedShape, 1, 0.0f);
         m_ForwardShader = ShaderManager::getInstance().getShader("shaders/attention/add_norm.comp");

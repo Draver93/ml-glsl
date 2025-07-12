@@ -66,13 +66,13 @@ namespace NNGL {
         auto gradMlpOut = m_AddNorm2->getGradInput();
         auto gradAddNorm1Out = m_AddNorm2->getGradResidual();
         // Backprop through FFN
-        m_FeedForward->backward_with_targetloss(m_AddNorm1->getCachedOutput(), gradMlpOut, learningRate);
+        m_FeedForward->backward(gradMlpOut, learningRate);
         // Backprop through addNorm1
         m_AddNorm1->backward(gradAddNorm1Out, m_CachedInput, m_CachedInput);
         auto gradAttentionOut = m_AddNorm1->getGradInput();
         auto gradInput = m_AddNorm1->getGradResidual();
         // Backprop through Attention
-        auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionOut, m_CachedInput, nullptr, learningRate);
+        auto [gradFromAttention, gradContext] = m_Attention->backward(gradAttentionOut, nullptr, learningRate);
         return gradInput;
     }
 }
