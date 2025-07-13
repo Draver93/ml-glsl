@@ -76,7 +76,7 @@ namespace NNGL {
         auto [gradFromCross, gradContext] = m_CrossAttn->backward(m_AddNorm2->getGradInput(), m_CachedEncoderOutput, learningRate);
 
         // Backprop through addNorm1 (main: maskedOut, residual: decoderInput)
-        m_AddNorm1->backward(m_AddNorm2->getGradResidual(), m_MaskedSelfAttn->getCachedOutput(), m_CachedDecoderInput);
+        m_AddNorm1->backward(gradFromCross, m_MaskedSelfAttn->getCachedOutput(), m_CachedDecoderInput);
         auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(m_AddNorm1->getGradInput(), nullptr, learningRate);
 
         return m_AddNorm1->getGradResidual();
