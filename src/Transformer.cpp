@@ -392,7 +392,7 @@ namespace NNGL {
         for (int i = 0; i < decOutputMat->cols; ++i) {
             (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
         }
-        std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
+        std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, learningRate);
         // 6. Expand gradient back to full sequence length for decoder backward pass
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols);
         decOutputGrad->clear();

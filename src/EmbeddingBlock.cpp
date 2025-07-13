@@ -82,92 +82,40 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
-        NNGL::Timer timer("EmbeddingBlock::backward");
+
+        gradOutput->downloadFromGPU();
         if (!gradOutput || gradOutput->cols != m_ModelDim) {
             throw std::runtime_error("Invalid gradient dimensions");
         }
-        // 1. Accumulate gradients for each unique token
-        std::unordered_map<std::string, std::vector<float>> gradSums;
-        for (size_t i = 0; i < tokens.size(); ++i) {
+        size_t minSize = std::min(tokens.size(), static_cast<size_t>(gradOutput->rows));
+        float totalGradientMagnitude = 0.0f;
+        int gradientCount = 0;
+        for (size_t i = 0; i < minSize; ++i) {
             const std::string& token = tokens[i];
             if (token == "<PAD>") continue;
-            auto& sum = gradSums[token];
-            if (sum.empty()) sum.resize(m_ModelDim, 0.0f);
-            for (size_t j = 0; j < m_ModelDim; ++j) {
-                sum[j] += (*gradOutput)(i, j);
+            auto it = m_Embeddings.find(token);
+            if (it != m_Embeddings.end()) {
+                auto& embedding = it->second;
+                float tokenGradientMagnitude = 0.0f;
+                for (size_t j = 0; j < m_ModelDim; ++j) {
+                    float gradient = (*gradOutput)(i, j);
+                    tokenGradientMagnitude += gradient * gradient;
+                    // Simple SGD update
+                    embedding[j] -= learningRate * gradient;
+                }
+                totalGradientMagnitude += std::sqrt(tokenGradientMagnitude);
+                gradientCount++;
+                m_TotalUpdates++;
             }
         }
-        // 2. Prepare unique token list and gradient buffer
-        std::vector<std::string> uniqueTokens;
-        std::vector<float> gradBuffer;
-        for (const auto& [token, grad] : gradSums) {
-            uniqueTokens.push_back(token);
-            gradBuffer.insert(gradBuffer.end(), grad.begin(), grad.end());
-        }
-        // 3. Prepare embedding buffer (flattened)
-        std::vector<float> embeddingBuffer(m_VocabSize * m_ModelDim, 0.0f);
-        std::vector<std::string> vocabTokens;
-        vocabTokens.reserve(m_Embeddings.size());
-        for (const auto& [token, vec] : m_Embeddings) {
-            int idx = vocabTokens.size();
-            vocabTokens.push_back(token);
-            for (size_t j = 0; j < m_ModelDim; ++j) {
-                embeddingBuffer[idx * m_ModelDim + j] = vec[j];
+        if (gradientCount > 0) {
+            float avgGradMag = totalGradientMagnitude / gradientCount;
+            m_GradientHistory.push_back(avgGradMag);
+            if (m_GradientHistory.size() > 100) {
+                m_GradientHistory.erase(m_GradientHistory.begin());
             }
+            m_AverageGradientMagnitude = 0.9f * m_AverageGradientMagnitude + 0.1f * avgGradMag;
         }
-        // 4. Prepare token index buffer (indices into vocabTokens)
-        std::vector<int> tokenIndices;
-        for (const auto& token : uniqueTokens) {
-            auto it = std::find(vocabTokens.begin(), vocabTokens.end(), token);
-            if (it != vocabTokens.end()) {
-                int idx = std::distance(vocabTokens.begin(), it);
-                tokenIndices.push_back(idx);
-            } else {
-                tokenIndices.push_back(-1);
-            }
-        }
-
-        // 5. Upload buffers to GPU
-        GLuint embeddingSSBO;
-        glGenBuffers(1, &embeddingSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, embeddingSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, embeddingBuffer.size() * sizeof(float), embeddingBuffer.data(), GL_DYNAMIC_DRAW);
-        GLuint gradSSBO;
-        glGenBuffers(1, &gradSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, gradSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, gradBuffer.size() * sizeof(float), gradBuffer.data(), GL_DYNAMIC_DRAW);
-        GLuint tokenIdxSSBO;
-        glGenBuffers(1, &tokenIdxSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, tokenIdxSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, tokenIndices.size() * sizeof(int), tokenIndices.data(), GL_DYNAMIC_DRAW);
-        // Bind buffers
-        m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", embeddingSSBO);
-        m_EmbeddingUpdateCompute->bindBuffer(1, "GradBuffer", gradSSBO);
-        m_EmbeddingUpdateCompute->bindBuffer(2, "TokenIdxBuffer", tokenIdxSSBO);
-        m_EmbeddingUpdateCompute->setUniform("batch_size", (int)uniqueTokens.size());
-        m_EmbeddingUpdateCompute->setUniform("vocab_size", (int)m_VocabSize);
-        m_EmbeddingUpdateCompute->setUniform("model_dim", (int)m_ModelDim);
-        m_EmbeddingUpdateCompute->setUniform("learning_rate", learningRate);
-        // Dispatch
-        int workgroupsX = (uniqueTokens.size() + 15) / 16;
-        int workgroupsY = (m_ModelDim + 15) / 16;
-        m_EmbeddingUpdateCompute->dispatch(workgroupsX, workgroupsY, 1);
-        // Download updated embeddings
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, embeddingSSBO);
-        float* updatedEmbeds = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        for (size_t i = 0; i < vocabTokens.size(); ++i) {
-            auto& vec = m_Embeddings[vocabTokens[i]];
-            for (size_t j = 0; j < m_ModelDim; ++j) {
-                vec[j] = updatedEmbeds[i * m_ModelDim + j];
-            }
-        }
-
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        // Cleanup
-        glDeleteBuffers(1, &embeddingSSBO);
-        glDeleteBuffers(1, &gradSSBO);
-        glDeleteBuffers(1, &tokenIdxSSBO);
-        // Return nullptr (no further backprop)
         return nullptr;
     }
 
@@ -190,6 +138,7 @@ namespace NNGL {
         // Set uniforms
         m_ApplyPosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
         m_ApplyPosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
+        m_ApplyPosEncodingCompute->setUniform("has_padding_mask", true);
         // Dispatch compute shader
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
@@ -223,9 +172,11 @@ namespace NNGL {
         m_RemovePosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", embeddings->buffer);
         m_RemovePosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", m_PositionalEncodingMat->buffer);
         m_RemovePosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
+
         // Set uniforms
         m_RemovePosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
         m_RemovePosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
+        m_RemovePosEncodingCompute->setUniform("has_padding_mask", true);
         // Dispatch compute shader
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
@@ -325,10 +276,8 @@ namespace NNGL {
     }
 
     void EmbeddingBlock::initializeADAMBuffers(const std::string& token) {
-        if (m_ADAM_M_Embeddings.find(token) == m_ADAM_M_Embeddings.end()) {
-            m_ADAM_M_Embeddings[token] = std::vector<float>(m_ModelDim, 0.0f);
-            m_ADAM_V_Embeddings[token] = std::vector<float>(m_ModelDim, 0.0f);
-        }
+        // This function is no longer needed as Adam is removed.
+        // Keeping it for now in case it's called from elsewhere, but it will be empty.
     }
 
     void EmbeddingBlock::printEmbeddingStats() const {
@@ -422,8 +371,8 @@ namespace NNGL {
             }
 
             // Reset ADAM buffers for PAD token
-            m_ADAM_M_Embeddings.erase("<PAD>");
-            m_ADAM_V_Embeddings.erase("<PAD>");
+            // This function is no longer needed as Adam is removed.
+            // Keeping it for now in case it's called from elsewhere, but it will be empty.
 
             std::cout << "  [EMBED] Reset PAD token embedding to small values" << std::endl;
         }

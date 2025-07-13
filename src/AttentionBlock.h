@@ -41,6 +41,7 @@ namespace NNGL {
             m_ForwardPassOutCompute,
             m_SoftmaxCompute,
             m_BackwardOutputCompute,
+            m_BackwardVCompute,
             m_BackwardScoresCompute,
             m_WeightsUpdatePassCompute,
             m_BackwardProjectionsCompute,

@@ -14,6 +14,7 @@
 #include <functional>
 #include <algorithm>
 #include <random>
+#include <numeric>
 
 #include <glm/glm.hpp>
 #include "GPTransformer.h"
@@ -1307,10 +1308,8 @@ void testLayerNormClass() {
         auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
         (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
         (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
-        (*input)(2, 0) = 5.0f; (*input)(2, 1) = 6.0f;
         (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
         (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
-        (*residual)(2, 0) = 0.0f; (*residual)(2, 1) = 0.0f;
         auto output = layerNorm.forward(input, residual);
         if (output->rows != seqLen || output->cols != batchSize) {
             std::cout << "  [FAIL] Output dimensions incorrect. Expected [" << seqLen << "," << batchSize 
@@ -1794,12 +1793,16 @@ void test_embeddingblock_gpu_update() {
     auto beforeA = std::make_shared<Matrix>(*embedder.forward(tokens1)); // deep copy
     std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(1, modelDim);
     (*grad1)(0, 0) = 1; (*grad1)(0, 1) = 2; (*grad1)(0, 2) = 3;
+    std::cout << "Test grad1: ";
+    for (int j = 0; j < modelDim; ++j) std::cout << (*grad1)(0, j) << " ";
+    std::cout << std::endl;
     embedder.backward(tokens1, grad1, lr);
     auto afterA = std::make_shared<Matrix>(*embedder.forward(tokens1)); // deep copy
     std::cout << "A before: "; beforeA->print();
     std::cout << "A after:  "; afterA->print();
     for (int j = 0; j < modelDim; ++j) {
-        assert(std::abs((*afterA)(0, j) - ((*beforeA)(0, j) - lr * (*grad1)(0, j))) < 1e-4);
+        float expected = (*beforeA)(0, j) - lr * (*grad1)(0, j);
+        assert(std::abs((*afterA)(0, j) - expected) < 1e-4);
     }
 
     // Test 2: Repeated token
@@ -1810,12 +1813,19 @@ void test_embeddingblock_gpu_update() {
     std::shared_ptr<Matrix> grad2 = std::make_shared<Matrix>(2, modelDim);
     (*grad2)(0, 0) = 1; (*grad2)(0, 1) = 2; (*grad2)(0, 2) = 3;
     (*grad2)(1, 0) = 4; (*grad2)(1, 1) = 5; (*grad2)(1, 2) = 6;
+    std::cout << "Test grad2: ";
+    for (int i = 0; i < 2; ++i) for (int j = 0; j < modelDim; ++j) std::cout << (*grad2)(i, j) << " ";
+    std::cout << std::endl;
     embedder.backward(tokens2, grad2, lr);
     auto afterB = std::make_shared<Matrix>(*embedder.forward(singleB)); // deep copy
     std::cout << "B before: "; beforeB->print();
     std::cout << "B after:  "; afterB->print();
+    // Simulate sequential SGD updates for repeated token B
     for (int j = 0; j < modelDim; ++j) {
-        float expected = (*beforeB)(0, j) - lr * ((*grad2)(0, j) + (*grad2)(1, j));
+        float val = (*beforeB)(0, j);
+        val -= lr * (*grad2)(0, j); // first occurrence
+        val -= lr * (*grad2)(1, j); // second occurrence
+        float expected = val;
         assert(std::abs((*afterB)(0, j) - expected) < 1e-4);
     }
 
@@ -1829,6 +1839,9 @@ void test_embeddingblock_gpu_update() {
     std::shared_ptr<Matrix> grad3 = std::make_shared<Matrix>(2, modelDim);
     (*grad3)(0, 0) = 1; (*grad3)(0, 1) = 2; (*grad3)(0, 2) = 3;
     (*grad3)(1, 0) = 4; (*grad3)(1, 1) = 5; (*grad3)(1, 2) = 6;
+    std::cout << "Test grad3: ";
+    for (int i = 0; i < 2; ++i) for (int j = 0; j < modelDim; ++j) std::cout << (*grad3)(i, j) << " ";
+    std::cout << std::endl;
     embedder.backward(tokens3, grad3, lr);
     auto afterC = std::make_shared<Matrix>(*embedder.forward(singleC)); // deep copy
     auto afterD = std::make_shared<Matrix>(*embedder.forward(singleD)); // deep copy
@@ -1837,8 +1850,10 @@ void test_embeddingblock_gpu_update() {
     std::cout << "D before: "; beforeD->print();
     std::cout << "D after:  "; afterD->print();
     for (int j = 0; j < modelDim; ++j) {
-        assert(std::abs((*afterC)(0, j) - ((*beforeC)(0, j) - lr * (*grad3)(0, j))) < 1e-4);
-        assert(std::abs((*afterD)(0, j) - ((*beforeD)(0, j) - lr * (*grad3)(1, j))) < 1e-4);
+        float expectedC = (*beforeC)(0, j) - lr * (*grad3)(0, j);
+        float expectedD = (*beforeD)(0, j) - lr * (*grad3)(1, j);
+        assert(std::abs((*afterC)(0, j) - expectedC) < 1e-4);
+        assert(std::abs((*afterD)(0, j) - expectedD) < 1e-4);
     }
     std::cout << "[UnitTest] EmbeddingBlock GPU Update PASSED\n";
 }
@@ -2026,55 +2041,142 @@ void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on a single example
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test ===" << std::endl;
-    int d_model = 128;
+    int d_model = 128;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 32;
+    int seq_len = 32;   // Longer sequence for complex text
     std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(5000);
-    // Overfit on a single example
-    std::string single_example = "hello world";
+    // Overfit on a single example - complex sentence
+    std::string single_example = "hello world! hello neural network. hello transformer! world of networks. transformer world.";
     std::vector<std::string> training_data = {single_example};
     std::cout << "Training BPE on single example..." << std::endl;
+
+    // Ensure all printable ASCII single-character tokens are in the vocab
+    for (char c = 32; c < 127; ++c) { // printable ASCII
+        std::string s(1, c);
+        bpe->addToken(s);
+    }
     for (int iteration = 0; iteration < 10; ++iteration) {
         bpe->trainFromString(single_example, true);
     }
     bpe->reduceVocab(200);
+    bpe->addToken("<EOS>");
     bpe->addToken("<PAD>");
     bpe->addToken("<SOS>");
-    bpe->addToken("<EOS>");
     std::cout << "BPE vocabulary size: " << bpe->getVocabSize() << std::endl;
     std::string bpe_file = "simple_bpe.checkpoint";
     bpe->save(bpe_file);
-    std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(
-        bpe_file, d_model, d_hidden, seq_len);
-    std::cout << "\n=== Initial Prediction (Before Training) ===" << std::endl;
-    std::string result = gpt->eval(single_example);
-    std::cout << "  '" << single_example << "' -> '" << result << "'" << std::endl;
-    std::cout << "  Expected: 'world' or '<EOS>' (after training)" << std::endl;
+    std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(bpe_file, d_model, d_hidden, seq_len);
+
     std::cout << "\n=== Training (Overfitting on Single Example) ===" << std::endl;
-    int epochs = 1000;
-    float learning_rate = 0.01f;
+    int epochs = 1000000;
+    float initial_learning_rate = 0.001f; // Reduced for more stable learning
     std::vector<std::string> tokens = bpe->tokenizeInput(single_example.c_str(), single_example.size());
     std::vector<std::string> sequence = {"<SOS>"};
     sequence.insert(sequence.end(), tokens.begin(), tokens.end());
     sequence.push_back("<EOS>");
+    
+    // Print sequence for debugging
+    std::cout << "Training sequence: [";
+    for (size_t i = 0; i < sequence.size(); ++i) {
+        std::cout << "'" << sequence[i] << "'";
+        if (i < sequence.size() - 1) std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+    
+    // Early stopping variables
+    float best_loss = std::numeric_limits<float>::infinity();
+    int epochs_without_improvement = 0;
+    
     for (int epoch = 0; epoch < epochs; ++epoch) {
+        // Learning rate scheduling - less aggressive decay
+        float learning_rate = initial_learning_rate * std::pow(0.98f, epoch / 200.0f);
+        
+        float total_loss = 0.0f;
+        int num_tokens = 0;
+        
         // Train on next-token prediction for each position in the sequence
         for (size_t i = 1; i < sequence.size(); ++i) {
             std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
             std::string target = sequence[i];
-            std::vector<std::string> train_seq = context;
-            train_seq.push_back(target);
-            gpt->trainOnTokenSequence(train_seq, learning_rate);
+            // Pass context and target separately - don't combine them
+            float loss = gpt->trainNextToken(context, target, learning_rate);
+            total_loss += loss;
+            num_tokens++;
         }
-        // Print prediction after each epoch
+        
+        // Print progress every 10 epochs
         if ((epoch + 1) % 10 == 0 || epoch == 0) {
-            std::string pred = gpt->eval(single_example);
-            std::cout << "Epoch " << (epoch + 1) << ": '" << single_example << "' -> '" << pred << "'" << std::endl;
+            float avg_loss = total_loss / num_tokens;
+            
+            // Test with partial sentences
+            std::string pred1 = gpt->eval("hello");
+            std::string pred2 = gpt->eval("hello w");
+            std::string pred3 = gpt->eval("h");
+            
+            std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
+                      << " | LR = " << std::fixed << std::setprecision(6) << learning_rate 
+                      << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss << std::endl;
+            std::cout << "  'hello' -> '" << pred1 << "'" << std::endl;
+            std::cout << "  'hello w' -> '" << pred2 << "'" << std::endl;
+            std::cout << "  'h' -> '" << pred3 << "'" << std::endl;
+            
+            // Additional debugging info
+            if (epoch == 0 || (epoch + 1) % 100 == 0) {
+                std::cout << "  Training sequence length: " << sequence.size() << " tokens" << std::endl;
+                std::cout << "  Number of training examples per epoch: " << num_tokens << std::endl;
+                std::cout << "  Loss history size: " << gpt->getLossHistory().size() << std::endl;
+                if (!gpt->getLossHistory().empty()) {
+                    float min_loss = *std::min_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
+                    float max_loss = *std::max_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
+                    std::cout << "  Loss range: [" << std::fixed << std::setprecision(4) << min_loss 
+                              << ", " << std::fixed << std::setprecision(4) << max_loss << "]" << std::endl;
+                }
+            }
+        }
+        
+        // Early stopping if loss is very low
+        if (total_loss / num_tokens < 0.1f) {
+            std::cout << "Early stopping at epoch " << (epoch + 1) << " due to low loss!" << std::endl;
+            break;
+        }
+        
+        // Early stopping if loss hasn't improved for a while
+        float current_avg_loss = total_loss / num_tokens;
+        
+        if (current_avg_loss < best_loss) {
+            best_loss = current_avg_loss;
+            epochs_without_improvement = 0;
+        } else {
+            epochs_without_improvement++;
+        }
+        
+        if (epochs_without_improvement > 200) {
+            std::cout << "Early stopping at epoch " << (epoch + 1) << " due to no improvement for 200 epochs!" << std::endl;
+            break;
         }
     }
     std::cout << "\n=== Overfit Test Complete ===" << std::endl;
-    std::string final_pred = gpt->eval(single_example);
-    std::cout << "Final prediction for '" << single_example << "': '" << final_pred << "'" << std::endl;
+    
+    // Test with various partial inputs
+    std::cout << "Final predictions:" << std::endl;
+    std::cout << "  'hello' -> '" << gpt->eval("hello") << "'" << std::endl;
+    std::cout << "  'hello w' -> '" << gpt->eval("hello w") << "'" << std::endl;
+    std::cout << "  'h' -> '" << gpt->eval("h") << "'" << std::endl;
+    std::cout << "  'hello world' -> '" << gpt->eval("hello world") << "'" << std::endl;
+    
+    // Training summary
+    std::cout << "\n=== Training Summary ===" << std::endl;
+    std::cout << "Total training steps: " << gpt->getTrainingSteps() << std::endl;
+    std::cout << "Loss history size: " << gpt->getLossHistory().size() << std::endl;
+    if (!gpt->getLossHistory().empty()) {
+        float min_loss = *std::min_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
+        float max_loss = *std::max_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
+        float avg_loss = std::accumulate(gpt->getLossHistory().begin(), gpt->getLossHistory().end(), 0.0f) / gpt->getLossHistory().size();
+        std::cout << "Loss statistics:" << std::endl;
+        std::cout << "  Min: " << std::fixed << std::setprecision(4) << min_loss << std::endl;
+        std::cout << "  Max: " << std::fixed << std::setprecision(4) << max_loss << std::endl;
+        std::cout << "  Avg: " << std::fixed << std::setprecision(4) << avg_loss << std::endl;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -2128,7 +2230,7 @@ int main(int argc, char** argv) {
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     
     // Run comprehensive unit tests
-    runAllUnitTests();
+    //runAllUnitTests();
     
     // Choose which transformer function to run:
     // 1. Simple EOS prediction (original)

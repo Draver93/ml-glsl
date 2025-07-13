@@ -2,11 +2,11 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-// Embedding matrix: [vocab_size, model_dim]
+// Embedding matrix: [vocab_size, model_dim] (now column-major)
 layout(std430) restrict buffer EmbeddingBuffer {
     float embeddings[];
 };
-// Gradients: [batch_size, model_dim]
+// Gradients: [batch_size, model_dim] (now column-major)
 layout(std430) readonly buffer GradBuffer {
     float grads[];
 };
@@ -31,6 +31,8 @@ void main() {
     int token_idx = token_indices[token_pos];
     if (token_idx < 0 || token_idx >= vocab_size) return;
 
-    // Row-major: embedding[token_idx, model_dim_idx]
-    embeddings[token_idx * model_dim + model_dim_idx] -= learning_rate * grads[token_pos * model_dim + model_dim_idx];
+    // Column-major access:
+    // embeddings[model_dim_idx * vocab_size + token_idx]
+    // grads[model_dim_idx * batch_size + token_pos]
+    embeddings[model_dim_idx * vocab_size + token_idx] -= learning_rate * grads[model_dim_idx * batch_size + token_pos];
 } 

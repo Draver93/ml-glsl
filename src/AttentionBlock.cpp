@@ -1,6 +1,7 @@
 #include "AttentionBlock.h"
 #include "Logger.h"
 #include "ShaderCPUAnalogs.h"
+#include <iostream>
 
 namespace NNGL {
     // Static debug flag for validation
@@ -266,9 +267,10 @@ namespace NNGL {
 
         // === STEP 1: Backward through final matmul (grad_output -> grad_attention_weights, grad_V) ===
         {
-            // grad_attention_weights = grad_output @ V^T
-            // grad_V = attention_weights^T @ grad_output
-
+            // Upload buffers to GPU before shader execution
+            m_GradAttentionWeights->uploadToGPU();
+            m_GradV->uploadToGPU();
+            
             m_BackwardOutputCompute->bindBuffer(0, "GradOutput", gradOutput->buffer);
             m_BackwardOutputCompute->bindBuffer(1, "CachedV", m_CachedV->buffer);
             m_BackwardOutputCompute->bindBuffer(2, "CachedAttentionWeights", m_CachedAttentionWeights->buffer);
@@ -289,6 +291,9 @@ namespace NNGL {
 
         // === STEP 2: Backward through softmax ===
         {
+            // Upload buffers to GPU before shader execution
+            m_GradScores->uploadToGPU();
+            
             // grad_scores = softmax_backward(grad_attention_weights, cached_attention_weights)
             // This is: grad_scores[i,j] = attention_weights[i,j] * (grad_attention_weights[i,j] - sum_k(grad_attention_weights[i,k] * attention_weights[i,k]))
 
@@ -311,6 +316,10 @@ namespace NNGL {
 
         // === STEP 3: Backward through scores computation (Q @ K^T / sqrt(d_k)) ===
         {
+            // Upload buffers to GPU before shader execution
+            m_GradQ->uploadToGPU();
+            m_GradK->uploadToGPU();
+            
             // grad_Q = grad_scores @ K / sqrt(d_k)
             // grad_K = grad_scores^T @ Q / sqrt(d_k)
 
@@ -443,6 +452,8 @@ namespace NNGL {
             int workgroups_x = (seq_len + 15) / 16;
             int workgroups_y = (input_dim + 15) / 16;
             m_GradInputCompute->dispatch(workgroups_x, workgroups_y, 1);
+            gradInput->downloadFromGPU();
+            
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 
@@ -460,7 +471,8 @@ namespace NNGL {
             int workgroups_x = (input_dim + 15) / 16;
             int workgroups_y = (head_dim + 15) / 16;
             m_GradWeightCompute->dispatch(workgroups_x, workgroups_y, 1);
-
+            gradWeight->downloadFromGPU();
+            
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
     }

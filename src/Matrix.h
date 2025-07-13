@@ -8,6 +8,7 @@ extern "C" {
 #include <memory>
 #include <queue>
 #include <mutex>
+#include <cmath>
 
 namespace NNGL {
     class Matrix {
@@ -38,6 +39,15 @@ namespace NNGL {
         float get(int r, int c) const { return (*this)(r, c); }
         void set(int r, int c, float value) { (*this)(r, c) = value; m_Dirty = true; }
         const std::vector<float>& getFlatVec() const { return flatVec; }
+
+        // Compute L2 norm of the matrix
+        float getNorm() const {
+            float sum = 0.0f;
+            for (float val : flatVec) {
+                sum += val * val;
+            }
+            return std::sqrt(sum);
+        }
 
         void randomize(float min = -1.0f, float max = 1.0f);
         void add(Matrix& other);

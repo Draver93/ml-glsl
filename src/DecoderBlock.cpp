@@ -64,22 +64,48 @@ namespace NNGL {
         return addNorm3Out;
     }
 
+    std::shared_ptr<Matrix> DecoderBlock::forwardDecoderOnly(
+        std::shared_ptr<Matrix> decoderInput,
+        const std::vector<int>& decoderPaddingMask
+    ) {
+        NNGL::Timer timer("DecoderBlock::forwardDecoderOnly");
+        m_CachedDecoderInput = decoderInput;
+        // For decoder-only, we don't have encoder output
+        m_CachedEncoderOutput = nullptr;
+
+        // 1. Masked self-attention
+        auto maskedOut = m_MaskedSelfAttn->forward(decoderInput, nullptr, decoderPaddingMask);
+        auto addNorm1Out = m_AddNorm1->forward(maskedOut, decoderInput);
+
+        // 2. Skip cross-attention (decoder-only architecture)
+        // Just pass through the addNorm1Out as if cross-attention didn't change it
+        auto addNorm2Out = m_AddNorm2->forward(addNorm1Out, addNorm1Out);
+
+        // 3. Feed-forward network
+        auto mlpOut = m_FeedForward->forward(addNorm2Out);
+        auto addNorm3Out = m_AddNorm3->forward(mlpOut, addNorm2Out);
+
+        return addNorm3Out;
+    }
+
     std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
         NNGL::Timer timer("DecoderBlock::backward");
 
         // Backprop through addNorm3 (main: mlpOut, residual: addNorm2Out)
         m_AddNorm3->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm2->getCachedOutput());
         auto gradFFNInput = m_FeedForward->backward(m_AddNorm3->getGradInput(), learningRate);
-
+        
         // Backprop through addNorm2 (main: crossOut, residual: addNorm1Out)
         m_AddNorm2->backward(gradFFNInput, m_CrossAttn->getCachedOutput(), m_AddNorm1->getCachedOutput());
         auto [gradFromCross, gradContext] = m_CrossAttn->backward(m_AddNorm2->getGradInput(), m_CachedEncoderOutput, learningRate);
-
+        
         // Backprop through addNorm1 (main: maskedOut, residual: decoderInput)
-        m_AddNorm1->backward(gradFromCross, m_MaskedSelfAttn->getCachedOutput(), m_CachedDecoderInput);
+        m_AddNorm1->backward(gradContext, m_MaskedSelfAttn->getCachedOutput(), m_CachedDecoderInput);
         auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(m_AddNorm1->getGradInput(), nullptr, learningRate);
+        
+        auto result = m_AddNorm1->getGradResidual();
 
-        return m_AddNorm1->getGradResidual();
+        return result;
     }
 
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> DecoderBlock::backwardWithEncoderGrad(
@@ -100,5 +126,71 @@ namespace NNGL {
 
         // Return BOTH gradients: decoder input gradient AND encoder output gradient
         return std::make_pair(gradFromMaskedSelf, gradFromCrossEncoder);
+    }
+
+    std::shared_ptr<Matrix> DecoderBlock::backwardDecoderOnly(std::shared_ptr<Matrix> gradOutput, float learningRate) {
+        NNGL::Timer timer("DecoderBlock::backwardDecoderOnly");
+
+        // Backprop through addNorm3 (main: mlpOut, residual: addNorm2Out)
+        m_AddNorm3->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm2->getCachedOutput());
+        auto gradFFNInput = m_FeedForward->backward(m_AddNorm3->getGradInput(), learningRate);
+        
+        // Backprop through addNorm2 (for decoder-only, main and residual are the same: addNorm1Out)
+        m_AddNorm2->backward(gradFFNInput, m_AddNorm1->getCachedOutput(), m_AddNorm1->getCachedOutput());
+        // Skip cross-attention backward pass since we didn't do cross-attention in forward
+        
+        // Backprop through addNorm1 (main: maskedOut, residual: decoderInput)
+        m_AddNorm1->backward(m_AddNorm2->getGradInput(), m_MaskedSelfAttn->getCachedOutput(), m_CachedDecoderInput);
+        auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(m_AddNorm1->getGradInput(), nullptr, learningRate);
+        
+        auto result = m_AddNorm1->getGradResidual();
+
+        return result;
+    }
+
+    DecoderOnlyBlock::DecoderOnlyBlock(int modelDim, int hiddenDim, int seqLen) {
+        int numHeads = 8; // Standard number of heads for transformer
+
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, /*isMasked=*/true);
+        m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
+        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::LRELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::LRELU);
+
+        m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
+        m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
+    }
+
+    std::shared_ptr<Matrix> DecoderOnlyBlock::forward(
+        std::shared_ptr<Matrix> input,
+        const std::vector<int>& paddingMask
+    ) {
+        NNGL::Timer timer("DecoderOnlyBlock::forward");
+        m_CachedInput = input;
+
+        // 1. Masked self-attention with residual connection
+        auto maskedOut = m_MaskedSelfAttn->forward(input, nullptr, paddingMask);
+        auto addNorm1Out = m_AddNorm1->forward(maskedOut, input);
+
+        // 2. Feed-forward network with residual connection
+        auto mlpOut = m_FeedForward->forward(addNorm1Out);
+        auto addNorm2Out = m_AddNorm2->forward(mlpOut, addNorm1Out);
+
+        return addNorm2Out;
+    }
+
+    std::shared_ptr<Matrix> DecoderOnlyBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
+        NNGL::Timer timer("DecoderOnlyBlock::backward");
+
+        // Backprop through addNorm2 (main: mlpOut, residual: addNorm1Out)
+        m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput());
+        auto gradFFNInput = m_FeedForward->backward(m_AddNorm2->getGradInput(), learningRate);
+        
+        // Backprop through addNorm1 (main: maskedOut, residual: input)
+        m_AddNorm1->backward(gradFFNInput, m_MaskedSelfAttn->getCachedOutput(), m_CachedInput);
+        auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(m_AddNorm1->getGradInput(), nullptr, learningRate);
+        
+        auto result = m_AddNorm1->getGradResidual();
+
+        return result;
     }
 }
