@@ -59,8 +59,15 @@ namespace NNGL {
         m_CachedQ = std::make_shared<Matrix>(seqLen, modelDimensions);
         m_CachedK = std::make_shared<Matrix>(seqLen, modelDimensions);
         m_CachedV = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedQ->uploadToGPU();
+        m_CachedK->uploadToGPU();
+        m_CachedV->uploadToGPU();
+
         m_CachedScores = std::make_shared<Matrix>(numHeads * seqLen, seqLen);
+        m_CachedScores->uploadToGPU();
+
         m_CachedAttentionWeights = std::make_shared<Matrix>(numHeads * seqLen, seqLen);
+        m_CachedAttentionWeights->uploadToGPU();
 
         // Input gradients
         m_GradInput = std::make_shared<Matrix>(seqLen, modelDimensions, 0);

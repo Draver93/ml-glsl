@@ -11,8 +11,8 @@ namespace NNGL {
 
         m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, /*isMasked=*/true);
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
-        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::LRELU);
-        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::LRELU);
+        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
 
         m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
         m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);

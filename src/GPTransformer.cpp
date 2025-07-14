@@ -132,14 +132,14 @@ namespace NNGL {
 
     std::string GPTransformer::eval(const std::string& inputText) {
         // 1. Tokenize input text
-        std::vector<std::string> inputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
-
-        // 2. Build initial decoder input: <SOS> + input tokens + <PAD> ...
-        std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
-        decInputTokens[0] = "<SOS>";
-        int inputLen = std::min((int)inputTokens.size(), m_SeqLen - 1);
-        for (int i = 0; i < inputLen; ++i) {
-            decInputTokens[i + 1] = inputTokens[i];
+        std::vector<std::string> paddedContext = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+        if (paddedContext.size() > m_SeqLen) {
+            // Keep most recent tokens
+            paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
+        }
+        while (paddedContext.size() < m_SeqLen) {
+            // Pad from the beginning (left side) - this is correct for causal LM
+            paddedContext.insert(paddedContext.begin(), "<PAD>");
         }
 
         std::vector<std::string> generatedTokens;
@@ -148,7 +148,7 @@ namespace NNGL {
 
         // 3. Generate tokens one by one, maintaining full context
         for (int step = 0; step < maxLength; ++step) {
-            auto logits = forwardPass(decInputTokens);
+            auto logits = forwardPass(paddedContext);
             int nextTokenId = predictToken(logits);
             
             // Check for EOS
@@ -160,9 +160,9 @@ namespace NNGL {
             // Maintain full context by shifting and adding new token
             // This preserves the causal nature of the model
             for (int i = 0; i < m_SeqLen - 1; ++i) {
-                decInputTokens[i] = decInputTokens[i + 1];
+                paddedContext[i] = paddedContext[i + 1];
             }
-            decInputTokens[m_SeqLen - 1] = nextToken;
+            paddedContext[m_SeqLen - 1] = nextToken;
         }
 
         // 4. Build output string (skip special tokens)

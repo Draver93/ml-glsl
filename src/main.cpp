@@ -1117,7 +1117,7 @@ void transformer() {
     //# heads	4–8
     //layers	2–6
 
-    int d_model = 128;  // Must be divisible by num_heads (8)
+    int d_model = 256;  // Must be divisible by num_heads (8)
     int d_hidden = d_model * 4;
     int seq_len = 64;
 
@@ -1171,7 +1171,7 @@ void gptransformer_simplified() {
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
     int d_model = 128;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 32;   // Longer sequence for complex text
+    int seq_len = 64;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1251,7 +1251,7 @@ void gptransformer_simplified() {
 
     std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
     int epochs = 1000000;
-    float initial_learning_rate = 0.001f; // Reduced for more stable learning
+    float initial_learning_rate = 0.00001f; // Reduced for more stable learning
     
     // Early stopping variables
     float best_loss = std::numeric_limits<float>::infinity();
