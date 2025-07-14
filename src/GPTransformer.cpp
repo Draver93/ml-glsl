@@ -58,7 +58,7 @@ namespace NNGL {
         if (contextTokens.size() > m_SeqLen) contextTokens = std::vector<std::string>(contextTokens.end() - m_SeqLen, contextTokens.end());
         std::shared_ptr<Matrix> logits = forwardPass(contextTokens);
         int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
-        float loss = calculateLoss(logits, targetTokenId);
+        float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
         m_CurrentLoss = loss;
         m_TrainingSteps++;
         m_LossHistory.push_back(loss);
@@ -99,7 +99,7 @@ namespace NNGL {
         
         std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
         int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
-        float loss = calculateLoss(logits, targetTokenId);
+        float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
         m_CurrentLoss = loss;
         m_TrainingSteps++;
         m_LossHistory.push_back(loss);
@@ -169,7 +169,7 @@ namespace NNGL {
         std::string result;
         for (const auto& token : generatedTokens) {
             if (token != "<PAD>" && token != "<SOS>" && token != "<EOS>") {
-                result += "[" + token + "]";
+                result += token + "|";
             }
         }
         
@@ -181,7 +181,9 @@ namespace NNGL {
         m_Embedder->resetPadTokenEmbedding();
     }
 
-    float GPTransformer::calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId) {
+    float GPTransformer::calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode) {
+        if (std::isnan((*logits)(0, 0))) throw std::runtime_error("logits is nan(");
+
         std::vector<float> probabilities(m_VocabSize);
         float maxLogit = (*logits)(0, 0);
         for (int i = 1; i < m_VocabSize; ++i) {
@@ -193,12 +195,46 @@ namespace NNGL {
             sum += probabilities[i];
         }
         for (int i = 0; i < m_VocabSize; ++i) probabilities[i] /= sum;
-        if (targetTokenId >= 0 && targetTokenId < m_VocabSize) {
-            float targetProb = probabilities[targetTokenId];
-            if (targetProb > 0.0f) return -std::log(targetProb);
-            else return 1000.0f;
+
+        switch (mode) {
+            case LossMode::CrossEntropy: {
+                if (targetTokenId >= 0 && targetTokenId < m_VocabSize) {
+                    float targetProb = std::max(probabilities[targetTokenId], 1e-8f);
+                    return -std::log(targetProb);
+                }
+                return 1000.0f;
+            }
+            case LossMode::Confidence: {
+                if (targetTokenId >= 0 && targetTokenId < m_VocabSize) {
+                    return probabilities[targetTokenId]; // [0, 1]
+                }
+                return 0.0f;
+            }
+            case LossMode::Margin: {
+                float correctLogit = (*logits)(0, targetTokenId);
+                float maxOtherLogit = -std::numeric_limits<float>::infinity();
+                for (int i = 0; i < m_VocabSize; ++i) {
+                    if (i != targetTokenId && (*logits)(0, i) > maxOtherLogit) {
+                        maxOtherLogit = (*logits)(0, i);
+                    }
+                }
+                return 100 * (maxOtherLogit - correctLogit); // Higher is better
+            }
+            case LossMode::Accuracy: {
+                // Argmax
+                int predicted = 0;
+                float maxVal = (*logits)(0, 0);
+                for (int i = 1; i < m_VocabSize; ++i) {
+                    if ((*logits)(0, i) > maxVal) {
+                        maxVal = (*logits)(0, i);
+                        predicted = i;
+                    }
+                }
+                return (predicted == targetTokenId) ? 1.0f : 0.0f;
+            }
+            default:
+                return 1000.0f;
         }
-        return 1000.0f;
     }
 
     void GPTransformer::resetTrainingStats() {

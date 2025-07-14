@@ -7,6 +7,13 @@
 
 namespace NNGL {
 
+    void clean_word(std::vector<char>& word) {
+        word.erase(std::remove_if(word.begin(), word.end(),
+            [](unsigned char c) { return std::ispunct(c) || c == '\n' || c == '\r'; }), word.end());
+        std::transform(word.begin(), word.end(), word.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    }
+
     BPE::BPE(size_t mergeLimit) : m_MergeLimit(mergeLimit) {}
 
     void BPE::processChunk(const char* chunk, size_t chunkSize) {
@@ -75,6 +82,7 @@ namespace NNGL {
             while (file.read(buffer.data(), buffer.size()) || file.gcount() > 0) {
                 std::streamsize actualSize = file.gcount();
                 std::vector<char> chunk(buffer.begin(), buffer.begin() + actualSize);
+                clean_word(chunk);
 
                 futures.emplace_back(std::async(std::launch::async, [this, chunk = std::move(chunk)]() {
                     processChunk(chunk.data(), chunk.size());

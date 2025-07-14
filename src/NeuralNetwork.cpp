@@ -31,7 +31,7 @@ namespace NNGL {
 
 	NeuralNetwork::~NeuralNetwork() {
         if (m_InputGradBuffer) {
-            LOG("[GPU BUFFER] Deleting input grad buffer " + std::to_string(m_InputGradBuffer));
+            LOG_TRACE("[GPU BUFFER] Deleting input grad buffer " + std::to_string(m_InputGradBuffer));
             glDeleteBuffers(1, &m_InputGradBuffer);
         }
     }

@@ -477,13 +477,6 @@ void sin_multiplication() {
     nn.run();
 }
 
-void clean_word(std::string& word) {
-    word.erase(std::remove_if(word.begin(), word.end(),
-        [](unsigned char c) { return std::ispunct(c); }), word.end());
-    std::transform(word.begin(), word.end(), word.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-}
-
 // ============================================================================
 // UNIT TESTS FOR VALIDATION
 // ============================================================================
@@ -1173,45 +1166,81 @@ void transformer() {
 }
 
 void gptransformer_simplified() {
-    // Simple GPTransformer (GPT-style, decoder-only) overfit test on a single example
+    // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
-    std::cout << "=== Simple GPTransformer Overfit Test ===" << std::endl;
+    std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
     int d_model = 128;  // Increased for complex text
     int d_hidden = d_model * 4;
     int seq_len = 32;   // Longer sequence for complex text
-    std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(5000);
-    // Overfit on a single example - complex sentence
-    std::string single_example = "hello world! hello neural network. hello transformer! world of networks. transformer world.";
-    std::vector<std::string> training_data = {single_example};
-    std::cout << "Training BPE on single example..." << std::endl;
 
-    // Ensure all printable ASCII single-character tokens are in the vocab
-    for (char c = 32; c < 127; ++c) { // printable ASCII
-        std::string s(1, c);
-        bpe->addToken(s);
-    }
-    bpe->addToken(" ");
 
-    for (int iteration = 0; iteration < 10; ++iteration) {
-        bpe->trainFromString(single_example, true);
+    std::string bpe_file = "bpe50k.checkpoint";
+    if(false)
+    {
+        std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
+        std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(1024 * 10);
+
+
+        // Ensure all printable ASCII single-character tokens are in the vocab
+        for (char c = 32; c < 127; ++c) { // printable ASCII
+            std::string s(1, c);
+            bpe->addToken(s);
+        }
+        bpe->addToken(" ");
+        bpe->trainFromFiles(filenames, true);
+
+        bpe->reduceVocab(50000);
+        bpe->addToken("<EOS>");
+        bpe->addToken("<PAD>");
+        bpe->addToken("<SOS>");
+
+        std::cout << "BPE vocabulary size: " << bpe->getVocabSize() << std::endl;
+        bpe->save(bpe_file);
     }
-    bpe->reduceVocab(200);
-    bpe->addToken("<EOS>");
-    bpe->addToken("<PAD>");
-    bpe->addToken("<SOS>");
-    std::cout << "BPE vocabulary size: " << bpe->getVocabSize() << std::endl;
-    std::string bpe_file = "simple_bpe.checkpoint";
-    bpe->save(bpe_file);
+
+    std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(1024 * 10);
+    bpe->load(bpe_file);
+
+
+        // Overfit on 10 different sentences
+    std::vector<std::string> training_data = {
+            "hello world!",
+            "hello neural network.",
+            "hello transformer!",
+            "world of networks.",
+            "transformer world.",
+            "deep learning is fun.",
+            "attention is all you need.",
+            "sequence to sequence models.",
+            "natural language processing.",
+            "machine learning rocks!"
+        };
+    // Precompute tokenized prefixes for eval
+    std::vector<std::pair<std::string, std::string>> eval_prompts; // (display, prompt)
+    for (const auto& sentence : training_data) {
+        std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+        tokens.insert(tokens.begin(), "<SOS>");
+
+        std::string prompt;
+        std::string display;
+        for (size_t i = 0; i < tokens.size() / 2; ++i) {
+            prompt += tokens[i];
+            display += "'" + tokens[i] + "' ";
+        }
+        eval_prompts.emplace_back(display, prompt);
+    }
+
     std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(bpe_file, d_model, d_hidden, seq_len);
 
-    std::cout << "\n=== Training (Overfitting on Single Example) ===" << std::endl;
-    int epochs = 1000000;
-    float initial_learning_rate = 0.001f; // Reduced for more stable learning
-    std::vector<std::string> tokens = bpe->tokenizeInput(single_example.c_str(), single_example.size());
-    std::vector<std::string> sequence = {"<SOS>"};
-    sequence.insert(sequence.end(), tokens.begin(), tokens.end());
-    sequence.push_back("<EOS>");
-    
+    // Build the training sequence: <SOS> tokens... <EOS> for each sentence, concatenated
+    std::vector<std::string> sequence;
+    for (const auto& sentence : training_data) {
+        sequence.push_back("<SOS>");
+        std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+        sequence.insert(sequence.end(), tokens.begin(), tokens.end());
+        sequence.push_back("<EOS>");
+    }
+
     // Print sequence for debugging
     std::cout << "Training sequence: [";
     for (size_t i = 0; i < sequence.size(); ++i) {
@@ -1219,6 +1248,10 @@ void gptransformer_simplified() {
         if (i < sequence.size() - 1) std::cout << ", ";
     }
     std::cout << "]" << std::endl;
+
+    std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
+    int epochs = 1000000;
+    float initial_learning_rate = 0.001f; // Reduced for more stable learning
     
     // Early stopping variables
     float best_loss = std::numeric_limits<float>::infinity();
@@ -1226,7 +1259,7 @@ void gptransformer_simplified() {
     
     for (int epoch = 0; epoch < epochs; ++epoch) {
         // Learning rate scheduling - less aggressive decay
-        float learning_rate = initial_learning_rate * std::pow(0.98f, epoch / 200.0f);
+        float learning_rate = initial_learning_rate * std::pow(0.99f, epoch / 200.0f);
         
         float total_loss = 0.0f;
         int num_tokens = 0;
@@ -1235,7 +1268,6 @@ void gptransformer_simplified() {
         for (size_t i = 1; i < sequence.size(); ++i) {
             std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
             std::string target = sequence[i];
-            // Pass context and target separately - don't combine them
             float loss = gpt->trainNextToken(context, target, learning_rate);
             total_loss += loss;
             num_tokens++;
@@ -1244,19 +1276,13 @@ void gptransformer_simplified() {
         // Print progress every 10 epochs
         if ((epoch + 1) % 10 == 0 || epoch == 0) {
             float avg_loss = total_loss / num_tokens;
-            
-            // Test with partial sentences
-            std::string pred1 = gpt->eval("transformer");
-            std::string pred2 = gpt->eval("world of");
-            std::string pred3 = gpt->eval("hello neural");
-            
             std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
                       << " | LR = " << std::fixed << std::setprecision(6) << learning_rate 
                       << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss << std::endl;
-            std::cout << "  'transformer' -> '" << pred1 << "'" << std::endl;
-            std::cout << "  'world of' -> '" << pred2 << "'" << std::endl;
-            std::cout << "  'hello neural' -> '" << pred3 << "'" << std::endl;
-            
+            // Show predictions for the start of each sentence using tokenized prefixes
+            for (const auto& eval_pair : eval_prompts) {
+                std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
+            }
             // Additional debugging info
             if (epoch == 0 || (epoch + 1) % 100 == 0) {
                 std::cout << "  Training sequence length: " << sequence.size() << " tokens" << std::endl;
@@ -1269,12 +1295,6 @@ void gptransformer_simplified() {
                               << ", " << std::fixed << std::setprecision(4) << max_loss << "]" << std::endl;
                 }
             }
-        }
-        
-        // Early stopping if loss is very low
-        if (total_loss / num_tokens < 0.1f) {
-            std::cout << "Early stopping at epoch " << (epoch + 1) << " due to low loss!" << std::endl;
-            break;
         }
         
         // Early stopping if loss hasn't improved for a while
@@ -1293,12 +1313,13 @@ void gptransformer_simplified() {
         }
     }
     std::cout << "\n=== Overfit Test Complete ===" << std::endl;
+
     
     // Test with various partial inputs
     std::cout << "Final predictions:" << std::endl;
-    std::cout << "  'transformer' -> '" << gpt->eval("transformer") << "'" << std::endl;
-    std::cout << "  'world of' -> '" << gpt->eval("world of") << "'" << std::endl;
-    std::cout << "  'hello neural' -> '" << gpt->eval("hello neural") << "'" << std::endl;
+    for (const auto& eval_pair : eval_prompts) {
+        std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
+    }
     
     // Training summary
     std::cout << "\n=== Training Summary ===" << std::endl;

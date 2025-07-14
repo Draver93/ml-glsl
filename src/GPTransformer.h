@@ -14,6 +14,8 @@
 
 namespace NNGL {
 
+    enum class LossMode { CrossEntropy, Confidence, Margin, Accuracy };
+
     class GPTransformer {
     public:
         GPTransformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen);
@@ -23,9 +25,9 @@ namespace NNGL {
         // New method for separate context and target
         float trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate);
         std::string eval(const std::string& inputText);
-        std::string evalWithTemperature(const std::string& inputText, float temperature, int maxLength);
+
         void resetPadTokenEmbedding();
-        float calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId);
+        float calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode = LossMode::CrossEntropy);
         void resetTrainingStats();
         int sampleTokenWithTemperature(std::shared_ptr<Matrix> logits, float temperature);
         int predictToken(std::shared_ptr<Matrix> probabilities);
