@@ -17,7 +17,7 @@ namespace NNGL {
 	public:
 		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat);
 		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate);
-		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate); // Standard backward for gradient flow
+		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
 		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
 		std::shared_ptr<Matrix> backward_with_targetloss(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> targetLoss, float learningRate);
 		std::shared_ptr<Matrix> forwardMatOutput;

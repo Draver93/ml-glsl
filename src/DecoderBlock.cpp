@@ -18,10 +18,7 @@ namespace NNGL {
         m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
     }
 
-    std::shared_ptr<Matrix> DecoderBlock::forward(
-        std::shared_ptr<Matrix> input,
-        const std::vector<int>& paddingMask
-    ) {
+    std::shared_ptr<Matrix> DecoderBlock::forward(std::shared_ptr<Matrix> input, const std::vector<int>& paddingMask) {
         NNGL::Timer timer("DecoderOnlyBlock::forward");
         m_CachedInput = input;
 

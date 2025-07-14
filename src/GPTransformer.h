@@ -13,11 +13,6 @@
 #include <unordered_map>
 
 namespace NNGL {
-    class BPE;
-    class EmbeddingBlock;
-    class DecoderBlock;
-    class NeuralNetwork;
-    class Matrix;
 
     class GPTransformer {
     public:

@@ -67,7 +67,7 @@ namespace NNGL {
         std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
         static int debugCounter = 0;
         if (++debugCounter % 14 == 0) {
-            std::cout << "  [DEBUG] Loss: " << std::fixed << std::setprecision(4) << loss 
+            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss 
                       << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
                       << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
                       << " | Context: [";
@@ -108,7 +108,7 @@ namespace NNGL {
         std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
         static int debugCounter = 0;
         if (++debugCounter % 14 == 0) {
-            std::cout << "  [DEBUG] Loss: " << std::fixed << std::setprecision(4) << loss 
+            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss 
                       << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
                       << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
                       << " | Context: [";
@@ -169,81 +169,12 @@ namespace NNGL {
         std::string result;
         for (const auto& token : generatedTokens) {
             if (token != "<PAD>" && token != "<SOS>" && token != "<EOS>") {
-                if (!result.empty()) result += " ";
-                result += token;
+                result += "[" + token + "]";
             }
         }
         
         
         return result;
-    }
-
-    std::string GPTransformer::evalWithTemperature(const std::string& inputText, float temperature, int maxLength) {
-        std::vector<std::string> inputTokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
-        std::vector<std::string> decInputTokens(m_SeqLen, "<PAD>");
-        decInputTokens[0] = "<SOS>";
-        std::vector<int> decTokenIds = stringToTokenIds(decInputTokens);
-        std::vector<std::string> generatedTokens;
-        int eosTokenId = getEosTokenId();
-        for (int step = 0; step < maxLength; ++step) {
-            auto logits = forwardPass(decInputTokens);
-            int nextTokenId = sampleTokenWithTemperature(logits, temperature);
-            if (nextTokenId == eosTokenId) break;
-            std::string nextToken = m_Tokenizer->getTokenById(nextTokenId);
-            generatedTokens.push_back(nextToken);
-            
-            // Maintain full context by shifting and adding new token
-            for (int i = 0; i < m_SeqLen - 1; ++i) decTokenIds[i] = decTokenIds[i + 1];
-            decTokenIds[m_SeqLen - 1] = nextTokenId;
-            decInputTokens = tokenIdsToStrings(decTokenIds);
-        }
-        std::string result;
-        for (const auto& token : generatedTokens) {
-            if (token != "<PAD>" && token != "<SOS>" && token != "<EOS>") {
-                if (!result.empty()) result += " ";
-                result += token;
-            }
-        }
-        return result;
-    }
-
-    int GPTransformer::sampleTokenWithTemperature(std::shared_ptr<Matrix> logits, float temperature) {
-        int padTokenId = getPadTokenId();
-        std::vector<float> scaledLogits(m_VocabSize);
-        for (int i = 0; i < m_VocabSize; ++i) {
-            if (i == padTokenId) {
-                scaledLogits[i] = -std::numeric_limits<float>::infinity();
-            } else {
-                scaledLogits[i] = (*logits)(0, i) / temperature;  // Use row 0 directly
-            }
-        }
-        std::vector<float> probabilities(m_VocabSize);
-        float maxLogit = *std::max_element(scaledLogits.begin(), scaledLogits.end());
-        float sum = 0.0f;
-        for (int i = 0; i < m_VocabSize; ++i) {
-            if (i == padTokenId) {
-                probabilities[i] = 0.0f;
-            } else {
-                probabilities[i] = std::exp(scaledLogits[i] - maxLogit);
-                sum += probabilities[i];
-            }
-        }
-        if (sum > 0.0f) {
-            for (int i = 0; i < m_VocabSize; ++i) {
-                if (i != padTokenId) probabilities[i] /= sum;
-            }
-        }
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> dis(0.0f, 1.0f);
-        float randomValue = dis(gen);
-        float cumulativeProb = 0.0f;
-        for (int i = 0; i < m_VocabSize; ++i) {
-            if (i == padTokenId) continue;
-            cumulativeProb += probabilities[i];
-            if (randomValue <= cumulativeProb) return i;
-        }
-        return getEosTokenId();
     }
 
     void GPTransformer::resetPadTokenEmbedding() {
@@ -281,64 +212,24 @@ namespace NNGL {
         NNGL::Timer timer("GPTransformer::forwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
 
-        // Log embedding values (limited)
-        /*std::cout << "[LOG] Embedding values for input tokens:";
-        for (size_t i = 0; i < std::min(inputMat->rows, (int)3); ++i) { // Only first 3 tokens
-            std::cout << "\n  Token '" << inputTokens[i] << "': ";
-            for (size_t j = 0; j < std::min(inputMat->cols, 5); ++j) { // Only first 5 values
-                std::cout << std::fixed << std::setprecision(4) << (*inputMat)(i, j) << " ";
-            }
-            if (inputMat->cols > 5) {
-                std::cout << "... (total " << inputMat->cols << " values)";
-            }
-        }
-        std::cout << std::endl;*/
-
         int paddingLen = 0;
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
-        // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
 
-        // Log decoder output (limited)
-        /*std::cout << "[LOG] Decoder last token representation: ";
-        for (int i = 0; i < std::min(lastTokenRep->cols, 5); ++i) {
-            std::cout << std::fixed << std::setprecision(4) << (*lastTokenRep)(0, i) << " ";
-        }
-        if (lastTokenRep->cols > 5) {
-            std::cout << "... (total " << lastTokenRep->cols << " values)";
-        }
-        std::cout << std::endl;*/
-
-        auto logits = m_OutputProjection->forward(lastTokenRep);
-        // Log output projection logits (limited)
-        /*std::cout << "[LOG] Output projection logits: ";
-        for (int i = 0; i < std::min(logits->cols, 5); ++i) {
-            std::cout << std::fixed << std::setprecision(4) << (*logits)(0, i) << " ";
-        }
-        if (logits->cols > 5) {
-            std::cout << "... (total " << logits->cols << " values)";
-        }
-        std::cout << std::endl;*/
-        return logits;
+        return m_OutputProjection->forward(lastTokenRep);
     }
 
     void GPTransformer::backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate) {
 
         NNGL::Timer timer("GPTransformer::backwardPass");
+
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
         int paddingLen = 0;
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
-        // Debug: Print input tokens and paddingLen
-        /*std::cout << "[LOG] Input tokens: [";
-        for (size_t i = 0; i < inputTokens.size(); ++i) {
-            if (i > 0) std::cout << ", ";
-            std::cout << "'" << inputTokens[i] << "'";
-        }
-        std::cout << "], paddingLen=" << paddingLen << std::endl;*/
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         // Use decoder-only architecture (no encoder, no cross-attention)
@@ -347,92 +238,15 @@ namespace NNGL {
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
-        // Log output projection gradient (limited)
-        /*std::cout << "[LOG] Output projection gradient: ";
-        for (int i = 0; i < std::min(outputGrad->cols, 5); ++i) {
-            std::cout << std::fixed << std::setprecision(4) << (*outputGrad)(0, i) << " ";
-        }
-        if (outputGrad->cols > 5) {
-            std::cout << "... (total " << outputGrad->cols << " values)";
-        }
-        std::cout << std::endl;
-        // Compute norm of outputGrad
-        float outputGradNorm = 0.0f;
-        for (int i = 0; i < outputGrad->cols; ++i) outputGradNorm += (*outputGrad)(0, i) * (*outputGrad)(0, i);
-        outputGradNorm = std::sqrt(outputGradNorm);
-        std::cout << "[LOG] Output projection grad norm: " << outputGradNorm << std::endl;*/
+
 
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
-        // In causal language modeling, we only have loss at the last position
-        // This is where we predict the next token
         int lastPos = decOutputMat->rows - 1;
-        for (int i = 0; i < decOutputMat->cols; ++i) {
-            decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
-        }
-        /*std::cout << "[LOG] Setting decoder grad at position " << lastMeaningfulPos << " (paddingLen=" << paddingLen << ")" << std::endl;
-        
-        // Debug: Show decoder gradient matrix before setting
-        std::cout << "[LOG] Decoder grad matrix before setting (first 5 values): ";
-        for (int j = 0; j < std::min(decOutputGrad->cols, 5); ++j) {
-            std::cout << std::fixed << std::setprecision(4) << (*decOutputGrad)(lastMeaningfulPos, j) << " ";
-        }
-        std::cout << std::endl;*/
-        
-
-        
-        // Debug: Show decoder gradient matrix after setting
-        /*std::cout << "[LOG] Decoder grad matrix after setting (first 5 values): ";
-        for (int j = 0; j < std::min(decOutputGrad->cols, 5); ++j) {
-            std::cout << std::fixed << std::setprecision(4) << (*decOutputGrad)(lastMeaningfulPos, j) << " ";
-        }
-        std::cout << std::endl;
-        
-        // Debug: Show output projection gradient (first 5 values)
-        std::cout << "[LOG] Output projection gradient (first 5 values): ";
-        for (int j = 0; j < std::min(outputGrad->cols, 5); ++j) {
-            std::cout << std::fixed << std::setprecision(4) << (*outputGrad)(0, j) << " ";
-        }
-        std::cout << std::endl;*/
-        
-        // Use decoder-only backward pass (no cross-attention gradients)
+        for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
-        // Compute norm of decGrad
-        float decGradNorm = 0.0f;
-        for (int i = 0; i < decGrad->rows; ++i)
-            for (int j = 0; j < decGrad->cols; ++j)
-                decGradNorm += (*decGrad)(i, j) * (*decGrad)(i, j);
-        decGradNorm = std::sqrt(decGradNorm);
-        
-        // Gradient clipping to prevent explosion
-        float maxGradNorm = 5.0f; // Increased from 1.0f for more stable training
-        if (decGradNorm > maxGradNorm) {
-            float scale = maxGradNorm / decGradNorm;
-            for (int i = 0; i < decGrad->rows; ++i)
-                for (int j = 0; j < decGrad->cols; ++j)
-                    (*decGrad)(i, j) *= scale;
-            decGradNorm = maxGradNorm;
-        }
-        //std::cout << "[LOG] Decoder grad norm: " << decGradNorm << std::endl;
+
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
-        
-        // Apply gradient clipping to embedding gradients as well
-        float embGradNorm = 0.0f;
-        for (int i = 0; i < decGrad->rows; ++i)
-            for (int j = 0; j < decGrad->cols; ++j)
-                embGradNorm += (*decGrad)(i, j) * (*decGrad)(i, j);
-        embGradNorm = std::sqrt(embGradNorm);
-        
-        float maxEmbGradNorm = 5.0f; // Increased from 1.0f for more stable training
-        if (embGradNorm > maxEmbGradNorm) {
-            float scale = maxEmbGradNorm / embGradNorm;
-            for (int i = 0; i < decGrad->rows; ++i)
-                for (int j = 0; j < decGrad->cols; ++j)
-                    (*decGrad)(i, j) *= scale;
-            embGradNorm = maxEmbGradNorm;
-        }
-        
         m_Embedder->backward(inputTokens, decGrad, learningRate);
-        //std::cout << "[LOG] Embedding grad norm (approx): " << embGradNorm << std::endl;
     }
 
     int GPTransformer::predictToken(std::shared_ptr<Matrix> probabilities) {

@@ -206,13 +206,13 @@ namespace NNGL {
         m_Dirty = false; // Mark as clean
         
         // Log GPU upload information
-        LOG("[GPU UPLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) + 
+        LOG_TRACE("[GPU UPLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) + 
             " (" + std::to_string(byteSize()) + " bytes) uploaded to GPU buffer " + std::to_string(buffer));
     }
 
     void Matrix::downloadFromGPU() {
         if (buffer == 0) {
-            LOG("[GPU DOWNLOAD] Skipped - no GPU buffer allocated");
+            LOG_DEBUG("[GPU DOWNLOAD] Skipped - no GPU buffer allocated");
             return;
         }
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer);
@@ -220,7 +220,7 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         
         // Log GPU download information
-        LOG("[GPU DOWNLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) +
+        LOG_DEBUG("[GPU DOWNLOAD] Matrix " + std::to_string(rows) + "x" + std::to_string(cols) +
             " (" + std::to_string(byteSize()) + " bytes) downloaded from GPU buffer " + std::to_string(buffer));
     }
 

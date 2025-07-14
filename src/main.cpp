@@ -1090,7 +1090,7 @@ void runAllUnitTests() {
     testAttentionBlockClass();
     testLayerNormClass();
     testDecoderBlockClass();
-    test_embeddingblock_gpu_update(); // Register new embedding GPU test
+    test_embeddingblock_gpu_update();
     test_positional_encoding();
     testDecoderBlockBackward();
     
@@ -1190,6 +1190,8 @@ void gptransformer_simplified() {
         std::string s(1, c);
         bpe->addToken(s);
     }
+    bpe->addToken(" ");
+
     for (int iteration = 0; iteration < 10; ++iteration) {
         bpe->trainFromString(single_example, true);
     }
@@ -1244,16 +1246,16 @@ void gptransformer_simplified() {
             float avg_loss = total_loss / num_tokens;
             
             // Test with partial sentences
-            std::string pred1 = gpt->eval("hello");
-            std::string pred2 = gpt->eval("hello w");
-            std::string pred3 = gpt->eval("h");
+            std::string pred1 = gpt->eval("transformer");
+            std::string pred2 = gpt->eval("world of");
+            std::string pred3 = gpt->eval("hello neural");
             
             std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
                       << " | LR = " << std::fixed << std::setprecision(6) << learning_rate 
                       << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss << std::endl;
-            std::cout << "  'hello' -> '" << pred1 << "'" << std::endl;
-            std::cout << "  'hello w' -> '" << pred2 << "'" << std::endl;
-            std::cout << "  'h' -> '" << pred3 << "'" << std::endl;
+            std::cout << "  'transformer' -> '" << pred1 << "'" << std::endl;
+            std::cout << "  'world of' -> '" << pred2 << "'" << std::endl;
+            std::cout << "  'hello neural' -> '" << pred3 << "'" << std::endl;
             
             // Additional debugging info
             if (epoch == 0 || (epoch + 1) % 100 == 0) {
@@ -1294,10 +1296,9 @@ void gptransformer_simplified() {
     
     // Test with various partial inputs
     std::cout << "Final predictions:" << std::endl;
-    std::cout << "  'hello' -> '" << gpt->eval("hello") << "'" << std::endl;
-    std::cout << "  'hello w' -> '" << gpt->eval("hello w") << "'" << std::endl;
-    std::cout << "  'h' -> '" << gpt->eval("h") << "'" << std::endl;
-    std::cout << "  'hello world' -> '" << gpt->eval("hello world") << "'" << std::endl;
+    std::cout << "  'transformer' -> '" << gpt->eval("transformer") << "'" << std::endl;
+    std::cout << "  'world of' -> '" << gpt->eval("world of") << "'" << std::endl;
+    std::cout << "  'hello neural' -> '" << gpt->eval("hello neural") << "'" << std::endl;
     
     // Training summary
     std::cout << "\n=== Training Summary ===" << std::endl;
@@ -1318,10 +1319,10 @@ int main(int argc, char** argv) {
     srand(time(nullptr));
  
     NNGL::Logger::getInstance().setLogLevel(NNGL::LogLevel::LL_INFO);
-    NNGL::Logger::getInstance().setEnabled(false);
+    NNGL::Logger::getInstance().setEnabled(true);
 
     // Initialize GLFW
-    if (!glfwInit()) { std::cerr << "GLFW initialization failed!" << std::endl; return -1; }
+    if (!glfwInit()) { LOG_ERROR("GLFW initialization failed!"); return -1; }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -1330,40 +1331,36 @@ int main(int argc, char** argv) {
 
     GLFWwindow* window = glfwCreateWindow(1, 1, "NN Compute", nullptr, nullptr);
     if (!window) {
-        std::cerr << "GLFW window creation failed!" << std::endl;
+        LOG_ERROR("GLFW window creation failed!");
         glfwTerminate();
         return -1;
     }
 
     glfwMakeContextCurrent(window);
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { std::cerr << "Failed to initialize GLAD!" << std::endl; return -1; }
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { LOG_ERROR("Failed to initialize GLAD!"); return -1; }
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    
     int choice = 1; // Change this to test different functions
+
     switch (choice) {
         case 0:
-            std::cout << "\n" << std::string(60, '=') << std::endl;
-            std::cout << "RUNNING DIGIT RECOGN" << std::endl;
-            std::cout << std::string(60, '=') << std::endl;
+            LOG_INFO("");
+            LOG_INFO("RUNNING DIGIT RECOGN");
+            LOG_INFO(std::string(60, '='));
             digit_recognition();
             break;
 
         case 1:
-            std::cout << "\n" << std::string(60, '=') << std::endl;
-            std::cout << "RUNNING GPT TRANSLATION" << std::endl;
-            std::cout << std::string(60, '=') << std::endl;
+            LOG_INFO("");
+            LOG_INFO("RUNNING GPT TRANSLATION");
+            LOG_INFO(std::string(60, '='));
             gptransformer_simplified();
             break;
         default:
-            std::cout << "Invalid choice, running simple EOS prediction..." << std::endl;
+            LOG_ERROR("Invalid choice, running simple EOS prediction...");
             gptransformer_simplified();
             break;
     }
-    
-    //transformer();
-
-    std::cout << "Goodbye!" << std::endl;
 
     glfwDestroyWindow(window);
     glfwTerminate();
