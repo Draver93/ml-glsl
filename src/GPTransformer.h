@@ -52,7 +52,7 @@ namespace NNGL {
         void backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate);
         std::unique_ptr<BPE> m_Tokenizer;
         std::unique_ptr<EmbeddingBlock> m_Embedder;
-        std::unique_ptr<DecoderOnlyBlock> m_Decoder;  // Changed from DecoderBlock to DecoderOnlyBlock
+        std::unique_ptr<DecoderBlock> m_Decoder; 
         std::unique_ptr<NeuralNetwork> m_OutputProjection;
         int m_VocabSize;
         int m_SeqLen;

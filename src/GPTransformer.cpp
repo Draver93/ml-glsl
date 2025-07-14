@@ -20,7 +20,7 @@ namespace NNGL {
         m_VocabSize = m_Tokenizer->getVocabSize();
 
         m_Embedder = std::make_unique<EmbeddingBlock>(m_VocabSize, modelDim, seqLen);
-        m_Decoder = std::make_unique<DecoderOnlyBlock>(modelDim, hiddenDim, seqLen);
+        m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
 
