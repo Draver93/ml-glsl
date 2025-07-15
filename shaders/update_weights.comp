@@ -12,10 +12,11 @@ layout(std430) restrict buffer ADAM_VBuffer { float adam_v[]; };
 uniform int input_size;
 uniform int output_size;
 uniform int batch_size;
+
+uniform float learning_rate;
 uniform float ADAM_beta1;
 uniform float ADAM_beta2;
 uniform int ADAM_timestep;
-uniform float learning_rate;
 
 const float epsilon = 1e-8;
 
@@ -54,6 +55,4 @@ void main() {
     
     // NaN/Inf protection
     if (isnan(weights[weight_idx]) || isinf(weights[weight_idx])) weights[weight_idx] = 0.0;
-    
-    //weights[weight_idx] -= learning_rate * weight_gradient; // SGD alternative
 }

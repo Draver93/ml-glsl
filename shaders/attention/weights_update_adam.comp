@@ -8,6 +8,7 @@ layout(std430) buffer ADAM_V { float adam_v[]; };                    // [input_d
 
 uniform int input_dim;
 uniform int head_dim;
+
 uniform float learning_rate;
 uniform float ADAM_beta1;
 uniform float ADAM_beta2;
@@ -30,6 +31,11 @@ void main() {
     float m_hat = adam_m[weight_idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
     float v_hat = adam_v[weight_idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
 
-    // ADAM update: weight = weight - learning_rate * m_hat / (sqrt(v_hat) + epsilon)
-    weight[weight_idx] -= learning_rate * m_hat / (sqrt(v_hat) + epsilon);
+    v_hat = max(v_hat, epsilon); // Prevent sqrt of zero or negative
+    float denom = sqrt(v_hat) + epsilon;
+    if (denom == 0.0) denom = epsilon;
+    weight[weight_idx] -= learning_rate * m_hat / denom;
+
+    // NaN/Inf protection
+    if (isnan(weight[weight_idx]) || isinf(weight[weight_idx])) weight[weight_idx] = 0.0;
 } 

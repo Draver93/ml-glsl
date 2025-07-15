@@ -1113,9 +1113,9 @@ void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
-    int d_model = 128;  // Increased for complex text
+    int d_model = 256;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 32;   // Longer sequence for complex text
+    int seq_len = 64;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1157,9 +1157,9 @@ void gptransformer_simplified() {
     // Precompute tokenized prefixes for eval
     std::vector<std::pair<std::string, std::string>> eval_prompts;
     std::vector<std::string> test_queries = {
-        "What color of apple number one",
-        "What color of apple number two",
-        "What color of apple number three"
+        "What color of apple number one ",
+        "What color of apple number two ",
+        "What color of apple number three "
     };
     for (const auto& query : test_queries) {
         std::vector<std::string> tokens = bpe->tokenizeInput(query.c_str(), query.size());
@@ -1194,15 +1194,14 @@ void gptransformer_simplified() {
 
     std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
     int epochs = 1000000;
-    float initial_learning_rate = 0.01f; // Reduced for more stable learning
+    float initial_learning_rate = 0.0001f; // Reduced for more stable learning
     
     // Early stopping variables
-    float best_loss = std::numeric_limits<float>::infinity();
     int epochs_without_improvement = 0;
     
     // Training loop: train on each sentence independently
     for (int epoch = 0; epoch < epochs; ++epoch) {
-        float learning_rate = initial_learning_rate * std::pow(0.98f, epoch / 200.0f);
+        float learning_rate = initial_learning_rate * std::pow(0.98f, epoch / (epochs / 100.0f));
         float total_loss = 0.0f;
         int num_tokens = 0;
         for (const auto& sentence : training_data) {
@@ -1221,8 +1220,7 @@ void gptransformer_simplified() {
         if ((epoch + 1) % 10 == 0 || epoch == 0) {
             float avg_loss = total_loss / num_tokens;
             std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
-                      << " | LR = " << std::fixed << std::setprecision(6) << learning_rate 
-                      << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss << std::endl;
+                      << " | LR = " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
             for (const auto& eval_pair : eval_prompts) {
                 std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
             }
