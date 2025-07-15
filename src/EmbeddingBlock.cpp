@@ -275,11 +275,6 @@ namespace NNGL {
         m_PositionalEncodingMat->uploadToGPU();
     }
 
-    void EmbeddingBlock::initializeADAMBuffers(const std::string& token) {
-        // This function is no longer needed as Adam is removed.
-        // Keeping it for now in case it's called from elsewhere, but it will be empty.
-    }
-
     void EmbeddingBlock::printEmbeddingStats() const {
         std::cout << "=== Embedding Statistics ===" << std::endl;
         std::cout << "Vocabulary size: " << m_Embeddings.size() << std::endl;

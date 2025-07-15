@@ -1109,69 +1109,13 @@ void runAllUnitTests() {
     LOG_INFO("GPU state reset completed");
 }
 
-void transformer() {
-    //d_model	256–512
-    //vocab_size	10000–20000
-    //seq_len	64–256(max ~512)
-    //batch size	1–4
-    //# heads	4–8
-    //layers	2–6
-
-    int d_model = 256;  // Must be divisible by num_heads (8)
-    int d_hidden = d_model * 4;
-    int seq_len = 64;
-
-    std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
-    std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(1024 * 10);
-    //bytePairEnc->trainFromFiles(filenames);
-    //bytePairEnc->reduceVocab(50000);
-    //bytePairEnc->save("bpe.checkpoint");
-    bytePairEnc->load("bpe.checkpoint");
-    std::string test = "the quick brown fox jumps over the lazy dog";
-
-
-    std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
-    std::vector<std::string> dec_tokens = { "<SOS>" };
-
-    std::shared_ptr<NNGL::GPTransformer> transformer = std::make_shared<NNGL::GPTransformer>( "bpe.checkpoint", d_model, d_hidden, seq_len );
-
-
-    auto trainFromFile = [&](const std::string& filename) {
-        std::ifstream infile(filename);
-        if (!infile.is_open()) {
-            std::cerr << "Error opening file: " << filename << std::endl;
-            return;
-        }
-
-        std::string line;
-        while (std::getline(infile, line)) {
-            resetCursor();
-            transformer->train(line, 0.001f);
-        }
-
-        infile.close();
-    };
-    trainFromFile("pg76287.txt");
-
-    while (true) {
-        std::string next_token = transformer->eval(test);
-
-        test.append(next_token);
-        // Stop condition (optional)
-        if (next_token == "<EOS>") break;
-
-        // Print/debug generated tokens
-        std::cout << next_token << ' ';
-    }
-}
-
 void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
     int d_model = 128;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 64;   // Longer sequence for complex text
+    int seq_len = 32;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1202,30 +1146,29 @@ void gptransformer_simplified() {
     bpe->load(bpe_file);
 
 
-        // Overfit on 10 different sentences
+        // Overfit on apple-color association and QA sentences
     std::vector<std::string> training_data = {
-            "hello world!",
-            "hello neural network.",
-            "hello transformer!",
-            "world of networks.",
-            "transformer world.",
-            "deep learning is fun.",
-            "attention is all you need.",
-            "sequence to sequence models.",
-            "natural language processing.",
-            "machine learning rocks!"
-        };
+        "Apple number one has color red",
+        "Apple number two has color green",
+        "Apple number three has color yellow",
+        "What color of apple number one It's red",
+        "What color of apple number two It's green"
+    };
     // Precompute tokenized prefixes for eval
-    std::vector<std::pair<std::string, std::string>> eval_prompts; // (display, prompt)
-    for (const auto& sentence : training_data) {
-        std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+    std::vector<std::pair<std::string, std::string>> eval_prompts;
+    std::vector<std::string> test_queries = {
+        "What color of apple number one",
+        "What color of apple number two",
+        "What color of apple number three"
+    };
+    for (const auto& query : test_queries) {
+        std::vector<std::string> tokens = bpe->tokenizeInput(query.c_str(), query.size());
         tokens.insert(tokens.begin(), "<SOS>");
-
         std::string prompt;
         std::string display;
-        for (size_t i = 0; i < tokens.size() / 2; ++i) {
-            prompt += tokens[i];
-            display += "'" + tokens[i] + "' ";
+        for (const auto& t : tokens) {
+            prompt += t;
+            display += "'" + t + "' ";
         }
         eval_prompts.emplace_back(display, prompt);
     }
@@ -1251,41 +1194,39 @@ void gptransformer_simplified() {
 
     std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
     int epochs = 1000000;
-    float initial_learning_rate = 0.00001f; // Reduced for more stable learning
+    float initial_learning_rate = 0.01f; // Reduced for more stable learning
     
     // Early stopping variables
     float best_loss = std::numeric_limits<float>::infinity();
     int epochs_without_improvement = 0;
     
+    // Training loop: train on each sentence independently
     for (int epoch = 0; epoch < epochs; ++epoch) {
-        // Learning rate scheduling - less aggressive decay
-        float learning_rate = initial_learning_rate * std::pow(0.99f, epoch / 200.0f);
-        
+        float learning_rate = initial_learning_rate * std::pow(0.98f, epoch / 200.0f);
         float total_loss = 0.0f;
         int num_tokens = 0;
-        
-        // Train on next-token prediction for each position in the sequence
-        for (size_t i = 1; i < sequence.size(); ++i) {
-            std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
-            std::string target = sequence[i];
-            float loss = gpt->trainNextToken(context, target, learning_rate);
-            total_loss += loss;
-            num_tokens++;
+        for (const auto& sentence : training_data) {
+            std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+            tokens.insert(tokens.begin(), "<SOS>");
+            tokens.push_back("<EOS>");
+            for (size_t i = 1; i < tokens.size(); ++i) {
+                std::vector<std::string> context(tokens.begin(), tokens.begin() + i);
+                std::string target = tokens[i];
+                float loss = gpt->trainNextToken(context, target, learning_rate);
+                total_loss += loss;
+                num_tokens++;
+            }
         }
-        
         // Print progress every 10 epochs
         if ((epoch + 1) % 10 == 0 || epoch == 0) {
             float avg_loss = total_loss / num_tokens;
             std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
                       << " | LR = " << std::fixed << std::setprecision(6) << learning_rate 
                       << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss << std::endl;
-            // Show predictions for the start of each sentence using tokenized prefixes
             for (const auto& eval_pair : eval_prompts) {
                 std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
             }
-            // Additional debugging info
             if (epoch == 0 || (epoch + 1) % 100 == 0) {
-                std::cout << "  Training sequence length: " << sequence.size() << " tokens" << std::endl;
                 std::cout << "  Number of training examples per epoch: " << num_tokens << std::endl;
                 std::cout << "  Loss history size: " << gpt->getLossHistory().size() << std::endl;
                 if (!gpt->getLossHistory().empty()) {
@@ -1296,24 +1237,7 @@ void gptransformer_simplified() {
                 }
             }
         }
-        
-        // Early stopping if loss hasn't improved for a while
-        float current_avg_loss = total_loss / num_tokens;
-        
-        if (current_avg_loss < best_loss) {
-            best_loss = current_avg_loss;
-            epochs_without_improvement = 0;
-        } else {
-            epochs_without_improvement++;
-        }
-        
-        if (epochs_without_improvement > 200) {
-            std::cout << "Early stopping at epoch " << (epoch + 1) << " due to no improvement for 200 epochs!" << std::endl;
-            break;
-        }
     }
-    std::cout << "\n=== Overfit Test Complete ===" << std::endl;
-
     
     // Test with various partial inputs
     std::cout << "Final predictions:" << std::endl;

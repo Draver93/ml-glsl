@@ -339,13 +339,11 @@ namespace NNGL {
         int padTokenId = getPadTokenId();
         
         // Find the first padding token to determine actual sequence length
-        len = tokenIds.size(); // Default to full length
+        len = 0; // Default to full length
         for (size_t i = 0; i < tokenIds.size(); ++i) {
             if (tokenIds[i] != padTokenId) {
                 mask[i] = 1; // Mark as valid token
-            } else {
-                len = i; // Found first padding token
-                break;
+                len++;
             }
         }
         

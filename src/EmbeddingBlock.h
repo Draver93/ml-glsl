@@ -37,7 +37,6 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_CachedOutput; // Cached output matrix for forward()
 
         void initializePositionalEncoding();
-        void initializeADAMBuffers(const std::string& token);
         std::vector<int> getTokenIndices(const std::vector<std::string>& tokens) const;
 
     public:
