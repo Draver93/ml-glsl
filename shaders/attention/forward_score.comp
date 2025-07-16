@@ -1,8 +1,8 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) readonly buffer BufferQ { float Q[]; };         // [seq_len, model_dim]
-layout(std430) readonly buffer BufferK { float K[]; };         // [seq_len, model_dim]
+layout(std430) readonly buffer BufferQ { float Q[]; };         // [model_dim, seq_len]
+layout(std430) readonly buffer BufferK { float K[]; };         // [model_dim, seq_len]
 layout(std430) writeonly buffer RawScores { float scores[]; }; // [num_heads * seq_len, seq_len]
 
 uniform int seq_len;
@@ -44,14 +44,14 @@ void main() {
     // Compute attention scores for each attention head
     for (int head = 0; head < num_heads; head++) {
         // Compute dot product: Q[query_pos, head] @ K[key_pos, head]
-        // Column-major indexing for Q and K: [head_dimension * seq_len + sequence_position]
+        // Row-major indexing for Q and K: [seq_pos * model_dim + head_dim_idx]
         float score = 0.0;
         for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
-            // Q indexing: [head * head_dim + head_dim_idx] * seq_len + query_pos
-            uint q_col_major_idx = (head * head_dim + head_dim_idx) * seq_len + int(query_pos);
-            // K indexing: [head * head_dim + head_dim_idx] * seq_len + key_pos
-            uint k_col_major_idx = (head * head_dim + head_dim_idx) * seq_len + int(key_pos);
-            score += Q[q_col_major_idx] * K[k_col_major_idx];
+            // Q indexing: [query_pos * model_dim + head * head_dim + head_dim_idx]
+            uint q_row_major_idx = query_pos * (num_heads * head_dim) + head * head_dim + head_dim_idx;
+            // K indexing: [key_pos * model_dim + head * head_dim + head_dim_idx]
+            uint k_row_major_idx = key_pos * (num_heads * head_dim) + head * head_dim + head_dim_idx;
+            score += Q[q_row_major_idx] * K[k_row_major_idx];
         }
         
         // Scale by 1/sqrt(head_dim) for stable attention

@@ -26,10 +26,8 @@ namespace NNGL {
         float trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate);
         std::string eval(const std::string& inputText);
 
-        void resetPadTokenEmbedding();
         float calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode = LossMode::CrossEntropy);
         void resetTrainingStats();
-        int sampleTokenWithTemperature(std::shared_ptr<Matrix> logits, float temperature);
         int predictToken(std::shared_ptr<Matrix> probabilities);
         std::vector<int> stringToTokenIds(const std::vector<std::string>& tokens);
         std::vector<std::string> tokenIdsToStrings(const std::vector<int>& tokenIds);

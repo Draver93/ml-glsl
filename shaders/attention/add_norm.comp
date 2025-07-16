@@ -3,14 +3,14 @@
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 // Main input buffer (e.g., output of sublayer)
-layout(std430) readonly buffer InputA { float input_a[]; }; // [seq_len, model_dim]
+layout(std430) readonly buffer InputA { float input_a[]; }; // [model_dim, seq_len]
 // Residual input buffer (e.g., skip connection)
-layout(std430) readonly buffer InputB { float input_b[]; }; // [seq_len, model_dim]
+layout(std430) readonly buffer InputB { float input_b[]; }; // [model_dim, seq_len]
 // Learnable scale (gamma) and shift (beta) parameters
 layout(std430) readonly buffer Gamma { float gamma[]; };    // [model_dim]
 layout(std430) readonly buffer Beta { float beta[]; };      // [model_dim]
 // Output buffer
-layout(std430) writeonly buffer Output { float output_buffer[]; }; // [seq_len, model_dim]
+layout(std430) writeonly buffer Output { float output_buffer[]; }; // [model_dim, seq_len]
 
 uniform int seq_len;
 uniform int model_dim;
@@ -26,18 +26,17 @@ void main() {
 
     // First pass: compute mean across all dimensions for this sequence position
     for (int dim = 0; dim < model_dim; dim++) {
-        // Column-major indexing: [dimension * seq_len + sequence_position]
-        // This accesses all sequence positions for a given dimension
-        uint col_major_idx = dim * seq_len + seq_pos;
-        float val = input_a[col_major_idx] + input_b[col_major_idx];
+        // Row-major indexing: [seq_pos * model_dim + dim]
+        uint row_major_idx = seq_pos * model_dim + dim;
+        float val = input_a[row_major_idx] + input_b[row_major_idx];
         mean += val;
     }
     mean /= float(model_dim);
 
     // Second pass: compute variance across all dimensions for this sequence position
     for (int dim = 0; dim < model_dim; dim++) {
-        uint col_major_idx = dim * seq_len + seq_pos;
-        float val = input_a[col_major_idx] + input_b[col_major_idx];
+        uint row_major_idx = seq_pos * model_dim + dim;
+        float val = input_a[row_major_idx] + input_b[row_major_idx];
         float diff = val - mean;
         variance += diff * diff;
     }
@@ -46,9 +45,9 @@ void main() {
 
     // Third pass: normalize, scale, shift, and write output
     for (int dim = 0; dim < model_dim; dim++) {
-        uint col_major_idx = dim * seq_len + seq_pos;
-        float val = input_a[col_major_idx] + input_b[col_major_idx];
+        uint row_major_idx = seq_pos * model_dim + dim;
+        float val = input_a[row_major_idx] + input_b[row_major_idx];
         float norm = (val - mean) / stddev;
-        output_buffer[col_major_idx] = gamma[dim] * norm + beta[dim];
+        output_buffer[row_major_idx] = gamma[dim] * norm + beta[dim];
     }
 } 

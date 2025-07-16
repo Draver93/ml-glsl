@@ -2,14 +2,14 @@
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430) readonly buffer GradOutput { float grad_output[]; }; // [seq_len, model_dim]
-layout(std430) readonly buffer InputA { float input_a[]; };         // [seq_len, model_dim]
-layout(std430) readonly buffer InputB { float input_b[]; };         // [seq_len, model_dim]
+layout(std430) readonly buffer GradOutput { float grad_output[]; }; // [model_dim, seq_len]
+layout(std430) readonly buffer InputA { float input_a[]; };         // [model_dim, seq_len]
+layout(std430) readonly buffer InputB { float input_b[]; };         // [model_dim, seq_len]
 layout(std430) readonly buffer Gamma { float gamma[]; };            // [model_dim]
 layout(std430) readonly buffer Beta { float beta[]; };              // [model_dim]
 
-layout(std430) buffer GradInputA { float grad_input_a[]; }; // [seq_len, model_dim]
-layout(std430) buffer GradInputB { float grad_input_b[]; }; // [seq_len, model_dim]
+layout(std430) buffer GradInputA { float grad_input_a[]; }; // [model_dim, seq_len]
+layout(std430) buffer GradInputB { float grad_input_b[]; }; // [model_dim, seq_len]
 layout(std430) buffer GradGamma { float grad_gamma[]; };    // [model_dim * seq_len]
 layout(std430) buffer GradBeta { float grad_beta[]; };      // [model_dim * seq_len]
 
@@ -24,7 +24,7 @@ void main() {
     // Compute mean
     float mean = 0.0;
     for (int dim = 0; dim < model_dim; dim++) {
-        uint idx = dim * seq_len + seq_pos;
+        uint idx = seq_pos * model_dim + dim;
         mean += input_a[idx] + input_b[idx];
     }
     mean /= float(model_dim);
@@ -32,7 +32,7 @@ void main() {
     // Compute variance
     float variance = 0.0;
     for (int dim = 0; dim < model_dim; dim++) {
-        uint idx = dim * seq_len + seq_pos;
+        uint idx = seq_pos * model_dim + dim;
         float val = input_a[idx] + input_b[idx];
         float diff = val - mean;
         variance += diff * diff;
@@ -42,20 +42,24 @@ void main() {
 
     // Compute gradients for each dimension at this sequence position
     for (int dim = 0; dim < model_dim; dim++) {
-        uint idx = dim * seq_len + seq_pos;
+        uint idx = seq_pos * model_dim + dim;
         float val = input_a[idx] + input_b[idx];
         float norm = (val - mean) / stddev;
         float dy = grad_output[idx];
         float g = gamma[dim];
-
-        // Write per-position gradients (row-major)
-        grad_gamma[seq_pos * model_dim + dim] = dy * norm;
-        grad_beta[seq_pos * model_dim + dim] = dy;
-
-        // Input gradients (simple version: norm_gradient / stddev)
-        float norm_gradient = dy * g;
-        float val_gradient = norm_gradient / stddev;
-        grad_input_a[idx] = val_gradient;
-        grad_input_b[idx] = val_gradient;
+        
+        // Gradient w.r.t. normalized value
+        float dnorm = dy * g;
+        
+        // Gradient w.r.t. input (both A and B get the same gradient)
+        float dval = dnorm / stddev;
+        grad_input_a[idx] = dval;
+        grad_input_b[idx] = dval;
+        
+        // Gradient w.r.t. gamma
+        grad_gamma[dim * seq_len + seq_pos] = dy * norm;
+        
+        // Gradient w.r.t. beta
+        grad_beta[dim * seq_len + seq_pos] = dy;
     }
 } 

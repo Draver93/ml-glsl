@@ -177,9 +177,6 @@ namespace NNGL {
         return result;
     }
 
-    void GPTransformer::resetPadTokenEmbedding() {
-        m_Embedder->resetPadTokenEmbedding();
-    }
 
     float GPTransformer::calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode) {
         if (std::isnan((*logits)(0, 0))) throw std::runtime_error("logits is nan(");

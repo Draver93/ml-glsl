@@ -2,14 +2,15 @@
 layout(local_size_x = 32) in;
 
 layout(std430) readonly buffer GradScores { float grad_scores[]; };  // [seq_len, seq_len]
-layout(std430) readonly buffer CachedQ { float cached_q[]; };        // [seq_len, head_dim]
-layout(std430) readonly buffer CachedK { float cached_k[]; };        // [seq_len, head_dim]
+layout(std430) readonly buffer CachedQ { float cached_q[]; };        // [model_dim, seq_len]
+layout(std430) readonly buffer CachedK { float cached_k[]; };        // [model_dim, seq_len]
 
-layout(std430) writeonly buffer GradQ { float grad_q[]; };           // [seq_len, head_dim]
-layout(std430) writeonly buffer GradK { float grad_k[]; };           // [seq_len, head_dim]
+layout(std430) writeonly buffer GradQ { float grad_q[]; };           // [model_dim, seq_len]
+layout(std430) writeonly buffer GradK { float grad_k[]; };           // [model_dim, seq_len]
 
 uniform int seq_len;
 uniform int head_dim;
+uniform int num_heads;
 uniform float inv_sqrt_head_dim;
 
 void main() {
@@ -25,24 +26,24 @@ void main() {
     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
         // grad_scores indexing: [query_pos * seq_len + key_pos]
         uint grad_scores_idx = seq_pos * seq_len + key_pos;
-        // cached_k indexing: [head_dimension * seq_len + sequence_position]
-        uint cached_k_col_major_idx = head_dim_idx * seq_len + key_pos;
-        grad_q_val += grad_scores[grad_scores_idx] * cached_k[cached_k_col_major_idx];
+        // cached_k indexing: [key_pos * model_dim + head * head_dim + head_dim_idx]
+        uint cached_k_row_major_idx = key_pos * (num_heads * head_dim) + head_dim_idx;
+        grad_q_val += grad_scores[grad_scores_idx] * cached_k[cached_k_row_major_idx];
     }
-    // Store Q gradient with column-major indexing: [head_dimension * seq_len + sequence_position]
-    uint grad_q_col_major_idx = head_dim_idx * seq_len + seq_pos;
-    grad_q[grad_q_col_major_idx] = grad_q_val * inv_sqrt_head_dim;
+    // Store Q gradient with row-major indexing: [seq_pos * model_dim + head_dim_idx]
+    uint grad_q_row_major_idx = seq_pos * (num_heads * head_dim) + head_dim_idx;
+    grad_q[grad_q_row_major_idx] = grad_q_val * inv_sqrt_head_dim;
     
     // Compute gradient w.r.t. K: grad_K = grad_scores^T @ Q
     float grad_k_val = 0.0;
     for (int query_pos = 0; query_pos < seq_len; query_pos++) {
-        // grad_scores indexing: [query_pos * seq_len + key_pos] (key_pos = seq_pos)
-        uint grad_scores_idx = query_pos * seq_len + seq_pos;
-        // cached_q indexing: [head_dimension * seq_len + sequence_position]
-        uint cached_q_col_major_idx = head_dim_idx * seq_len + query_pos;
-        grad_k_val += grad_scores[grad_scores_idx] * cached_q[cached_q_col_major_idx];
+        // grad_scores^T indexing: [key_pos * seq_len + query_pos] = grad_scores[query_pos * seq_len + key_pos]
+        uint grad_scores_transpose_idx = seq_pos * seq_len + query_pos;
+        // cached_q indexing: [query_pos * model_dim + head_dim_idx]
+        uint cached_q_row_major_idx = query_pos * (num_heads * head_dim) + head_dim_idx;
+        grad_k_val += grad_scores[grad_scores_transpose_idx] * cached_q[cached_q_row_major_idx];
     }
-    // Store K gradient with column-major indexing: [head_dimension * seq_len + sequence_position]
-    uint grad_k_col_major_idx = head_dim_idx * seq_len + seq_pos;
-    grad_k[grad_k_col_major_idx] = grad_k_val * inv_sqrt_head_dim;
+    // Store K gradient with row-major indexing: [seq_pos * model_dim + head_dim_idx]
+    uint grad_k_row_major_idx = seq_pos * (num_heads * head_dim) + head_dim_idx;
+    grad_k[grad_k_row_major_idx] = grad_k_val * inv_sqrt_head_dim;
 }

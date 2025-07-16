@@ -44,21 +44,21 @@ namespace NNGL {
         m_ADAM_V_ValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0.0f);
 
         // Initialize output matrices for Q, K, V projections
-        m_OutQueryMat = std::make_shared<Matrix>(seqLen, modelDimensions);
-        m_OutKeyMat = std::make_shared<Matrix>(seqLen, modelDimensions);
-        m_OutValueMat = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_OutQueryMat = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_OutKeyMat = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_OutValueMat = std::make_shared<Matrix>(modelDimensions, seqLen);
 
         // Initialize gradient matrices for Q, K, V projections
-        m_GradQueryInputMat = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
-        m_GradKeyInputMat = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
-        m_GradValueInputMat = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradQueryInputMat = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_GradKeyInputMat = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_GradValueInputMat = std::make_shared<Matrix>(modelDimensions, seqLen);
 
         // Cached forward pass values for backprop
-        m_CachedInput = std::make_shared<Matrix>(seqLen, modelDimensions);
-        m_CachedContext = std::make_shared<Matrix>(seqLen, modelDimensions);
-        m_CachedQ = std::make_shared<Matrix>(seqLen, modelDimensions);
-        m_CachedK = std::make_shared<Matrix>(seqLen, modelDimensions);
-        m_CachedV = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_CachedInput = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_CachedContext = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_CachedQ = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_CachedK = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_CachedV = std::make_shared<Matrix>(modelDimensions, seqLen);
         m_CachedQ->uploadToGPU();
         m_CachedK->uploadToGPU();
         m_CachedV->uploadToGPU();
@@ -70,8 +70,8 @@ namespace NNGL {
         m_CachedAttentionWeights->uploadToGPU();
 
         // Input gradients
-        m_GradInput = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
-        m_GradContext = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradInput = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_GradContext = std::make_shared<Matrix>(modelDimensions, seqLen);
 
         // Weight gradients
         m_GradWeightQueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0);
@@ -79,14 +79,14 @@ namespace NNGL {
         m_GradWeightValueMat = std::make_shared<Matrix>(modelDimensions, modelDimensions, 0);
 
         // Intermediate gradients for backprop chain
-        m_GradQ = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
-        m_GradK = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
-        m_GradV = std::make_shared<Matrix>(seqLen, modelDimensions, 0);
+        m_GradQ = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_GradK = std::make_shared<Matrix>(modelDimensions, seqLen);
+        m_GradV = std::make_shared<Matrix>(modelDimensions, seqLen);
         m_GradScores = std::make_shared<Matrix>(numHeads * seqLen, seqLen, 0);
         m_GradAttentionWeights = std::make_shared<Matrix>(numHeads * seqLen, seqLen, 0);
 
         // Output matrix: [seq_len, model_dim] (concatenated heads)
-        m_OutputMat = std::make_shared<Matrix>(seqLen, modelDimensions);
+        m_OutputMat = std::make_shared<Matrix>(modelDimensions, seqLen);
         m_OutputMat->uploadToGPU();
 
         // Load shaders
@@ -265,7 +265,7 @@ namespace NNGL {
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& context, float learningRate ) {
         NNGL::Timer timer("AttentionBlock::backward");
         gradOutput->uploadToGPU();
-        const int inputDim = gradOutput->cols;
+        const int inputDim = gradOutput->rows;
         
         if (!m_PaddingMask.empty()) {
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
@@ -366,7 +366,7 @@ namespace NNGL {
             m_GradWeightKeyMat->downloadFromGPU();
         }
         else {
-            auto tempGradInput = std::make_shared<Matrix>(m_SeqLen, inputDim, 0);
+            auto tempGradInput = std::make_shared<Matrix>(inputDim, m_SeqLen, 0);
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 tempGradInput, m_GradWeightKeyMat);
             m_GradWeightKeyMat->downloadFromGPU();
@@ -375,14 +375,14 @@ namespace NNGL {
 
         // Value gradients (from input or context)
         if (context) {
-            auto tempGradContext = std::make_shared<Matrix>(m_SeqLen, inputDim, 0);
+            auto tempGradContext = std::make_shared<Matrix>(inputDim, m_SeqLen, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradContext, m_GradWeightValueMat);
             m_GradWeightValueMat->downloadFromGPU();
             m_GradContext->add(*tempGradContext);
         }
         else {
-            auto tempGradInput = std::make_shared<Matrix>(m_SeqLen, inputDim, 0);
+            auto tempGradInput = std::make_shared<Matrix>(inputDim, m_SeqLen, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradInput, m_GradWeightValueMat);
             m_GradWeightValueMat->downloadFromGPU();

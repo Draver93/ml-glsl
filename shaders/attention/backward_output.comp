@@ -1,15 +1,16 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) readonly buffer GradOutput { float grad_out[]; };             // [seq_len, head_dim]
-layout(std430) readonly buffer CachedV { float cached_v[]; };                // [seq_len, head_dim]
-layout(std430) readonly buffer CachedAttentionWeights { float cached_attn[]; }; // [seq_len, seq_len]
+layout(std430) readonly buffer GradOutput { float grad_out[]; };             // [model_dim, seq_len]
+layout(std430) readonly buffer CachedV { float cached_v[]; };                // [model_dim, seq_len]
+layout(std430) readonly buffer CachedAttentionWeights { float cached_attn[]; }; // [num_heads * seq_len, seq_len]
 
-layout(std430) writeonly buffer GradAttentionWeights { float grad_attn[]; };  // [seq_len, seq_len]
-layout(std430) writeonly buffer GradV { float grad_v[]; };                   // [seq_len, head_dim]
+layout(std430) writeonly buffer GradAttentionWeights { float grad_attn[]; };  // [num_heads * seq_len, seq_len]
+layout(std430) writeonly buffer GradV { float grad_v[]; };                   // [model_dim, seq_len]
 
 uniform int seq_len;
 uniform int head_dim;
+uniform int num_heads;
 
 void main() {
     uint seq_pos_i = gl_GlobalInvocationID.x;  // first sequence position
@@ -19,11 +20,11 @@ void main() {
     if (seq_pos_i < uint(seq_len) && seq_pos_j < uint(seq_len)) {
         float grad_weight = 0.0;
         for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
-            // grad_output indexing: [head_dimension * seq_len + sequence_position]
-            uint grad_out_col_major_idx = head_dim_idx * seq_len + seq_pos_i;
-            // cached_v indexing: [head_dimension * seq_len + sequence_position]
-            uint cached_v_col_major_idx = head_dim_idx * seq_len + seq_pos_j;
-            grad_weight += grad_out[grad_out_col_major_idx] * cached_v[cached_v_col_major_idx];
+            // grad_output indexing: [seq_pos_i * model_dim + head_dim_idx]
+            uint grad_out_row_major_idx = seq_pos_i * (num_heads * head_dim) + head_dim_idx;
+            // cached_v indexing: [seq_pos_j * model_dim + head_dim_idx]
+            uint cached_v_row_major_idx = seq_pos_j * (num_heads * head_dim) + head_dim_idx;
+            grad_weight += grad_out[grad_out_row_major_idx] * cached_v[cached_v_row_major_idx];
         }
         // Store attention weight gradient: [query_pos * seq_len + key_pos]
         uint grad_attn_idx = seq_pos_i * seq_len + seq_pos_j;
@@ -31,17 +32,19 @@ void main() {
     }
     
     // Compute gradient w.r.t. V: grad_V = attention_weights^T @ grad_output
-    if (seq_pos_i < uint(seq_len) && seq_pos_j < uint(head_dim)) {
-        float grad_val = 0.0;
-        for (int key_pos = 0; key_pos < seq_len; key_pos++) {
-            // cached_attn indexing: [query_pos * seq_len + key_pos]
-            uint cached_attn_idx = key_pos * seq_len + seq_pos_i;
-            // grad_output indexing: [head_dimension * seq_len + sequence_position]
-            uint grad_out_col_major_idx = seq_pos_j * seq_len + key_pos;
-            grad_val += cached_attn[cached_attn_idx] * grad_out[grad_out_col_major_idx];
+    if (seq_pos_i < uint(seq_len) && seq_pos_j < uint(seq_len)) {
+        for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
+            float grad_v_val = 0.0;
+            for (int query_pos = 0; query_pos < seq_len; query_pos++) {
+                // attention_weights^T indexing: [key_pos * seq_len + query_pos]
+                uint attn_transpose_idx = seq_pos_j * seq_len + query_pos;
+                // grad_output indexing: [query_pos * model_dim + head_dim_idx]
+                uint grad_out_row_major_idx = query_pos * (num_heads * head_dim) + head_dim_idx;
+                grad_v_val += cached_attn[attn_transpose_idx] * grad_out[grad_out_row_major_idx];
+            }
+            // Store V gradient with row-major indexing: [seq_pos_j * model_dim + head_dim_idx]
+            uint grad_v_row_major_idx = seq_pos_j * (num_heads * head_dim) + head_dim_idx;
+            grad_v[grad_v_row_major_idx] = grad_v_val;
         }
-        // Store V gradient with column-major indexing: [head_dimension * seq_len + sequence_position]
-        uint grad_v_col_major_idx = seq_pos_j * seq_len + seq_pos_i;
-        grad_v[grad_v_col_major_idx] = grad_val;
     }
 }

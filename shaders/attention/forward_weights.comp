@@ -1,15 +1,15 @@
 #version 430
 layout(local_size_x = 32) in;
 
-layout(std430) readonly buffer InputQ { float input_q[]; };     // [seq_len, input_dim]
-layout(std430) readonly buffer InputKV { float input_kv[]; };   // [seq_len, input_dim]
-layout(std430) readonly buffer WeightQ { float weight_q[]; };   // [input_dim, model_dim]
-layout(std430) readonly buffer WeightK { float weight_k[]; };   // [input_dim, model_dim]
-layout(std430) readonly buffer WeightV { float weight_v[]; };   // [input_dim, model_dim]
+layout(std430) readonly buffer InputQ { float input_q[]; };     // [model_dim, seq_len]
+layout(std430) readonly buffer InputKV { float input_kv[]; };   // [model_dim, seq_len]
+layout(std430) readonly buffer WeightQ { float weight_q[]; };   // [model_dim, model_dim]
+layout(std430) readonly buffer WeightK { float weight_k[]; };   // [model_dim, model_dim]
+layout(std430) readonly buffer WeightV { float weight_v[]; };   // [model_dim, model_dim]
 
-layout(std430) writeonly buffer OutputQ { float output_q[]; };  // [seq_len, model_dim]
-layout(std430) writeonly buffer OutputK { float output_k[]; };  // [seq_len, model_dim]
-layout(std430) writeonly buffer OutputV { float output_v[]; };  // [seq_len, model_dim]
+layout(std430) writeonly buffer OutputQ { float output_q[]; };  // [model_dim, seq_len]
+layout(std430) writeonly buffer OutputK { float output_k[]; };  // [model_dim, seq_len]
+layout(std430) writeonly buffer OutputV { float output_v[]; };  // [model_dim, seq_len]
 
 uniform int seq_len;
 uniform int input_dim;
@@ -25,33 +25,33 @@ void main() {
     uint seq_pos = global_idx / uint(model_dim);  // sequence position (row index)
     uint model_dim_idx = global_idx % uint(model_dim);  // model dimension (column index)
 
-    // Compute Q projection: input_q @ weight_q
+    // Compute Q projection: weight_q @ input_q
     float q_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
-        uint input_col_major_idx = i * seq_len + seq_pos;
-        uint weight_idx = i * model_dim + model_dim_idx;
-        q_val += input_q[input_col_major_idx] * weight_q[weight_idx];
+        uint input_row_major_idx = seq_pos * input_dim + i;
+        uint weight_idx = model_dim_idx * input_dim + i;
+        q_val += weight_q[weight_idx] * input_q[input_row_major_idx];
     }
-    uint output_q_col_major_idx = model_dim_idx * seq_len + seq_pos;
-    output_q[output_q_col_major_idx] = q_val;
+    uint output_q_row_major_idx = seq_pos * model_dim + model_dim_idx;
+    output_q[output_q_row_major_idx] = q_val;
 
-    // Compute K projection: input_kv @ weight_k
+    // Compute K projection: weight_k @ input_kv
     float k_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
-        uint input_col_major_idx = i * seq_len + seq_pos;
-        uint weight_idx = i * model_dim + model_dim_idx;
-        k_val += input_kv[input_col_major_idx] * weight_k[weight_idx];
+        uint input_row_major_idx = seq_pos * input_dim + i;
+        uint weight_idx = model_dim_idx * input_dim + i;
+        k_val += weight_k[weight_idx] * input_kv[input_row_major_idx];
     }
-    uint output_k_col_major_idx = model_dim_idx * seq_len + seq_pos;
-    output_k[output_k_col_major_idx] = k_val;
+    uint output_k_row_major_idx = seq_pos * model_dim + model_dim_idx;
+    output_k[output_k_row_major_idx] = k_val;
 
-    // Compute V projection: input_kv @ weight_v
+    // Compute V projection: weight_v @ input_kv
     float v_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
-        uint input_col_major_idx = i * seq_len + seq_pos;
-        uint weight_idx = i * model_dim + model_dim_idx;
-        v_val += input_kv[input_col_major_idx] * weight_v[weight_idx];
+        uint input_row_major_idx = seq_pos * input_dim + i;
+        uint weight_idx = model_dim_idx * input_dim + i;
+        v_val += weight_v[weight_idx] * input_kv[input_row_major_idx];
     }
-    uint output_v_col_major_idx = model_dim_idx * seq_len + seq_pos;
-    output_v[output_v_col_major_idx] = v_val;
+    uint output_v_row_major_idx = seq_pos * model_dim + model_dim_idx;
+    output_v[output_v_row_major_idx] = v_val;
 }
