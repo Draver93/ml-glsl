@@ -156,7 +156,7 @@ namespace NNGL {
             m_WeightValueMat->downloadFromGPU();
             input->downloadFromGPU();
             input_kv->downloadFromGPU();
-            if (1) {
+            if (g_AttentionBlockDebug) {
                 std::vector<float> cpuQ, cpuK, cpuV;
                 std::vector<float> inputQ = input->getFlatVec();
                 std::vector<float> inputKV = input_kv->getFlatVec();

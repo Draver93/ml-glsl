@@ -490,22 +490,23 @@ void testLayerNormClass() {
         int seqLen = 3;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        // Create input and residual with known values
-        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
-        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
-        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
-        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
+        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
+                (*input)(i, j) = 10 * i + j + 1;
+                (*residual)(i, j) = 100 * i + 10 * j;
+            }
+        }
         auto output = layerNorm.forward(input, residual);
-        if (output->rows != seqLen || output->cols != batchSize) {
-            std::cout << "  [FAIL] Output dimensions incorrect. Expected [" << seqLen << "," << batchSize 
+        if (output->rows != modelDim || output->cols != seqLen) {
+            std::cout << "  [FAIL] Output dimensions incorrect. Expected [" << modelDim << "," << seqLen 
                       << "], got [" << output->rows << "," << output->cols << "]" << std::endl;
             return;
         }
         bool isNormalized = false;
-        for (int i = 0; i < seqLen; ++i) {
-            for (int j = 0; j < batchSize; ++j) {
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
                 if (std::abs((*output)(i, j) - (*input)(i, j)) > 1e-6) {
                     isNormalized = true;
                     break;
@@ -525,15 +526,17 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
-        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
-        (*residual)(0, 0) = 10.0f; (*residual)(0, 1) = 20.0f;
-        (*residual)(1, 0) = 30.0f; (*residual)(1, 1) = 40.0f;
+        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
+                (*input)(i, j) = 10 * i + j + 1;
+                (*residual)(i, j) = 100 * i + 10 * j;
+            }
+        }
         auto output = layerNorm.forward(input, residual);
         bool relationshipsPreserved = true;
-        for (int i = 0; i < seqLen; ++i) {
+        for (int i = 0; i < modelDim; ++i) {
             if (((*input)(i, 0) + (*residual)(i, 0)) < ((*input)(i, 1) + (*residual)(i, 1)) &&
                 (*output)(i, 0) >= (*output)(i, 1)) {
                 relationshipsPreserved = false;
@@ -553,28 +556,30 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
-        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
-        (*residual)(0, 0) = 0.5f; (*residual)(0, 1) = 0.5f;
-        (*residual)(1, 0) = 0.5f; (*residual)(1, 1) = 0.5f;
+        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
+                (*input)(i, j) = 10 * i + j + 1;
+                (*residual)(i, j) = 100 * i + 10 * j;
+            }
+        }
         auto output = layerNorm.forward(input, residual);
-        auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto gradOutput = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
         (*gradOutput)(0, 0) = 0.1f; (*gradOutput)(0, 1) = 0.2f;
         (*gradOutput)(1, 0) = 0.3f; (*gradOutput)(1, 1) = 0.4f;
         layerNorm.backward(gradOutput, input, residual);
         auto gradInput = layerNorm.getGradInput();
         auto gradResidual = layerNorm.getGradResidual();
 
-        if (gradInput->rows != seqLen || gradInput->cols != batchSize ||
-            gradResidual->rows != seqLen || gradResidual->cols != batchSize) {
+        if (gradInput->rows != modelDim || gradInput->cols != seqLen ||
+            gradResidual->rows != modelDim || gradResidual->cols != seqLen) {
             std::cout << "  [FAIL] Gradient input/residual dimensions incorrect." << std::endl;
             return;
         }
         bool hasNonZeroGradients = false;
-        for (int i = 0; i < seqLen; ++i) {
-            for (int j = 0; j < batchSize; ++j) {
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
                 if (std::abs((*gradInput)(i, j)) > 1e-6 || std::abs((*gradResidual)(i, j)) > 1e-6) {
                     hasNonZeroGradients = true;
                     break;
@@ -594,14 +599,16 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
-        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
-        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
-        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
+        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
+                (*input)(i, j) = 10 * i + j + 1;
+                (*residual)(i, j) = 100 * i + 10 * j;
+            }
+        }
         auto output = layerNorm.forward(input, residual);
-        auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto gradOutput = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
         (*gradOutput)(0, 0) = 0.1f; (*gradOutput)(0, 1) = 0.2f;
         (*gradOutput)(1, 0) = 0.3f; (*gradOutput)(1, 1) = 0.4f;
         layerNorm.backward(gradOutput, input, residual);
@@ -614,18 +621,20 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
-        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
-        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
-        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
+        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
+                (*input)(i, j) = 10 * i + j + 1;
+                (*residual)(i, j) = 100 * i + 10 * j;
+            }
+        }
         for (int epoch = 0; epoch < 10; ++epoch) {
             auto output = layerNorm.forward(input, residual);
             auto target = std::make_shared<NNGL::Matrix>(*input);
-            auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-            for (int i = 0; i < seqLen; ++i) {
-                for (int j = 0; j < batchSize; ++j) {
+            auto gradOutput = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+            for (int i = 0; i < modelDim; ++i) {
+                for (int j = 0; j < seqLen; ++j) {
                     (*gradOutput)(i, j) = (*output)(i, j) - (*target)(i, j);
                 }
             }
@@ -633,12 +642,12 @@ void testLayerNormClass() {
         }
         auto finalOutput = layerNorm.forward(input, residual);
         float initialDiff = 0.0f;
-        for (int i = 0; i < seqLen; ++i) {
-            for (int j = 0; j < batchSize; ++j) {
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
                 initialDiff += std::abs((*input)(i, j) - (*finalOutput)(i, j));
             }
         }
-        initialDiff /= (seqLen * batchSize);
+        initialDiff /= (modelDim * seqLen);
         if (initialDiff < 2.0f) {
             std::cout << "  [PASS] Identity transformation with learned parameters (avg diff: " << initialDiff << ")" << std::endl;
         } else {
@@ -652,16 +661,18 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
-        (*input)(0, 0) = 1e-6f; (*input)(0, 1) = 2e-6f;
-        (*input)(1, 0) = 3e-6f; (*input)(1, 1) = 4e-6f;
-        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
-        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
+        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
+                (*input)(i, j) = 1e-6f * (10 * i + j + 1);
+                (*residual)(i, j) = 1e-6f * (100 * i + 10 * j);
+            }
+        }
         auto output = layerNorm.forward(input, residual);
         bool hasValidOutput = true;
-        for (int i = 0; i < seqLen; ++i) {
-            for (int j = 0; j < batchSize; ++j) {
+        for (int i = 0; i < modelDim; ++i) {
+            for (int j = 0; j < seqLen; ++j) {
                 float val = (*output)(i, j);
                 if (std::isnan(val) || std::isinf(val)) {
                     hasValidOutput = false;
@@ -1078,11 +1089,11 @@ void testDecoderBlockBackward() {
     float tolerance = 1e-2f;
     DecoderBlock decoder(modelDim, hiddenDim, seqLen);
     // Create dummy input and dummy encoder output
-    auto input = std::make_shared<Matrix>(seqLen, modelDim);
+    auto input = std::make_shared<Matrix>(modelDim, seqLen);
     std::vector<int> paddingMask(seqLen, 1);
     // Fill with small random values
-    for (int i = 0; i < seqLen; ++i) {
-        for (int j = 0; j < modelDim; ++j) {
+    for (int i = 0; i < modelDim; ++i) {
+        for (int j = 0; j < seqLen; ++j) {
             (*input)(i, j) = 0.1f * (i + 1) + 0.01f * (j + 1);
         }
     }
@@ -1108,8 +1119,8 @@ void testDecoderBlockBackward() {
     (*input)(test_i, test_j) = orig - epsilon;
     auto out_minus = decoder.forward(input, paddingMask);
     float loss_minus = 0.0f;
-    for (int i = 0; i < out_minus->rows; ++i)
-        for (int j = 0; j < out_minus->cols; ++j)
+    for (int i = 0; i < out_minus->cols; ++i)
+        for (int j = 0; j < out_minus->rows; ++j)
             loss_minus += (*out_minus)(i, j);
 
     float num_grad = (loss_plus - loss_minus) / (2 * epsilon);
@@ -1342,7 +1353,7 @@ int main(int argc, char** argv) {
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     int choice = 1; // Change this to test different functions
-    //test_positional_encoding();
+    runAllUnitTests();
 
     switch (choice) {
         case 0:
