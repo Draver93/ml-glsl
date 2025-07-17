@@ -57,9 +57,6 @@ void main() {
         // Scale by 1/sqrt(head_dim) for stable attention
         score *= inv_sqrt_head_dim;
         
-        // Clamp score to prevent overflow in softmax
-        score = clamp(score, -20.0, 20.0);
-
         // Store attention score for this head at [query_pos, key_pos]
         uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
         scores[attention_score_idx] = score;

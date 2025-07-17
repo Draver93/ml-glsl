@@ -1,6 +1,6 @@
 #version 430
 
-layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // Embedding matrix: [vocab_size, model_dim]
 layout(std430) readonly buffer EmbeddingsMat { float embeddings[]; };
@@ -13,13 +13,11 @@ uniform int vocab_size;
 uniform int model_dim;
 uniform int seq_len;
 
-void main() {
+void main() { //VALID
     uint dim = gl_GlobalInvocationID.x;      // model_dim (column)
     uint out_idx = gl_GlobalInvocationID.y;  // seq_len (row)
-    if (dim >= model_dim || out_idx >= seq_len) return;
 
     int token_idx = token_indices[out_idx];
-    if (token_idx < 0 || token_idx >= vocab_size)  return;
     
-    output_buffer[dim * model_dim + out_idx] = embeddings[dim * model_dim + token_idx];
+    output_buffer[out_idx * model_dim + dim] = embeddings[token_idx * model_dim + dim];
 } 

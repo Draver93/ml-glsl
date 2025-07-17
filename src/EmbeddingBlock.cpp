@@ -32,7 +32,7 @@ namespace NNGL {
 
         initializePositionalEncoding();
 
-        m_CachedOutput = std::make_shared<Matrix>(modelDim, maxSeqLen);
+        m_CachedOutput = std::make_shared<Matrix>(m_ModelDim, maxSeqLen);
 
         m_EmbeddingsMat = std::make_shared<Matrix>(m_ModelDim, m_VocabSize);
         m_EmbeddingsMat->randomize(0.0f, 0.1f);
@@ -79,10 +79,10 @@ namespace NNGL {
         int localSizeX = 16;
         int localSizeY = 16;
         int workgroupsX = (m_ModelDim + localSizeX - 1) / localSizeX;
-        int workgroupsY = (tokens.size() + localSizeY - 1) / localSizeY;
+        int workgroupsY = (m_MaxSeqLen + localSizeY - 1) / localSizeY;
         m_EmbeddingForwardCompute->dispatch(workgroupsX, workgroupsY, 1);
 
-        for (int j = 0; j <= 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+        for (int j = 0; j <= 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
 
         return m_CachedOutput;
     }

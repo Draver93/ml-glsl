@@ -247,22 +247,23 @@ namespace NNGL {
 
     /**
      * CPU analog of attention/forward_weights.comp
-     * Computes Q, K, V projections from input
+     * All weights: [model_dim, input_dim] (column-major)
+     * All activations: [model_dim, seq_len] (column-major)
      */
     inline void attentionForwardWeightsCPU(
-        const std::vector<float>& input_q,         // [seq_len, input_dim]
-        const std::vector<float>& input_kv,        // [seq_len, input_dim]
-        const std::vector<float>& weight_q,        // [input_dim, model_dim]
-        const std::vector<float>& weight_k,        // [input_dim, model_dim]
-        const std::vector<float>& weight_v,        // [input_dim, model_dim]
-        std::vector<float>& output_q,              // [seq_len, model_dim]
-        std::vector<float>& output_k,              // [seq_len, model_dim]
-        std::vector<float>& output_v,              // [seq_len, model_dim]
+        const std::vector<float>& input_q,         // [input_dim, seq_len]
+        const std::vector<float>& input_kv,        // [input_dim, seq_len]
+        const std::vector<float>& weight_q,        // [model_dim, input_dim]
+        const std::vector<float>& weight_k,        // [model_dim, input_dim]
+        const std::vector<float>& weight_v,        // [model_dim, input_dim]
+        std::vector<float>& output_q,              // [model_dim, seq_len]
+        std::vector<float>& output_k,              // [model_dim, seq_len]
+        std::vector<float>& output_v,              // [model_dim, seq_len]
         int seq_len, int input_dim, int model_dim
     ) {
-        output_q.resize(seq_len * model_dim);
-        output_k.resize(seq_len * model_dim);
-        output_v.resize(seq_len * model_dim);
+        output_q.resize(model_dim * seq_len);
+        output_k.resize(model_dim * seq_len);
+        output_v.resize(model_dim * seq_len);
 
         for (int seq_pos = 0; seq_pos < seq_len; seq_pos++) {
             for (int model_dim_idx = 0; model_dim_idx < model_dim; model_dim_idx++) {
@@ -275,7 +276,7 @@ namespace NNGL {
                 }
                 size_t output_idx = model_dim_idx * seq_len + seq_pos;
                 output_q[output_idx] = q_val;
-                
+
                 // Compute K projection: input_kv @ weight_k
                 float k_val = 0.0f;
                 for (int i = 0; i < input_dim; i++) {
@@ -284,7 +285,7 @@ namespace NNGL {
                     k_val += input_kv[input_idx] * weight_k[weight_idx];
                 }
                 output_k[output_idx] = k_val;
-                
+
                 // Compute V projection: input_kv @ weight_v
                 float v_val = 0.0f;
                 for (int i = 0; i < input_dim; i++) {
@@ -299,21 +300,20 @@ namespace NNGL {
 
     /**
      * CPU analog of attention/forward_score.comp
-     * Computes attention scores: Q @ K^T / sqrt(head_dim)
+     * Q, K: [model_dim, seq_len] (column-major)
+     * scores: [num_heads * seq_len, seq_len]
      */
     inline void attentionForwardScoreCPU(
-        const std::vector<float>& Q,               // [seq_len, model_dim]
-        const std::vector<float>& K,               // [seq_len, model_dim]
+        const std::vector<float>& Q,               // [model_dim, seq_len]
+        const std::vector<float>& K,               // [model_dim, seq_len]
         std::vector<float>& scores,                // [num_heads * seq_len, seq_len]
         int seq_len, int head_dim, int num_heads,
         bool use_mask = false, float inv_sqrt_head_dim = 1.0f,
         const std::vector<int>& padding_mask = {}, bool has_padding_mask = false
     ) {
         scores.resize(num_heads * seq_len * seq_len);
-
         for (int query_pos = 0; query_pos < seq_len; query_pos++) {
             for (int key_pos = 0; key_pos < seq_len; key_pos++) {
-                // Apply causal mask if enabled
                 if (use_mask && key_pos > query_pos) {
                     for (int head = 0; head < num_heads; head++) {
                         size_t score_idx = (head * seq_len + query_pos) * seq_len + key_pos;
@@ -321,8 +321,6 @@ namespace NNGL {
                     }
                     continue;
                 }
-                
-                // Apply padding mask
                 if (has_padding_mask && padding_mask[key_pos] == 0) {
                     for (int head = 0; head < num_heads; head++) {
                         size_t score_idx = (head * seq_len + query_pos) * seq_len + key_pos;
@@ -330,16 +328,14 @@ namespace NNGL {
                     }
                     continue;
                 }
-                
-                // Compute attention scores for each head
                 for (int head = 0; head < num_heads; head++) {
                     float score = 0.0f;
                     for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
-                        size_t q_idx = (head * head_dim + head_dim_idx) * seq_len + query_pos;
-                        size_t k_idx = (head * head_dim + head_dim_idx) * seq_len + key_pos;
+                        int m = head * head_dim + head_dim_idx;
+                        size_t q_idx = m * seq_len + query_pos;
+                        size_t k_idx = m * seq_len + key_pos;
                         score += Q[q_idx] * K[k_idx];
                     }
-                    
                     score *= inv_sqrt_head_dim;
                     size_t score_idx = (head * seq_len + query_pos) * seq_len + key_pos;
                     scores[score_idx] = score;
@@ -359,34 +355,25 @@ namespace NNGL {
         const std::vector<int>& padding_mask = {}, bool has_padding_mask = false
     ) {
         output_weights.resize(num_heads * seq_len * seq_len);
-
         for (int attention_row_idx = 0; attention_row_idx < num_heads * seq_len; attention_row_idx++) {
             int head_idx = attention_row_idx / seq_len;
             int query_pos = attention_row_idx % seq_len;
-            
-            // Find maximum for numerical stability
             float max_score = -3.402823e38f;
             for (int key_pos = 0; key_pos < seq_len; key_pos++) {
                 if (use_mask && key_pos > query_pos) continue;
                 if (has_padding_mask && padding_mask[key_pos] == 0) continue;
-                
                 size_t score_idx = attention_row_idx * seq_len + key_pos;
                 float score_val = input_scores[score_idx];
                 if (score_val > max_score) max_score = score_val;
             }
-            
-            // Compute sum of exponentials
             float sum_exp = 0.0f;
             for (int key_pos = 0; key_pos < seq_len; key_pos++) {
                 if (use_mask && key_pos > query_pos) continue;
                 if (has_padding_mask && padding_mask[key_pos] == 0) continue;
-                
                 size_t score_idx = attention_row_idx * seq_len + key_pos;
                 float score_val = input_scores[score_idx];
                 sum_exp += std::exp(score_val - max_score);
             }
-            
-            // Compute softmax attention weights
             for (int key_pos = 0; key_pos < seq_len; key_pos++) {
                 size_t weight_idx = attention_row_idx * seq_len + key_pos;
                 if (use_mask && key_pos > query_pos) {
@@ -405,34 +392,28 @@ namespace NNGL {
     /**
      * CPU analog of attention/forward_output.comp
      * Computes attention output: attention_weights @ V
+     * V: [model_dim, seq_len] (column-major)
      */
     inline void attentionForwardOutputCPU(
         const std::vector<float>& attention_weights, // [num_heads * seq_len, seq_len]
-        const std::vector<float>& V,                 // [seq_len, model_dim]
-        std::vector<float>& output,                  // [seq_len, model_dim]
+        const std::vector<float>& V,                 // [model_dim, seq_len]
+        std::vector<float>& output,                  // [model_dim, seq_len]
         int seq_len, int head_dim, int num_heads
     ) {
-        output.resize(seq_len * num_heads * head_dim);
-
+        output.resize(num_heads * head_dim * seq_len);
         for (int output_seq_pos = 0; output_seq_pos < seq_len; output_seq_pos++) {
             for (int head_idx = 0; head_idx < num_heads; head_idx++) {
                 for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
+                    int m = head_idx * head_dim + head_dim_idx;
                     float result = 0.0f;
-                    
                     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
-                        // Get attention weight
                         size_t attention_weight_idx = (head_idx * seq_len + output_seq_pos) * seq_len + key_pos;
                         float attention_weight = attention_weights[attention_weight_idx];
-                        
-                        // Get V value
-                        size_t v_idx = (head_idx * head_dim + head_dim_idx) * seq_len + key_pos;
+                        size_t v_idx = m * seq_len + key_pos;
                         float v_val = V[v_idx];
-                        
                         result += attention_weight * v_val;
                     }
-                    
-                    // Store result
-                    size_t output_idx = (head_idx * head_dim + head_dim_idx) * seq_len + output_seq_pos;
+                    size_t output_idx = m * seq_len + output_seq_pos;
                     output[output_idx] = result;
                 }
             }
@@ -442,27 +423,24 @@ namespace NNGL {
     /**
      * CPU analog of attention/add_norm.comp
      * Performs layer normalization: norm(input_a + input_b) * gamma + beta
+     * All: [model_dim, seq_len] (column-major)
      */
     inline void attentionAddNormCPU(
-        const std::vector<float>& input_a,         // [seq_len, model_dim]
-        const std::vector<float>& input_b,         // [seq_len, model_dim]
+        const std::vector<float>& input_a,         // [model_dim, seq_len]
+        const std::vector<float>& input_b,         // [model_dim, seq_len]
         const std::vector<float>& gamma,           // [model_dim]
         const std::vector<float>& beta,            // [model_dim]
-        std::vector<float>& output,                // [seq_len, model_dim]
+        std::vector<float>& output,                // [model_dim, seq_len]
         int seq_len, int model_dim, float epsilon = 1e-5f
     ) {
-        output.resize(seq_len * model_dim);
-
+        output.resize(model_dim * seq_len);
         for (int seq_pos = 0; seq_pos < seq_len; seq_pos++) {
-            // Compute mean
             float mean = 0.0f;
             for (int dim = 0; dim < model_dim; dim++) {
                 size_t idx = dim * seq_len + seq_pos;
                 mean += input_a[idx] + input_b[idx];
             }
             mean /= float(model_dim);
-
-            // Compute variance
             float variance = 0.0f;
             for (int dim = 0; dim < model_dim; dim++) {
                 size_t idx = dim * seq_len + seq_pos;
@@ -472,8 +450,6 @@ namespace NNGL {
             }
             variance /= float(model_dim);
             float stddev = std::sqrt(variance + epsilon);
-
-            // Normalize, scale, and shift
             for (int dim = 0; dim < model_dim; dim++) {
                 size_t idx = dim * seq_len + seq_pos;
                 float val = input_a[idx] + input_b[idx];
@@ -742,8 +718,8 @@ namespace NNGL {
         attentionForwardOutputCPU(cpuAttentionWeights, cpuOutputV, cpuOutput, seqLen, headDim, numHeads);
         
         if (verbose) {
-            printTensor(cpuOutput, seqLen, modelDim, "CPU Attention Output");
-            printTensor(gpuOutput, seqLen, modelDim, "GPU Attention Output");
+            printTensor(cpuOutput, modelDim, seqLen, "CPU Attention Output");
+            printTensor(gpuOutput, modelDim, seqLen, "GPU Attention Output");
         }
         
         return compareVectors(cpuOutput, gpuOutput, 1e-4f, verbose);
@@ -762,8 +738,8 @@ namespace NNGL {
         attentionAddNormCPU(gpuInputA, gpuInputB, gpuGamma, gpuBeta, cpuOutput, seqLen, modelDim);
         
         if (verbose) {
-            printTensor(cpuOutput, seqLen, modelDim, "CPU Layer Norm Output");
-            printTensor(gpuOutput, seqLen, modelDim, "GPU Layer Norm Output");
+            printTensor(cpuOutput, modelDim, seqLen, "CPU Layer Norm Output");
+            printTensor(gpuOutput, modelDim, seqLen, "GPU Layer Norm Output");
         }
         
         return compareVectors(cpuOutput, gpuOutput, 1e-4f, verbose);
@@ -961,27 +937,25 @@ namespace NNGL {
 
     /**
      * CPU analog of attention/backward_scores.comp
-     * Computes gradients for attention scores
+     * All: [model_dim, seq_len] (column-major)
      */
     inline void attentionBackwardScoresCPU(
-        const std::vector<float>& output_gradients, // [seq_len, model_dim]
-        const std::vector<float>& V,                // [seq_len, model_dim]
+        const std::vector<float>& output_gradients, // [model_dim, seq_len]
+        const std::vector<float>& V,                // [model_dim, seq_len]
         std::vector<float>& score_gradients,        // [num_heads * seq_len, seq_len]
         int seq_len, int head_dim, int num_heads
     ) {
         score_gradients.resize(num_heads * seq_len * seq_len);
-
         for (int head_idx = 0; head_idx < num_heads; head_idx++) {
             for (int query_pos = 0; query_pos < seq_len; query_pos++) {
                 for (int key_pos = 0; key_pos < seq_len; key_pos++) {
                     float gradient = 0.0f;
-                    
                     for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
-                        size_t output_idx = (head_idx * head_dim + head_dim_idx) * seq_len + query_pos;
-                        size_t v_idx = (head_idx * head_dim + head_dim_idx) * seq_len + key_pos;
+                        int m = head_idx * head_dim + head_dim_idx;
+                        size_t output_idx = m * seq_len + query_pos;
+                        size_t v_idx = m * seq_len + key_pos;
                         gradient += output_gradients[output_idx] * V[v_idx];
                     }
-                    
                     size_t score_grad_idx = (head_idx * seq_len + query_pos) * seq_len + key_pos;
                     score_gradients[score_grad_idx] = gradient;
                 }
@@ -991,28 +965,26 @@ namespace NNGL {
 
     /**
      * CPU analog of attention/backward_output.comp
-     * Computes gradients for attention output
+     * All: [model_dim, seq_len] (column-major)
      */
     inline void attentionBackwardOutputCPU(
-        const std::vector<float>& output_gradients, // [seq_len, model_dim]
+        const std::vector<float>& output_gradients, // [model_dim, seq_len]
         const std::vector<float>& attention_weights, // [num_heads * seq_len, seq_len]
-        std::vector<float>& v_gradients,            // [seq_len, model_dim]
+        std::vector<float>& v_gradients,            // [model_dim, seq_len]
         int seq_len, int head_dim, int num_heads
     ) {
-        v_gradients.resize(seq_len * num_heads * head_dim);
-
+        v_gradients.resize(num_heads * head_dim * seq_len);
         for (int head_idx = 0; head_idx < num_heads; head_idx++) {
             for (int key_pos = 0; key_pos < seq_len; key_pos++) {
                 for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
+                    int m = head_idx * head_dim + head_dim_idx;
                     float gradient = 0.0f;
-                    
                     for (int query_pos = 0; query_pos < seq_len; query_pos++) {
                         size_t attention_weight_idx = (head_idx * seq_len + query_pos) * seq_len + key_pos;
-                        size_t output_idx = (head_idx * head_dim + head_dim_idx) * seq_len + query_pos;
+                        size_t output_idx = m * seq_len + query_pos;
                         gradient += attention_weights[attention_weight_idx] * output_gradients[output_idx];
                     }
-                    
-                    size_t v_grad_idx = (head_idx * head_dim + head_dim_idx) * seq_len + key_pos;
+                    size_t v_grad_idx = m * seq_len + key_pos;
                     v_gradients[v_grad_idx] = gradient;
                 }
             }
@@ -1021,38 +993,35 @@ namespace NNGL {
 
     /**
      * CPU analog of attention/backward_projections.comp
-     * Computes gradients for Q, K, V projections
+     * All: [model_dim, seq_len] (column-major)
+     * Weights: [model_dim, input_dim] (column-major)
      */
     inline void attentionBackwardProjectionsCPU(
-        const std::vector<float>& q_gradients,     // [seq_len, model_dim]
-        const std::vector<float>& k_gradients,     // [seq_len, model_dim]
-        const std::vector<float>& v_gradients,     // [seq_len, model_dim]
-        const std::vector<float>& input_q,         // [seq_len, input_dim]
-        const std::vector<float>& input_kv,        // [seq_len, input_dim]
-        std::vector<float>& weight_q_gradients,    // [input_dim, model_dim]
-        std::vector<float>& weight_k_gradients,    // [input_dim, model_dim]
-        std::vector<float>& weight_v_gradients,    // [input_dim, model_dim]
+        const std::vector<float>& q_gradients,     // [model_dim, seq_len]
+        const std::vector<float>& k_gradients,     // [model_dim, seq_len]
+        const std::vector<float>& v_gradients,     // [model_dim, seq_len]
+        const std::vector<float>& input_q,         // [input_dim, seq_len]
+        const std::vector<float>& input_kv,        // [input_dim, seq_len]
+        std::vector<float>& weight_q_gradients,    // [model_dim, input_dim]
+        std::vector<float>& weight_k_gradients,    // [model_dim, input_dim]
+        std::vector<float>& weight_v_gradients,    // [model_dim, input_dim]
         int seq_len, int input_dim, int model_dim
     ) {
-        weight_q_gradients.resize(input_dim * model_dim);
-        weight_k_gradients.resize(input_dim * model_dim);
-        weight_v_gradients.resize(input_dim * model_dim);
-
-        // Initialize gradients to zero
+        weight_q_gradients.resize(model_dim * input_dim);
+        weight_k_gradients.resize(model_dim * input_dim);
+        weight_v_gradients.resize(model_dim * input_dim);
         std::fill(weight_q_gradients.begin(), weight_q_gradients.end(), 0.0f);
         std::fill(weight_k_gradients.begin(), weight_k_gradients.end(), 0.0f);
         std::fill(weight_v_gradients.begin(), weight_v_gradients.end(), 0.0f);
-
-        for (int seq_pos = 0; seq_pos < seq_len; seq_pos++) {
-            for (int input_dim_idx = 0; input_dim_idx < input_dim; input_dim_idx++) {
-                for (int model_dim_idx = 0; model_dim_idx < model_dim; model_dim_idx++) {
-                    size_t input_q_idx = input_dim_idx * seq_len + seq_pos;
-                    size_t input_kv_idx = input_dim_idx * seq_len + seq_pos;
-                    size_t q_grad_idx = model_dim_idx * seq_len + seq_pos;
-                    size_t k_grad_idx = model_dim_idx * seq_len + seq_pos;
-                    size_t v_grad_idx = model_dim_idx * seq_len + seq_pos;
-                    size_t weight_idx = input_dim_idx * model_dim + model_dim_idx;
-                    
+        for (int s = 0; s < seq_len; s++) {
+            for (int i = 0; i < input_dim; i++) {
+                for (int m = 0; m < model_dim; m++) {
+                    size_t input_q_idx = i * seq_len + s;
+                    size_t input_kv_idx = i * seq_len + s;
+                    size_t q_grad_idx = m * seq_len + s;
+                    size_t k_grad_idx = m * seq_len + s;
+                    size_t v_grad_idx = m * seq_len + s;
+                    size_t weight_idx = m * input_dim + i;
                     weight_q_gradients[weight_idx] += input_q[input_q_idx] * q_gradients[q_grad_idx];
                     weight_k_gradients[weight_idx] += input_kv[input_kv_idx] * k_gradients[k_grad_idx];
                     weight_v_gradients[weight_idx] += input_kv[input_kv_idx] * v_gradients[v_grad_idx];
@@ -1063,37 +1032,32 @@ namespace NNGL {
 
     /**
      * CPU analog of attention/backward_add_norm.comp
-     * Computes gradients for add-norm operation
+     * All: [model_dim, seq_len] (column-major)
      */
     inline void attentionBackwardAddNormCPU(
-        const std::vector<float>& output_gradients, // [seq_len, model_dim]
-        const std::vector<float>& input_a,          // [seq_len, model_dim]
-        const std::vector<float>& input_b,          // [seq_len, model_dim]
+        const std::vector<float>& output_gradients, // [model_dim, seq_len]
+        const std::vector<float>& input_a,          // [model_dim, seq_len]
+        const std::vector<float>& input_b,          // [model_dim, seq_len]
         const std::vector<float>& gamma,            // [model_dim]
-        std::vector<float>& input_a_gradients,      // [seq_len, model_dim]
-        std::vector<float>& input_b_gradients,      // [seq_len, model_dim]
+        std::vector<float>& input_a_gradients,      // [model_dim, seq_len]
+        std::vector<float>& input_b_gradients,      // [model_dim, seq_len]
         std::vector<float>& gamma_gradients,        // [model_dim]
         std::vector<float>& beta_gradients,         // [model_dim]
         int seq_len, int model_dim, float epsilon = 1e-5f
     ) {
-        input_a_gradients.resize(seq_len * model_dim);
-        input_b_gradients.resize(seq_len * model_dim);
+        input_a_gradients.resize(model_dim * seq_len);
+        input_b_gradients.resize(model_dim * seq_len);
         gamma_gradients.resize(model_dim);
         beta_gradients.resize(model_dim);
-
-        // Initialize gradients to zero
         std::fill(gamma_gradients.begin(), gamma_gradients.end(), 0.0f);
         std::fill(beta_gradients.begin(), beta_gradients.end(), 0.0f);
-
         for (int seq_pos = 0; seq_pos < seq_len; seq_pos++) {
-            // Compute mean and variance (same as forward pass)
             float mean = 0.0f;
             for (int dim = 0; dim < model_dim; dim++) {
                 size_t idx = dim * seq_len + seq_pos;
                 mean += input_a[idx] + input_b[idx];
             }
             mean /= float(model_dim);
-
             float variance = 0.0f;
             for (int dim = 0; dim < model_dim; dim++) {
                 size_t idx = dim * seq_len + seq_pos;
@@ -1103,23 +1067,16 @@ namespace NNGL {
             }
             variance /= float(model_dim);
             float stddev = std::sqrt(variance + epsilon);
-
-            // Compute gradients
             for (int dim = 0; dim < model_dim; dim++) {
                 size_t idx = dim * seq_len + seq_pos;
                 float val = input_a[idx] + input_b[idx];
                 float norm = (val - mean) / stddev;
-                
-                // Gamma and beta gradients
                 gamma_gradients[dim] += output_gradients[idx] * norm;
                 beta_gradients[dim] += output_gradients[idx];
-                
-                // Input gradients
                 float norm_gradient = output_gradients[idx] * gamma[dim];
                 float val_gradient = norm_gradient / stddev;
                 float mean_gradient = -norm_gradient / stddev;
                 float variance_gradient = -0.5f * norm_gradient * (val - mean) / (stddev * stddev * stddev);
-                
                 input_a_gradients[idx] = val_gradient;
                 input_b_gradients[idx] = val_gradient;
             }

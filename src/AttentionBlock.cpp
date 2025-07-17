@@ -141,10 +141,10 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->setUniform("head_dim", m_HeadDim);
             m_ForwardPassWeightsCompute->setUniform("model_dim", m_ModelDim);
             m_ForwardPassWeightsCompute->setUniform("num_heads", m_NumHeads);
-            m_ForwardPassWeightsCompute->setUniform("input_dim", input->cols);
-            m_ForwardPassWeightsCompute->setUniform("seq_len", input->rows);
+            m_ForwardPassWeightsCompute->setUniform("input_dim", input->rows);
+            m_ForwardPassWeightsCompute->setUniform("seq_len", input->cols);
 
-            int workgroups_x = (input->rows * m_ModelDim + 31) / 32;
+            int workgroups_x = (input->cols * m_ModelDim + 31) / 32;
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 7; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -154,15 +154,16 @@ namespace NNGL {
             m_WeightQueryMat->downloadFromGPU();
             m_WeightKeyMat->downloadFromGPU();
             m_WeightValueMat->downloadFromGPU();
-
-            if (g_AttentionBlockDebug) {
+            input->downloadFromGPU();
+            input_kv->downloadFromGPU();
+            if (1) {
                 std::vector<float> cpuQ, cpuK, cpuV;
                 std::vector<float> inputQ = input->getFlatVec();
                 std::vector<float> inputKV = input_kv->getFlatVec();
                 std::vector<float> weightQ = m_WeightQueryMat->getFlatVec();
                 std::vector<float> weightK = m_WeightKeyMat->getFlatVec();
                 std::vector<float> weightV = m_WeightValueMat->getFlatVec();
-                NNGL::attentionForwardWeightsCPU(inputQ, inputKV, weightQ, weightK, weightV, cpuQ, cpuK, cpuV, input->rows, input->cols, m_ModelDim);
+                NNGL::attentionForwardWeightsCPU(inputQ, inputKV, weightQ, weightK, weightV, cpuQ, cpuK, cpuV, input->cols, input->rows, m_ModelDim);
                 NNGL::compareVectors(cpuQ, m_CachedQ->getFlatVec(), 1e-4f, true);
                 NNGL::compareVectors(cpuK, m_CachedK->getFlatVec(), 1e-4f, true);
                 NNGL::compareVectors(cpuV, m_CachedV->getFlatVec(), 1e-4f, true);
@@ -180,22 +181,22 @@ namespace NNGL {
             m_ForwardPassScoreCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
             if (!m_PaddingMask.empty()) m_ForwardPassScoreCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
-            m_ForwardPassScoreCompute->setUniform("seq_len", input->rows);
+            m_ForwardPassScoreCompute->setUniform("seq_len", input->cols);
             m_ForwardPassScoreCompute->setUniform("head_dim", m_HeadDim);
             m_ForwardPassScoreCompute->setUniform("num_heads", m_NumHeads);
             m_ForwardPassScoreCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
             float invSqrtHeadDim = 1.0f / std::sqrt(static_cast<float>(m_HeadDim));
             m_ForwardPassScoreCompute->setUniform("inv_sqrt_head_dim", invSqrtHeadDim);
 
-            int workgroups_x = (input->rows + 15) / 16;
-            int workgroups_y = (input->rows + 15) / 16;  // seq_len x seq_len
+            int workgroups_x = (input->cols + 15) / 16;
+            int workgroups_y = (input->cols + 15) / 16;  // seq_len x seq_len
             m_ForwardPassScoreCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
             m_CachedScores->downloadFromGPU();
             if (g_AttentionBlockDebug) {
                 std::vector<float> cpuScores;
-                NNGL::attentionForwardScoreCPU(m_CachedQ->getFlatVec(), m_CachedK->getFlatVec(), cpuScores, input->rows, m_HeadDim, m_NumHeads, m_UseMask, invSqrtHeadDim, m_PaddingMask, !m_PaddingMask.empty());
+                NNGL::attentionForwardScoreCPU(m_CachedQ->getFlatVec(), m_CachedK->getFlatVec(), cpuScores, input->cols, m_HeadDim, m_NumHeads, m_UseMask, invSqrtHeadDim, m_PaddingMask, !m_PaddingMask.empty());
                 NNGL::compareVectors(cpuScores, m_CachedScores->getFlatVec(), 1e-2f, true);
             }
         }
@@ -209,11 +210,11 @@ namespace NNGL {
             m_SoftmaxCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
             if (!m_PaddingMask.empty()) m_SoftmaxCompute->bindBuffer(2, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
 
-            m_SoftmaxCompute->setUniform("seq_len", input->rows);
+            m_SoftmaxCompute->setUniform("seq_len", input->cols);
             m_SoftmaxCompute->setUniform("num_heads", m_NumHeads);
             m_SoftmaxCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
 
-            int total_rows = m_NumHeads * input->rows;
+            int total_rows = m_NumHeads * input->cols;
             int workgroups = (total_rows + 15) / 16;
             m_SoftmaxCompute->dispatch(workgroups, 1, 1);
 
@@ -233,11 +234,11 @@ namespace NNGL {
             m_ForwardPassOutCompute->bindBuffer(1, "BufferV", m_CachedV->buffer);
             m_ForwardPassOutCompute->bindBuffer(2, "BufferOutput", m_OutputMat->buffer);
 
-            m_ForwardPassOutCompute->setUniform("seq_len", input->rows);
+            m_ForwardPassOutCompute->setUniform("seq_len", input->cols);
             m_ForwardPassOutCompute->setUniform("head_dim", m_HeadDim);
             m_ForwardPassOutCompute->setUniform("num_heads", m_NumHeads);
 
-            int workgroups_x = (input->rows + 15) / 16;
+            int workgroups_x = (input->cols + 15) / 16;
             int workgroups_y = (m_ModelDim + 15) / 16;
             m_ForwardPassOutCompute->dispatch(workgroups_x, workgroups_y, 1);
             

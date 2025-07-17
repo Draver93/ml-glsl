@@ -248,7 +248,7 @@ namespace NNGL {
         int paddingLen = 0;
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
-
+        inputMat->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);

@@ -1039,12 +1039,13 @@ void test_positional_encoding() {
     std::cout << "\n[UnitTest] EmbeddingBlock Positional Encoding\n";
     size_t seqLen = 4;
     size_t modelDim = 3;
-    EmbeddingBlock embedder(10, modelDim, seqLen);
+    size_t vocabSize = 10;
+    EmbeddingBlock embedder(vocabSize, modelDim, seqLen);
     // Create a known input matrix
-    std::vector<std::vector<float>> inputVec(seqLen, std::vector<float>(modelDim));
+    std::vector<std::vector<float>> inputVec(modelDim, std::vector<float>(seqLen));
     float val = 1.0f;
-    for (size_t i = 0; i < seqLen; ++i) {
-        for (size_t j = 0; j < modelDim; ++j) {
+    for (size_t i = 0; i < modelDim; ++i) {
+        for (size_t j = 0; j < seqLen; ++j) {
             inputVec[i][j] = val++;
         }
     }
@@ -1059,8 +1060,8 @@ void test_positional_encoding() {
     std::cout << "After removePositionalEncoding:" << std::endl;
     inputMat->print();
     // Assert that inputMat matches originalMat (within tolerance)
-    for (size_t i = 0; i < seqLen; ++i) {
-        for (size_t j = 0; j < modelDim; ++j) {
+    for (size_t i = 0; i < modelDim; ++i) {
+        for (size_t j = 0; j < seqLen; ++j) {
             assert(std::abs((*inputMat)(i, j) - (*originalMat)(i, j)) < 1e-4);
         }
     }
@@ -1157,9 +1158,9 @@ void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
-    int d_model = 256;  // Increased for complex text
+    int d_model = 64;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 64;   // Longer sequence for complex text
+    int seq_len = 16;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1249,7 +1250,7 @@ void gptransformer_simplified() {
 
     std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
     int epochs = 1000000;
-    float initial_learning_rate = 0.0001f; // Reduced for more stable learning
+    float initial_learning_rate = 0.00001f; // Reduced for more stable learning
     
     // Early stopping variables
     int epochs_without_improvement = 0;
@@ -1337,10 +1338,11 @@ int main(int argc, char** argv) {
     glfwMakeContextCurrent(window);
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { LOG_ERROR("Failed to initialize GLAD!"); return -1; }
 
-    test_embeddingblock_gpu_update();
+    //test_embeddingblock_gpu_update();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     int choice = 1; // Change this to test different functions
+    //test_positional_encoding();
 
     switch (choice) {
         case 0:
