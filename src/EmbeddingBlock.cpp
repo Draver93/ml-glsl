@@ -33,6 +33,7 @@ namespace NNGL {
         initializePositionalEncoding();
 
         m_CachedOutput = std::make_shared<Matrix>(m_ModelDim, maxSeqLen);
+        m_CachedOutput->uploadToGPU(); 
 
         m_EmbeddingsMat = std::make_shared<Matrix>(m_ModelDim, m_VocabSize);
         m_EmbeddingsMat->randomize(0.0f, 0.1f);
@@ -67,8 +68,6 @@ namespace NNGL {
         NNGL::Timer timer("EmbeddingBlock::forward");
 
         GLuint indexBuffer = getIndexBuffer(tokens);
-        m_CachedOutput->clear();
-        m_CachedOutput->uploadToGPU(); //make sure to remove it only if you know that buffer will always refresh itself
 
         m_EmbeddingForwardCompute->bindBuffer(0, "EmbeddingsMat", m_EmbeddingsMat->buffer);
         m_EmbeddingForwardCompute->bindBuffer(1, "Indices", indexBuffer);
@@ -86,15 +85,15 @@ namespace NNGL {
         m_EmbeddingForwardCompute->dispatch(workgroupsX, workgroupsY, 1);
 
         for (int j = 0; j <= 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
-        m_EmbeddingsMat->downloadFromGPU();
-        m_CachedOutput->downloadFromGPU();
+
         return m_CachedOutput;
     }
 
     void EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
         GLuint indexBuffer = getIndexBuffer(tokens);
 
-        gradOutput->uploadToGPU();
+
+        gradOutput->downloadFromGPU();
         if (!gradOutput || gradOutput->rows != m_ModelDim) throw std::runtime_error("Invalid gradient dimensions");
 
         m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", m_EmbeddingsMat->buffer);
@@ -120,7 +119,8 @@ namespace NNGL {
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding");
         }
         size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
-        embeddings->uploadToGPU();
+        //embeddings->uploadToGPU();
+
         // Upload padding mask buffer
         GLuint maskSSBO;
         glGenBuffers(1, &maskSSBO);
@@ -138,7 +138,8 @@ namespace NNGL {
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
-        embeddings->downloadFromGPU();
+
+        //embeddings->downloadFromGPU();
         glDeleteBuffers(1, &maskSSBO);
 
         for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -154,7 +155,9 @@ namespace NNGL {
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding removal");
         }
         size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
-        embeddings->uploadToGPU();
+
+        //embeddings->uploadToGPU();
+        
         // Upload padding mask buffer
         GLuint maskSSBO;
         glGenBuffers(1, &maskSSBO);
@@ -173,7 +176,9 @@ namespace NNGL {
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_RemovePosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
-        embeddings->downloadFromGPU();
+
+        //embeddings->downloadFromGPU();
+
         glDeleteBuffers(1, &maskSSBO);
         // Unbind buffers
         for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);

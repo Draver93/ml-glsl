@@ -81,6 +81,7 @@ namespace NNGL {
 
         std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
         targetMat->set(0, targetTokenId, 1.0f);
+        targetMat->uploadToGPU();
 
         backwardPass(contextTokens, targetMat, learningRate);
     }
@@ -125,6 +126,7 @@ namespace NNGL {
 
         std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
         targetMat->set(0, targetTokenId, 1.0f);
+        targetMat->uploadToGPU();
 
         backwardPass(paddedContext, targetMat, learningRate);
         return loss;
@@ -248,10 +250,13 @@ namespace NNGL {
         int paddingLen = 0;
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
-        inputMat->downloadFromGPU();
+
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
+
+        decOutputMat->downloadFromGPU();
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->cols, 1);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        lastTokenRep->uploadToGPU();
 
         return m_OutputProjection->forward(lastTokenRep);
     }
@@ -267,15 +272,20 @@ namespace NNGL {
 
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
+
+        decOutputMat->downloadFromGPU();
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->cols, 1);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
-
+        outputGrad->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
         int lastPos = decOutputMat->rows - 1;
         for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(i, 0));
+        decOutputGrad->uploadToGPU();
+
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
 
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);

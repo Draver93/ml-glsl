@@ -24,6 +24,8 @@ namespace NNGL {
         void computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection,
             const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
             std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight);
+        void addMatricesGPU(const std::shared_ptr<Matrix>& A, const std::shared_ptr<Matrix>& B, std::shared_ptr<Matrix>& out);
+
     private:
 
         int m_ModelDim, m_NumHeads, m_HeadDim, m_SeqLen;
@@ -46,7 +48,8 @@ namespace NNGL {
             m_WeightsUpdatePassCompute,
             m_BackwardProjectionsCompute,
             m_GradInputCompute,
-            m_GradWeightCompute;
+            m_GradWeightCompute,
+            m_AddMatrixShader;
         
         std::shared_ptr<Matrix> m_WeightQueryMat;
         std::shared_ptr<Matrix> m_WeightKeyMat;

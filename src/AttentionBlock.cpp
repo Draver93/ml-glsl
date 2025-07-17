@@ -37,30 +37,57 @@ namespace NNGL {
 
         // Initialize ADAM optimization buffers for Q, K, V weights
         m_ADAM_M_QueryMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0.0f);
+        m_ADAM_M_QueryMat->uploadToGPU();
+
         m_ADAM_V_QueryMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0.0f);
+        m_ADAM_V_QueryMat->uploadToGPU();
+
         m_ADAM_M_KeyMat   = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0.0f);
+        m_ADAM_M_KeyMat->uploadToGPU();
+
         m_ADAM_V_KeyMat   = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0.0f);
+        m_ADAM_V_KeyMat->uploadToGPU();
+
         m_ADAM_M_ValueMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0.0f);
+        m_ADAM_M_ValueMat->uploadToGPU();
+
         m_ADAM_V_ValueMat = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0.0f);
+        m_ADAM_V_ValueMat->uploadToGPU();
 
         // Initialize output matrices for Q, K, V projections
         m_OutQueryMat  = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_OutQueryMat->uploadToGPU();
+
         m_OutKeyMat    = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_OutKeyMat->uploadToGPU();
+
         m_OutValueMat  = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_OutValueMat->uploadToGPU();
 
         // Initialize gradient matrices for Q, K, V projections
         m_GradQueryInputMat  = std::make_shared<Matrix>(m_SeqLen, m_HeadDim); // gradProjection: (seq_len, head_dim)
+        m_GradQueryInputMat->uploadToGPU();
+
         m_GradKeyInputMat    = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_GradKeyInputMat->uploadToGPU();
+
         m_GradValueInputMat  = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_GradValueInputMat->uploadToGPU();
 
         // Cached forward pass values for backprop
         m_CachedInput   = std::make_shared<Matrix>(m_ModelDim, m_SeqLen); // cachedInput: (input_dim, seq_len)
+        m_CachedInput->uploadToGPU();
+
         m_CachedContext = std::make_shared<Matrix>(m_ModelDim, m_SeqLen);
+        m_CachedContext->uploadToGPU();
+
         m_CachedQ       = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
-        m_CachedK       = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
-        m_CachedV       = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
         m_CachedQ->uploadToGPU();
+
+        m_CachedK       = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
         m_CachedK->uploadToGPU();
+
+        m_CachedV       = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
         m_CachedV->uploadToGPU();
 
         m_CachedScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
@@ -71,19 +98,36 @@ namespace NNGL {
 
         // Input gradients
         m_GradInput   = std::make_shared<Matrix>(m_ModelDim, m_SeqLen); // gradInput: (input_dim, seq_len)
+        m_GradInput->uploadToGPU();
+
         m_GradContext = std::make_shared<Matrix>(m_ModelDim, m_SeqLen);
+        m_GradContext->uploadToGPU();
 
         // Weight gradients
         m_GradWeightQueryMat  = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0); // gradWeight: (input_dim, head_dim)
+        m_GradWeightQueryMat->uploadToGPU();
+
         m_GradWeightKeyMat    = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
+        m_GradWeightKeyMat->uploadToGPU();
+
         m_GradWeightValueMat  = std::make_shared<Matrix>(m_ModelDim, m_HeadDim, 0);
+        m_GradWeightValueMat->uploadToGPU();
 
         // Intermediate gradients for backprop chain
         m_GradQ = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_GradQ->uploadToGPU();
+
         m_GradK = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_GradK->uploadToGPU();
+
         m_GradV = std::make_shared<Matrix>(m_SeqLen, m_HeadDim);
+        m_GradV->uploadToGPU();
+
         m_GradScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
+        m_GradScores->uploadToGPU();
+
         m_GradAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
+        m_GradAttentionWeights->uploadToGPU();
 
         // Output matrix: [model_dim, seq_len] (concatenated heads)
         m_OutputMat = std::make_shared<Matrix>(m_ModelDim, m_SeqLen);
@@ -102,6 +146,7 @@ namespace NNGL {
 
         m_GradInputCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_grad_input.comp");
         m_GradWeightCompute = ShaderManager::getInstance().getShader("shaders/attention/backward_grad_weight.comp");
+        m_AddMatrixShader = ShaderManager::getInstance().getShader("shaders/attention/add_matrix.comp");
     }
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context) {
@@ -148,15 +193,17 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 7; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-            m_CachedQ->downloadFromGPU();
-            m_CachedK->downloadFromGPU();
-            m_CachedV->downloadFromGPU();
-            m_WeightQueryMat->downloadFromGPU();
-            m_WeightKeyMat->downloadFromGPU();
-            m_WeightValueMat->downloadFromGPU();
-            input->downloadFromGPU();
-            input_kv->downloadFromGPU();
+ 
             if (g_AttentionBlockDebug) {
+                m_CachedQ->downloadFromGPU();
+                m_CachedK->downloadFromGPU();
+                m_CachedV->downloadFromGPU();
+                m_WeightQueryMat->downloadFromGPU();
+                m_WeightKeyMat->downloadFromGPU();
+                m_WeightValueMat->downloadFromGPU();
+                input->downloadFromGPU();
+                input_kv->downloadFromGPU();
+
                 std::vector<float> cpuQ, cpuK, cpuV;
                 std::vector<float> inputQ = input->getFlatVec();
                 std::vector<float> inputKV = input_kv->getFlatVec();
@@ -193,8 +240,9 @@ namespace NNGL {
             m_ForwardPassScoreCompute->dispatch(workgroups_x, workgroups_y, 1);
 
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-            m_CachedScores->downloadFromGPU();
             if (g_AttentionBlockDebug) {
+                m_CachedScores->downloadFromGPU();
+
                 std::vector<float> cpuScores;
                 NNGL::attentionForwardScoreCPU(m_CachedQ->getFlatVec(), m_CachedK->getFlatVec(), cpuScores, input->cols, m_HeadDim, m_NumHeads, m_UseMask, invSqrtHeadDim, m_PaddingMask, !m_PaddingMask.empty());
                 NNGL::compareVectors(cpuScores, m_CachedScores->getFlatVec(), 1e-2f, true);
@@ -219,8 +267,9 @@ namespace NNGL {
             m_SoftmaxCompute->dispatch(workgroups, 1, 1);
 
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-            m_CachedAttentionWeights->downloadFromGPU();
             if (g_AttentionBlockDebug) {
+                m_CachedAttentionWeights->downloadFromGPU();
+
                 std::vector<float> cpuAttentionWeights;
                 NNGL::attentionSoftmaxCPU(m_CachedScores->getFlatVec(), cpuAttentionWeights, input->rows, m_NumHeads, m_UseMask, m_PaddingMask, !m_PaddingMask.empty());
                 NNGL::compareVectors(cpuAttentionWeights, m_CachedAttentionWeights->getFlatVec(), 1e-4f, true);
@@ -243,8 +292,9 @@ namespace NNGL {
             m_ForwardPassOutCompute->dispatch(workgroups_x, workgroups_y, 1);
             
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-            m_OutputMat->downloadFromGPU();
+
             if (g_AttentionBlockDebug) {
+                m_OutputMat->downloadFromGPU();
                 std::vector<float> cpuOutput;
                 NNGL::attentionForwardOutputCPU(m_CachedAttentionWeights->getFlatVec(), m_CachedV->getFlatVec(), cpuOutput, input->rows, m_HeadDim, m_NumHeads);
                 NNGL::compareVectors(cpuOutput, m_OutputMat->getFlatVec(), 1e-4f, true);
@@ -276,7 +326,7 @@ namespace NNGL {
         {
             // Upload buffers to GPU before shader execution
             m_GradAttentionWeights->uploadToGPU();
-            m_GradV->uploadToGPU();
+            //m_GradV->uploadToGPU();
             
             m_BackwardOutputCompute->bindBuffer(0, "GradOutput", gradOutput->buffer);
             m_BackwardOutputCompute->bindBuffer(1, "CachedV", m_CachedV->buffer);
@@ -291,15 +341,15 @@ namespace NNGL {
             int workgroups_x = (m_SeqLen + 15) / 16;
             int workgroups_y = (m_SeqLen + 15) / 16;
             m_BackwardOutputCompute->dispatch(workgroups_x, workgroups_y, 1);
-            m_GradV->downloadFromGPU();
-            m_GradAttentionWeights->downloadFromGPU();
+            //m_GradV->downloadFromGPU();
+            //m_GradAttentionWeights->downloadFromGPU();
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 
         // === STEP 2: Backward through softmax ===
         {
             // Upload buffers to GPU before shader execution
-            m_GradScores->uploadToGPU();
+            //m_GradScores->uploadToGPU();
             
             // grad_scores = softmax_backward(grad_attention_weights, cached_attention_weights)
             // This is: grad_scores[i,j] = attention_weights[i,j] * (grad_attention_weights[i,j] - sum_k(grad_attention_weights[i,k] * attention_weights[i,k]))
@@ -317,15 +367,15 @@ namespace NNGL {
 
             int workgroups_x = (m_SeqLen + 15) / 16;
             m_BackwardScoresCompute->dispatch(workgroups_x, 1, 1);
-            m_GradScores->downloadFromGPU();
+            //m_GradScores->downloadFromGPU();
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 
         // === STEP 3: Backward through scores computation (Q @ K^T / sqrt(d_k)) ===
         {
             // Upload buffers to GPU before shader execution
-            m_GradQ->uploadToGPU();
-            m_GradK->uploadToGPU();
+            //m_GradQ->uploadToGPU();
+            //m_GradK->uploadToGPU();
             
             // grad_Q = grad_scores @ K / sqrt(d_k)
             // grad_K = grad_scores^T @ Q / sqrt(d_k)
@@ -344,8 +394,8 @@ namespace NNGL {
 
             int workgroups_x = (m_SeqLen * m_ModelDim + 31) / 32;
             m_BackwardProjectionsCompute->dispatch(workgroups_x, 1, 1);
-            m_GradQ->downloadFromGPU();
-            m_GradK->downloadFromGPU();
+            //m_GradQ->downloadFromGPU();
+            //m_GradK->downloadFromGPU();
 
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
@@ -356,21 +406,21 @@ namespace NNGL {
         // Query gradients (always from input)
         computeProjectionGradients(m_GradQ, m_CachedInput, m_WeightQueryMat,
             m_GradInput, m_GradWeightQueryMat);
-        m_GradInput->downloadFromGPU();
-        m_GradWeightQueryMat->downloadFromGPU();
+        //m_GradInput->downloadFromGPU();
+        //m_GradWeightQueryMat->downloadFromGPU();
         // Key gradients (from input or context)
         if (context) {
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 m_GradContext, m_GradWeightKeyMat);
-            m_GradContext->downloadFromGPU();
-            m_GradWeightKeyMat->downloadFromGPU();
+            //m_GradContext->downloadFromGPU();
+            //m_GradWeightKeyMat->downloadFromGPU();
         }
         else {
             auto tempGradInput = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 tempGradInput, m_GradWeightKeyMat);
-            m_GradWeightKeyMat->downloadFromGPU();
-            m_GradInput->add(*tempGradInput);
+            //m_GradWeightKeyMat->downloadFromGPU();
+            addMatricesGPU(m_GradInput, tempGradInput, m_GradInput);
         }
 
         // Value gradients (from input or context)
@@ -378,15 +428,15 @@ namespace NNGL {
             auto tempGradContext = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradContext, m_GradWeightValueMat);
-            m_GradWeightValueMat->downloadFromGPU();
-            m_GradContext->add(*tempGradContext);
+            //m_GradWeightValueMat->downloadFromGPU();
+            addMatricesGPU(m_GradContext, tempGradContext, m_GradContext);
         }
         else {
             auto tempGradInput = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradInput, m_GradWeightValueMat);
-            m_GradWeightValueMat->downloadFromGPU();
-            m_GradInput->add(*tempGradInput);
+            //m_GradWeightValueMat->downloadFromGPU();
+            addMatricesGPU(m_GradInput, tempGradInput, m_GradInput);
         }
 
         // === STEP 5: Update weights with ADAM ===
@@ -431,16 +481,16 @@ namespace NNGL {
         // grad_input = grad_projection @ W^T
         // grad_weight = input^T @ grad_projection
 
-        gradProjection->uploadToGPU();
-        cachedInput->uploadToGPU();
-        weight->uploadToGPU();
+        //gradProjection->uploadToGPU();
+        //cachedInput->uploadToGPU();
+        //weight->uploadToGPU();
 
         // Compute gradients using your existing shaders or new ones
         // This is similar to your existing gradient computation but using cached values
 
         // Reset gradients
-        gradInput->clear(0.0f);
-        gradWeight->clear(0.0f);
+        //gradInput->clear(0.0f);
+        //gradWeight->clear(0.0f);
 
         {
             m_GradInputCompute->bindBuffer(0, "GradProjection", gradProjection->buffer);
@@ -455,7 +505,7 @@ namespace NNGL {
             int workgroups_x = (m_ModelDim + 15) / 16;
             int workgroups_y = (m_SeqLen + 15) / 16;
             m_GradInputCompute->dispatch(workgroups_x, workgroups_y, 1);
-            gradInput->downloadFromGPU();
+            //gradInput->downloadFromGPU();
             
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
@@ -476,9 +526,36 @@ namespace NNGL {
 
             // Dispatch with appropriate work group sizes
             m_GradWeightCompute->dispatch(workgroups_x, workgroups_y, 1);
-            gradWeight->downloadFromGPU();
+            //gradWeight->downloadFromGPU();
             
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
+    }
+
+    void AttentionBlock::addMatricesGPU(const std::shared_ptr<Matrix>& A, const std::shared_ptr<Matrix>& B, std::shared_ptr<Matrix>& out) {
+        // Assumes all matrices are the same shape
+        if (!m_AddMatrixShader) {
+            m_AddMatrixShader = ShaderManager::getInstance().getShader("shaders/attention/add_matrix.comp");
+        }
+        int rows = A->rows;
+        int cols = A->cols;
+        if (B->rows != rows || B->cols != cols || out->rows != rows || out->cols != cols) {
+            throw std::runtime_error("Matrix shape mismatch in addMatricesGPU");
+        }
+        //A->uploadToGPU();
+        //B->uploadToGPU();
+        //out->uploadToGPU();
+        m_AddMatrixShader->bindBuffer(0, "A", A->buffer);
+        m_AddMatrixShader->bindBuffer(1, "B", B->buffer);
+        m_AddMatrixShader->bindBuffer(2, "Out", out->buffer);
+        m_AddMatrixShader->setUniform("rows", rows);
+        m_AddMatrixShader->setUniform("cols", cols);
+        int workgroups_x = (rows + 15) / 16;
+        int workgroups_y = (cols + 15) / 16;
+        m_AddMatrixShader->dispatch(workgroups_x, workgroups_y, 1);
+
+        //out->downloadFromGPU();
+
+        for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
 }

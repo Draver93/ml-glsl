@@ -9,8 +9,13 @@ static bool g_LayerNormDebug = false;
 namespace NNGL {
     LayerNorm::LayerNorm(int normalizedShape, float epsilon)
         : m_NormalizedShape(normalizedShape), m_Epsilon(epsilon) {
+
         m_Gamma = std::make_shared<Matrix>(normalizedShape, 1, 1.0f);
+        m_Gamma->uploadToGPU();
+
         m_Beta = std::make_shared<Matrix>(normalizedShape, 1, 0.0f);
+        m_Beta->uploadToGPU();
+
         m_ForwardShader = ShaderManager::getInstance().getShader("shaders/attention/add_norm.comp");
         m_BackwardShader = ShaderManager::getInstance().getShader("shaders/attention/backward_add_norm.comp");
         LOG_DEBUG("LayerNorm initialized with shape " + std::to_string(normalizedShape));
@@ -26,12 +31,11 @@ namespace NNGL {
         // Prepare output: reuse m_CachedOutput if possible
         if (!m_CachedOutput || m_CachedOutput->rows != modelDim || m_CachedOutput->cols != seqLen) {
             m_CachedOutput = std::make_shared<Matrix>(modelDim, seqLen);
+            m_CachedOutput->uploadToGPU();
         }
-        input->uploadToGPU();
-        residual->uploadToGPU();
-        m_Gamma->uploadToGPU();
-        m_Beta->uploadToGPU();
-        m_CachedOutput->uploadToGPU();
+        //input->uploadToGPU();
+        //residual->uploadToGPU();
+
         m_ForwardShader->bindBuffer(0, "InputA", input->buffer);
         m_ForwardShader->bindBuffer(1, "InputB", residual->buffer);
         m_ForwardShader->bindBuffer(2, "Gamma", m_Gamma->buffer);
@@ -44,14 +48,13 @@ namespace NNGL {
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_ForwardShader->dispatch(outputWorkgroupsX, 1, 1);
 
-        m_CachedOutput->downloadFromGPU();
         // Unbind buffers
-        for (int i = 0; i <= 4; ++i) {
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-        }
+        for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
 
         // Explicit CPU computation and comparison
         if (g_LayerNormDebug) {
+            m_CachedOutput->downloadFromGPU();
+
             std::vector<float> cpuOutput;
             NNGL::attentionAddNormCPU(
                 input->getFlatVec(),
@@ -75,30 +78,29 @@ namespace NNGL {
         NNGL::Timer timer("LayerNorm::backward");
         int seqLen = input->cols;
         int modelDim = input->rows;
-
         // Reuse gradient matrices if possible
-        if (!m_GradInput || m_GradInput->rows != modelDim || m_GradInput->cols != seqLen)
+        if (!m_GradInput || m_GradInput->rows != modelDim || m_GradInput->cols != seqLen) {
             m_GradInput = std::make_shared<Matrix>(modelDim, seqLen);
-        if (!m_GradResidual || m_GradResidual->rows != modelDim || m_GradResidual->cols != seqLen)
+            m_GradInput->uploadToGPU();
+        }
+        if (!m_GradResidual || m_GradResidual->rows != modelDim || m_GradResidual->cols != seqLen) {
             m_GradResidual = std::make_shared<Matrix>(modelDim, seqLen);
+            m_GradResidual->uploadToGPU();
+        }
         // Allocate grad gamma/beta as (modelDim, seqLen) for per-position accumulation
-        if (!m_GradGamma || m_GradGamma->rows != modelDim || m_GradGamma->cols != seqLen)
+        if (!m_GradGamma || m_GradGamma->rows != modelDim || m_GradGamma->cols != seqLen) {
             m_GradGamma = std::make_shared<Matrix>(modelDim, seqLen, 0.0f);
-        if (!m_GradBeta || m_GradBeta->rows != modelDim || m_GradBeta->cols != seqLen)
+            m_GradGamma->uploadToGPU();
+        }
+        if (!m_GradBeta || m_GradBeta->rows != modelDim || m_GradBeta->cols != seqLen) {
             m_GradBeta = std::make_shared<Matrix>(modelDim, seqLen, 0.0f);
-        // Always zero grad gamma/beta before upload
-        m_GradGamma->clear(0.0f);
-        m_GradBeta->clear(0.0f);
+            m_GradBeta->uploadToGPU();
 
-        gradOutput->uploadToGPU();
-        input->uploadToGPU();
-        residual->uploadToGPU();
-        m_Gamma->uploadToGPU();
-        m_Beta->uploadToGPU();
-        m_GradInput->uploadToGPU();
-        m_GradResidual->uploadToGPU();
-        m_GradGamma->uploadToGPU();
-        m_GradBeta->uploadToGPU();
+        }
+
+        //m_Gamma->uploadToGPU();
+        //m_Beta->uploadToGPU();
+
         m_BackwardShader->bindBuffer(0, "GradOutput", gradOutput->buffer);
         m_BackwardShader->bindBuffer(1, "InputA", input->buffer);
         m_BackwardShader->bindBuffer(2, "InputB", residual->buffer);
@@ -114,10 +116,7 @@ namespace NNGL {
         // Use correct workgroup count for local_size_x = 32
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_BackwardShader->dispatch(outputWorkgroupsX, 1, 1);
-        m_GradInput->downloadFromGPU();
-        m_GradResidual->downloadFromGPU();
-        m_GradGamma->downloadFromGPU();
-        m_GradBeta->downloadFromGPU();
+
 
         // Unbind buffers
         for (int i = 0; i <= 8; ++i) {
@@ -126,6 +125,10 @@ namespace NNGL {
 
         // Explicit CPU computation and comparison for backward
         if (g_LayerNormDebug) {
+            m_GradInput->downloadFromGPU();
+            m_GradResidual->downloadFromGPU();
+            m_GradGamma->downloadFromGPU();
+            m_GradBeta->downloadFromGPU();
             std::vector<float> cpuGradInput, cpuGradResidual, cpuGradGamma, cpuGradBeta;
             NNGL::attentionBackwardAddNormCPU(
                 gradOutput->getFlatVec(),

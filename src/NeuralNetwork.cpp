@@ -49,7 +49,6 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
-        inputBatchMat->uploadToGPU();
 		GLuint currentInput = inputBatchMat->buffer;
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
@@ -140,7 +139,6 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::targetLayerLossCalc(std::shared_ptr<Matrix>& outputBatchMat) {
-        outputBatchMat->uploadToGPU();
 
         m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationBuffer);
         m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", outputBatchMat->buffer);
@@ -569,6 +567,7 @@ namespace NNGL {
         }
         else throw std::runtime_error("data failed to map");
 
+        forwardMatOutput->uploadToGPU();
         return forwardMatOutput;
     }
 
@@ -686,9 +685,11 @@ namespace NNGL {
         if (!mapped) throw std::runtime_error("data failed to map");
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        inputGradMat->uploadToGPU();
 
         std::shared_ptr<Matrix> result = inputGradMat;
         returnMatrixToPool(inputGradMat);
+
         return result;
     }
 

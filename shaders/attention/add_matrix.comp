@@ -1,0 +1,19 @@
+#version 430
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+// Input matrices: [rows, cols] column-major
+layout(std430) readonly buffer A { float a[]; };
+layout(std430) readonly buffer B { float b[]; };
+layout(std430) writeonly buffer Out { float otuput_mat[]; };
+
+uniform int rows;
+uniform int cols;
+
+void main() {
+    uint row = gl_GlobalInvocationID.x;
+    uint col = gl_GlobalInvocationID.y;
+    if (row >= uint(rows) || col >= uint(cols)) return;
+    uint idx = col * rows + row; // column-major
+    otuput_mat[idx] = a[idx] + b[idx];
+} 
