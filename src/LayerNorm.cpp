@@ -18,14 +18,14 @@ namespace NNGL {
 
     std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual) {
         NNGL::Timer timer("LayerNorm::forward");
-        int seqLen = input->rows;
-        int modelDim = input->cols;
+        int seqLen = input->cols;
+        int modelDim = input->rows;
         m_CachedInput = input;
         m_CachedResidual = residual;
         
         // Prepare output: reuse m_CachedOutput if possible
-        if (!m_CachedOutput || m_CachedOutput->rows != seqLen || m_CachedOutput->cols != modelDim) {
-            m_CachedOutput = std::make_shared<Matrix>(seqLen, modelDim);
+        if (!m_CachedOutput || m_CachedOutput->rows != modelDim || m_CachedOutput->cols != seqLen) {
+            m_CachedOutput = std::make_shared<Matrix>(modelDim, seqLen);
         }
         input->uploadToGPU();
         residual->uploadToGPU();
@@ -73,14 +73,14 @@ namespace NNGL {
         const std::shared_ptr<Matrix>& residual
     ) {
         NNGL::Timer timer("LayerNorm::backward");
-        int seqLen = input->rows;
-        int modelDim = input->cols;
+        int seqLen = input->cols;
+        int modelDim = input->rows;
 
         // Reuse gradient matrices if possible
-        if (!m_GradInput || m_GradInput->rows != seqLen || m_GradInput->cols != modelDim)
-            m_GradInput = std::make_shared<Matrix>(seqLen, modelDim);
-        if (!m_GradResidual || m_GradResidual->rows != seqLen || m_GradResidual->cols != modelDim)
-            m_GradResidual = std::make_shared<Matrix>(seqLen, modelDim);
+        if (!m_GradInput || m_GradInput->rows != modelDim || m_GradInput->cols != seqLen)
+            m_GradInput = std::make_shared<Matrix>(modelDim, seqLen);
+        if (!m_GradResidual || m_GradResidual->rows != modelDim || m_GradResidual->cols != seqLen)
+            m_GradResidual = std::make_shared<Matrix>(modelDim, seqLen);
         // Allocate grad gamma/beta as (modelDim, seqLen) for per-position accumulation
         if (!m_GradGamma || m_GradGamma->rows != modelDim || m_GradGamma->cols != seqLen)
             m_GradGamma = std::make_shared<Matrix>(modelDim, seqLen, 0.0f);

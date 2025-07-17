@@ -40,6 +40,18 @@ void main() {
     variance /= float(model_dim);
     float stddev = sqrt(variance + epsilon);
 
+    // Precompute sums for LayerNorm backward
+    float sum1 = 0.0;
+    float sum2 = 0.0;
+    for (int dim = 0; dim < model_dim; dim++) {
+        uint idx = dim * seq_len + seq_pos;
+        float val = input_a[idx] + input_b[idx];
+        float dy = grad_output[idx];
+        float g = gamma[dim];
+        sum1 += dy * g;
+        sum2 += dy * g * (val - mean);
+    }
+
     // Compute gradients for each dimension at this sequence position
     for (int dim = 0; dim < model_dim; dim++) {
         uint idx = dim * seq_len + seq_pos;
@@ -52,9 +64,11 @@ void main() {
         grad_gamma[seq_pos * model_dim + dim] = dy * norm;
         grad_beta[seq_pos * model_dim + dim] = dy;
 
-        // Input gradients (simple version: norm_gradient / stddev)
+        // Full LayerNorm backward for input gradients
         float norm_gradient = dy * g;
-        float val_gradient = norm_gradient / stddev;
+        float val_gradient = (norm_gradient / stddev)
+                           - (sum1 / (float(model_dim) * stddev))
+                           - ((val - mean) * sum2 / (float(model_dim) * stddev * (variance + epsilon)));
         grad_input_a[idx] = val_gradient;
         grad_input_b[idx] = val_gradient;
     }

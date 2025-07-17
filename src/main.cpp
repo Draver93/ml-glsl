@@ -875,13 +875,13 @@ void testAttentionBlockClass() {
         NNGL::AttentionBlock attention(32, 4, 5, false);
         
         // Set up simple test case
-        auto input = std::make_shared<NNGL::Matrix>(5, 32); // [seq_len, model_dim]
+        auto input = std::make_shared<NNGL::Matrix>(32, 5); // [model_dim, seq_len]
         input->randomize(-1.0f, 1.0f);
         
         std::cout << "Test 2: Attention forward pass - ";
         try {
             auto output = attention.forward(input, input);
-            if (output && output->rows == 5 && output->cols == 32) {
+            if (output && output->rows == 32 && output->cols == 5) {
                 std::cout << "PASS (forward pass completed)" << std::endl;
             } else {
                 std::cout << "FAIL (wrong output dimensions)" << std::endl;
@@ -929,6 +929,8 @@ void test_embeddingblock_gpu_update() {
     size_t vocabSize = 10;
 
     EmbeddingBlock embedder(vocabSize, modelDim, 10);
+    std::vector<std::string> tokens2 = { "B", "B" };
+    embedder.forward(tokens2);
     float lr = 0.1f;
     {
         // Test 1: Single token
@@ -949,13 +951,14 @@ void test_embeddingblock_gpu_update() {
         std::cout << "A before: "; beforeA->print();
         std::cout << "A after:  "; afterA->print();
         for (int j = 0; j < modelDim; ++j) {
-            float expected = (*beforeA)(0, j) - lr * (*grad1)(j, 0);
-            float d = (*beforeA)(0, j);
-            float d1 = (*afterA)(0, j);
-            float diff = std::abs((*afterA)(0, j) - expected);
+            float expected = (*beforeA)(j, 0) - lr * (*grad1)(j, 0);
+            float d = (*beforeA)(j, 0);
+            float d1 = (*afterA)(j, 0);
+            float diff = std::abs((*afterA)(j, 0) - expected);
             assert(diff < 1e-4);
         }
     }
+
     {
         std::vector<std::string> singleB = { "B" };
         auto beforeB = embedder.forward(singleB); // deep copy
@@ -983,13 +986,13 @@ void test_embeddingblock_gpu_update() {
         std::cout << "B after:  \n"; afterB->print();
         // Simulate sequential SGD updates for repeated token B
         for (int j = 0; j < modelDim; ++j) {
-            float expected = (*beforeB)(0, j);
+            float expected = (*beforeB)(j, 0);
             float a = (*grad)(j, 0);
             float b = (*grad)(j, 1);
             expected -= lr * (*grad)(j, 0); // first occurrence
             expected -= lr * (*grad)(j, 1); // second occurrence
 
-            float diff = std::abs((*afterB)(0, j) - expected);
+            float diff = std::abs((*afterB)(j, 0) - expected);
             assert(diff < 1e-4);
         }
     }
@@ -1033,11 +1036,11 @@ void test_embeddingblock_gpu_update() {
         std::cout << "D before: "; beforeD->print();
         std::cout << "D after:  "; afterD->print();
         for (int j = 0; j < modelDim; ++j) {
-            float expectedC = (*beforeC)(0, j) - lr * (*grad)(j, 0);
-            float expectedD = (*beforeD)(0, j) - lr * (*grad)(j, 1);
-            float diff = std::abs((*afterC)(0, j) - expectedC);
-            //assert(diff < 1e-4);
-            diff = std::abs((*afterD)(0, j) - expectedD);
+            float expectedC = (*beforeC)(j, 0) - lr * (*grad)(j, 0);
+            float expectedD = (*beforeD)(j, 0) - lr * (*grad)(j, 1);
+            float diff = std::abs((*afterC)(j, 0) - expectedC);
+            assert(diff < 1e-4);
+            diff = std::abs((*afterD)(j, 0) - expectedD);
             assert(diff < 1e-4);
         }
         std::cout << "[UnitTest] EmbeddingBlock GPU Update PASSED\n";
@@ -1119,8 +1122,8 @@ void testDecoderBlockBackward() {
     (*input)(test_i, test_j) = orig - epsilon;
     auto out_minus = decoder.forward(input, paddingMask);
     float loss_minus = 0.0f;
-    for (int i = 0; i < out_minus->cols; ++i)
-        for (int j = 0; j < out_minus->rows; ++j)
+    for (int i = 0; i < out_minus->rows; ++i)
+        for (int j = 0; j < out_minus->cols; ++j)
             loss_minus += (*out_minus)(i, j);
 
     float num_grad = (loss_plus - loss_minus) / (2 * epsilon);
@@ -1134,7 +1137,8 @@ void runAllUnitTests() {
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "RUNNING COMPREHENSIVE UNIT TESTS" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
-    
+
+    test_embeddingblock_gpu_update();
     testMatrixClass();
     testNeuralNetworkClass();
     testAttentionBlockClass();
@@ -1142,7 +1146,7 @@ void runAllUnitTests() {
     testDecoderBlockClass();
     test_positional_encoding();
     testDecoderBlockBackward();
-    
+
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "UNIT TESTS COMPLETED" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
@@ -1349,7 +1353,6 @@ int main(int argc, char** argv) {
     glfwMakeContextCurrent(window);
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { LOG_ERROR("Failed to initialize GLAD!"); return -1; }
 
-    //test_embeddingblock_gpu_update();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     int choice = 1; // Change this to test different functions

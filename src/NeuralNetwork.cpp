@@ -670,13 +670,10 @@ namespace NNGL {
         // Compute gradients for hidden layers
         hiddenLayersLossCalc();
 
-        // Update weights and biases
-        if (learningRate > 0.0f) {
-            // We need the input that was used in the forward pass
-            if (m_CachedInput) {
-                // Use the cached input from forward pass
-                weightsAndBiasesUpdate(m_CachedInput, learningRate);
-            }
+        // We need the input that was used in the forward pass
+        if (m_CachedInput) {
+            // Use the cached input from forward pass
+            weightsAndBiasesUpdate(m_CachedInput, learningRate);
         }
 
         // Compute input gradient

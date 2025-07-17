@@ -1,12 +1,12 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) readonly buffer CachedInput { float cached_input[]; };       // [seq_len, input_dim]
+layout(std430) readonly buffer CachedInput { float cached_input[]; };       // [input_dim, seq_len]
 layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, head_dim]
 layout(std430) writeonly buffer GradWeight { float grad_weight[]; };        // [input_dim, head_dim]
 
-uniform int seq_len;
 uniform int input_dim;
+uniform int seq_len;
 uniform int head_dim;
 
 void main() {
@@ -16,18 +16,13 @@ void main() {
     if (input_dim_idx >= input_dim || head_dim_idx >= head_dim) return;
     
     // Compute gradient w.r.t. weight: grad_weight = input^T @ grad_projection
-    // This accumulates gradients across all sequence positions
     float sum = 0.0;
     for (uint seq_pos = 0; seq_pos < seq_len; seq_pos++) {
-        // input^T indexing: input^T[input_dim_idx, seq_pos] = input[seq_pos, input_dim_idx]
-        // Column-major indexing: input[input_dimension * seq_len + sequence_position]
         uint input_col_major_idx = input_dim_idx * seq_len + seq_pos;
-        // grad_projection indexing: [head_dimension * seq_len + sequence_position]
         uint grad_proj_col_major_idx = head_dim_idx * seq_len + seq_pos;
         sum += cached_input[input_col_major_idx] * grad_projection[grad_proj_col_major_idx];
     }
-    
-    // Store gradient with standard matrix indexing: [input_dimension * head_dimension]
     uint grad_weight_idx = input_dim_idx * head_dim + head_dim_idx;
+    if (isnan(sum) || isinf(sum)) sum = 0.0;
     grad_weight[grad_weight_idx] = sum;
 }

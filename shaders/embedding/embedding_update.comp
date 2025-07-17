@@ -22,6 +22,6 @@ void main() {
     int token_idx = token_indices[out_idx];
     if (token_idx < 0 || token_idx >= vocab_size) return;
 
-    embeddings[dim * model_dim + token_idx] -= learning_rate * grads[out_idx * model_dim + dim];
-    //embeddings[dim * model_dim + token_idx] = token_idx;//grads[out_idx * model_dim + dim];
+    embeddings[token_idx * model_dim + dim] -= learning_rate * grads[out_idx * model_dim + dim];
+    //embeddings[token_idx * model_dim + dim] += grads[out_idx * model_dim + dim];
 } 

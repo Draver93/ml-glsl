@@ -7,17 +7,21 @@ layout(std430) readonly buffer EmbeddingsMat { float embeddings[]; };
 // Indices: [seq_len]
 layout(std430) readonly buffer Indices { int token_indices[]; };
 // Output: [model_dim, seq_len]
-layout(std430) writeonly buffer OutputMat { float output_buffer[]; };
+layout(std430) buffer OutputMat { float output_buffer[]; };
 
 uniform int vocab_size;
 uniform int model_dim;
+uniform int max_seq_len;
 uniform int seq_len;
+
 
 void main() { //VALID
     uint dim = gl_GlobalInvocationID.x;      // model_dim (column)
     uint out_idx = gl_GlobalInvocationID.y;  // seq_len (row)
+    if (dim >= model_dim || out_idx >= seq_len) return; // return if over the dim
 
     int token_idx = token_indices[out_idx];
-    
-    output_buffer[out_idx * model_dim + dim] = embeddings[token_idx * model_dim + dim];
+    if (token_idx < 0 || token_idx >= vocab_size)  return;
+
+    output_buffer[out_idx * model_dim + dim] = embeddings[token_idx * model_dim + dim]; //dirty buffer
 } 

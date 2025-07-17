@@ -41,7 +41,7 @@ namespace NNGL {
     }
 
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<std::string>& tokens) {
-        std::vector<int> indices(m_VocabSize, 0);
+        std::vector<int> indices(m_MaxSeqLen, 0);
         for (int i = 0; i < tokens.size(); i++) {
             if (m_EmbeddingsIds.find(tokens[i]) == m_EmbeddingsIds.end()) {
                 int id = m_EmbeddingsIds.size();
@@ -53,7 +53,7 @@ namespace NNGL {
         if (!m_CachedIndexBuffer) {
             glGenBuffers(1, &m_CachedIndexBuffer);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedIndexBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(int), nullptr, GL_DYNAMIC_DRAW);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, m_MaxSeqLen * sizeof(int), nullptr, GL_DYNAMIC_DRAW);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         }
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedIndexBuffer);
@@ -67,6 +67,8 @@ namespace NNGL {
         NNGL::Timer timer("EmbeddingBlock::forward");
 
         GLuint indexBuffer = getIndexBuffer(tokens);
+        m_CachedOutput->clear();
+        m_CachedOutput->uploadToGPU(); //make sure to remove it only if you know that buffer will always refresh itself
 
         m_EmbeddingForwardCompute->bindBuffer(0, "EmbeddingsMat", m_EmbeddingsMat->buffer);
         m_EmbeddingForwardCompute->bindBuffer(1, "Indices", indexBuffer);
@@ -74,21 +76,22 @@ namespace NNGL {
 
         m_EmbeddingForwardCompute->setUniform("vocab_size", (int)m_VocabSize);
         m_EmbeddingForwardCompute->setUniform("model_dim", (int)m_ModelDim);
+        m_EmbeddingForwardCompute->setUniform("max_seq_len", (int)m_MaxSeqLen);
         m_EmbeddingForwardCompute->setUniform("seq_len", (int)tokens.size());
 
         int localSizeX = 16;
         int localSizeY = 16;
         int workgroupsX = (m_ModelDim + localSizeX - 1) / localSizeX;
-        int workgroupsY = (m_MaxSeqLen + localSizeY - 1) / localSizeY;
+        int workgroupsY = (tokens.size() + localSizeY - 1) / localSizeY;
         m_EmbeddingForwardCompute->dispatch(workgroupsX, workgroupsY, 1);
 
-        for (int j = 0; j <= 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
-
+        for (int j = 0; j <= 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+        m_EmbeddingsMat->downloadFromGPU();
+        m_CachedOutput->downloadFromGPU();
         return m_CachedOutput;
     }
 
     void EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
-
         GLuint indexBuffer = getIndexBuffer(tokens);
 
         gradOutput->uploadToGPU();
@@ -104,7 +107,7 @@ namespace NNGL {
         m_EmbeddingUpdateCompute->setUniform("learning_rate", learningRate);
 
         int workgroupsX = std::min((int)ceil(m_ModelDim / 16.0f), 65535);
-        for(int i = 0; i < tokens.size(); i++) {
+        for (int i = 0; i < tokens.size(); i++) {
             m_EmbeddingUpdateCompute->setUniform("out_idx", i);
             m_EmbeddingUpdateCompute->dispatch(workgroupsX, 1, 1);
         }
