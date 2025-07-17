@@ -925,10 +925,10 @@ void test_embeddingblock_gpu_update() {
         auto beforeA = embedder.forward(tokens1); // deep copy
         beforeA->downloadFromGPU();
         beforeA = std::make_shared<Matrix>(beforeA->rows, beforeA->cols, beforeA->getFlatVec().data());
-        std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(1, modelDim);
-        (*grad1)(0, 0) = 1; (*grad1)(0, 1) = 2; (*grad1)(0, 2) = 3;
+        std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(modelDim, 1);
+        (*grad1)(0, 0) = 1; (*grad1)(1, 0) = 2; (*grad1)(2, 0) = 3;
         std::cout << "Test grad1: ";
-        for (int j = 0; j < modelDim; ++j) std::cout << (*grad1)(0, j) << " ";
+        for (int j = 0; j < modelDim; ++j) std::cout << (*grad1)(j, 0) << " ";
         std::cout << std::endl;
         embedder.backward(tokens1, grad1, lr);
 
@@ -938,12 +938,13 @@ void test_embeddingblock_gpu_update() {
         std::cout << "A before: "; beforeA->print();
         std::cout << "A after:  "; afterA->print();
         for (int j = 0; j < modelDim; ++j) {
-            float expected = (*beforeA)(0, j) - lr * (*grad1)(0, j);
+            float expected = (*beforeA)(0, j) - lr * (*grad1)(j, 0);
+            float d = (*beforeA)(0, j);
+            float d1 = (*afterA)(0, j);
             float diff = std::abs((*afterA)(0, j) - expected);
             assert(diff < 1e-4);
         }
     }
-
     {
         std::vector<std::string> singleB = { "B" };
         auto beforeB = embedder.forward(singleB); // deep copy
@@ -952,30 +953,30 @@ void test_embeddingblock_gpu_update() {
 
 
         // Test 2: Repeated token
-        std::vector<std::string> tokens2 = { "B", "B" };
-        embedder.forward(tokens2);
-        std::shared_ptr<Matrix> grad2 = std::make_shared<Matrix>(2, modelDim);
-        (*grad2)(0, 0) = 1; (*grad2)(0, 1) = 2; (*grad2)(0, 2) = 3;
-        (*grad2)(1, 0) = 4; (*grad2)(1, 1) = 5; (*grad2)(1, 2) = 6;
+        std::vector<std::string> tokens = { "B", "B" };
+        embedder.forward(tokens);
+        std::shared_ptr<Matrix> grad = std::make_shared<Matrix>(modelDim, 2);
+        (*grad)(0, 0) = 1; (*grad)(1, 0) = 2; (*grad)(2, 0) = 3;
+        (*grad)(0, 1) = 4; (*grad)(1, 1) = 5; (*grad)(2, 1) = 6;
         std::cout << "Test grad2: ";
-        for (int i = 0; i < 2; ++i) for (int j = 0; j < modelDim; ++j) std::cout << (*grad2)(i, j) << " ";
+        for (int i = 0; i < modelDim; ++i) for (int j = 0; j < 2; ++j) std::cout << (*grad)(i, j) << " ";
         std::cout << std::endl;
-        embedder.backward(tokens2, grad2, lr);
+        embedder.backward(tokens, grad, lr);
 
 
         auto afterB = embedder.forward(singleB); // deep copy
         afterB->downloadFromGPU();
 
         std::cout << "B before: \n"; beforeB->print();
-        std::cout << "grad2: \n"; grad2->print();
+        std::cout << "grad2: \n"; grad->print();
         std::cout << "B after:  \n"; afterB->print();
         // Simulate sequential SGD updates for repeated token B
         for (int j = 0; j < modelDim; ++j) {
             float expected = (*beforeB)(0, j);
-            float a = (*grad2)(0, j);
-            float b = (*grad2)(1, j);
-            expected -= lr * (*grad2)(0, j); // first occurrence
-            expected -= lr * (*grad2)(1, j); // second occurrence
+            float a = (*grad)(j, 0);
+            float b = (*grad)(j, 1);
+            expected -= lr * (*grad)(j, 0); // first occurrence
+            expected -= lr * (*grad)(j, 1); // second occurrence
 
             float diff = std::abs((*afterB)(0, j) - expected);
             assert(diff < 1e-4);
@@ -999,13 +1000,13 @@ void test_embeddingblock_gpu_update() {
         std::vector<std::string> tokens = { "C", "D" };
         embedder.forward(tokens);
 
-        std::shared_ptr<Matrix> grad3 = std::make_shared<Matrix>(2, modelDim);
-        (*grad3)(0, 0) = 1; (*grad3)(0, 1) = 2; (*grad3)(0, 2) = 3;
-        (*grad3)(1, 0) = 4; (*grad3)(1, 1) = 5; (*grad3)(1, 2) = 6;
-        std::cout << "Test grad3: ";
-        for (int i = 0; i < 2; ++i) for (int j = 0; j < modelDim; ++j) std::cout << (*grad3)(i, j) << " ";
+        std::shared_ptr<Matrix> grad = std::make_shared<Matrix>(modelDim, 2);
+        (*grad)(0, 0) = 1; (*grad)(1, 0) = 2; (*grad)(2, 0) = 3;
+        (*grad)(0, 1) = 4; (*grad)(1, 1) = 5; (*grad)(2, 1) = 6;
+        std::cout << "Test grad: ";
+        for (int i = 0; i < modelDim; ++i) for (int j = 0; j < 2; ++j) std::cout << (*grad)(i, j) << " ";
         std::cout << std::endl;
-        embedder.backward(tokens, grad3, lr);
+        embedder.backward(tokens, grad, lr);
 
         auto afterC = embedder.forward(singleC);
         afterC->downloadFromGPU();
@@ -1017,11 +1018,12 @@ void test_embeddingblock_gpu_update() {
 
         std::cout << "C before: "; beforeC->print();
         std::cout << "C after:  "; afterC->print();
+        std::cout << "grad: \n"; grad->print();
         std::cout << "D before: "; beforeD->print();
         std::cout << "D after:  "; afterD->print();
         for (int j = 0; j < modelDim; ++j) {
-            float expectedC = (*beforeC)(0, j) - lr * (*grad3)(0, j);
-            float expectedD = (*beforeD)(0, j) - lr * (*grad3)(1, j);
+            float expectedC = (*beforeC)(0, j) - lr * (*grad)(j, 0);
+            float expectedD = (*beforeD)(0, j) - lr * (*grad)(j, 1);
             float diff = std::abs((*afterC)(0, j) - expectedC);
             //assert(diff < 1e-4);
             diff = std::abs((*afterD)(0, j) - expectedD);
@@ -1335,7 +1337,7 @@ int main(int argc, char** argv) {
     glfwMakeContextCurrent(window);
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { LOG_ERROR("Failed to initialize GLAD!"); return -1; }
 
-    //test_embeddingblock_gpu_update();
+    test_embeddingblock_gpu_update();
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
     int choice = 1; // Change this to test different functions

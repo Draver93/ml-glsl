@@ -34,27 +34,26 @@ namespace NNGL {
 
         m_CachedOutput = std::make_shared<Matrix>(modelDim, maxSeqLen);
 
-        m_EmbeddingsMat = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
+        m_EmbeddingsMat = std::make_shared<Matrix>(m_ModelDim, m_VocabSize);
         m_EmbeddingsMat->randomize(0.0f, 0.1f);
         m_EmbeddingsMat->uploadToGPU();
         m_EmbeddingsIds.reserve(m_VocabSize);
     }
 
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<std::string>& tokens) {
-        std::vector<int> indices;
-        indices.reserve(tokens.size());
-        for (auto& tok : tokens) {
-            if (m_EmbeddingsIds.find(tok) == m_EmbeddingsIds.end()) {
+        std::vector<int> indices(m_VocabSize, 0);
+        for (int i = 0; i < tokens.size(); i++) {
+            if (m_EmbeddingsIds.find(tokens[i]) == m_EmbeddingsIds.end()) {
                 int id = m_EmbeddingsIds.size();
-                m_EmbeddingsIds[tok] = id;
+                m_EmbeddingsIds[tokens[i]] = id;
             }
-            indices.emplace_back(m_EmbeddingsIds[tok]);
+            indices[i] = m_EmbeddingsIds[tokens[i]];
         }
 
         if (!m_CachedIndexBuffer) {
             glGenBuffers(1, &m_CachedIndexBuffer);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedIndexBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, m_CachedIndexBuffer, nullptr, GL_DYNAMIC_DRAW);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(int), nullptr, GL_DYNAMIC_DRAW);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         }
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedIndexBuffer);
