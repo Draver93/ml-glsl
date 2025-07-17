@@ -551,7 +551,7 @@ namespace NNGL {
         
         forwardPass(inputMat);
 
-        int outputRows = inputMat->rows;
+        int outputRows = inputMat->cols;
         int outputCols = m_Layers.back()->m_Height; // output size
         // Return previous output to pool before getting a new one
         if (forwardMatOutput) {

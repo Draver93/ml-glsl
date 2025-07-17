@@ -250,8 +250,8 @@ namespace NNGL {
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
         inputMat->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
-        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
-        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->cols, 1);
+        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(decOutputMat->rows - 1, i);
 
         return m_OutputProjection->forward(lastTokenRep);
     }
@@ -267,15 +267,15 @@ namespace NNGL {
 
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
-        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
-        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->cols, 1);
+        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(decOutputMat->rows - 1, i);
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
 
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
         int lastPos = decOutputMat->rows - 1;
-        for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
+        for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(i, 0));
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
 
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
