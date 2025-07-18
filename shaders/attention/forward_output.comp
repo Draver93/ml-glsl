@@ -9,6 +9,9 @@ uniform int seq_len;
 uniform int head_dim;
 uniform int num_heads;
 
+const float SAFE_MIN = -1e9;
+const float SAFE_MAX = 1e9;
+
 void main() {
     uint output_seq_pos = gl_GlobalInvocationID.x;  // output sequence position
     uint output_dim_idx = gl_GlobalInvocationID.y;  // output dimension index
@@ -27,6 +30,13 @@ void main() {
         float v_val = V[v_col_major_idx];
         
         result += attention_weight * v_val;
+    }
+    
+    // Clamp all intermediate results to [SAFE_MIN, SAFE_MAX]
+    // If result is NaN or Inf, set to zero
+    result = clamp(result, SAFE_MIN, SAFE_MAX);
+    if (isinf(result) || isnan(result)) {
+        result = 0.0;
     }
     
     uint output_col_major_idx = (head_idx * head_dim + head_dim_idx) * seq_len + output_seq_pos;

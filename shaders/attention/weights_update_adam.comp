@@ -1,13 +1,12 @@
 #version 430
 layout(local_size_x = 32) in;
 
-layout(std430) buffer Weight { float weight[]; };                    // [input_dim, head_dim]
-layout(std430) readonly buffer GradWeight { float grad_weight[]; };  // [input_dim, head_dim]
-layout(std430) buffer ADAM_M { float adam_m[]; };                    // [input_dim, head_dim]
-layout(std430) buffer ADAM_V { float adam_v[]; };                    // [input_dim, head_dim]
+layout(std430) buffer Weight { float weight[]; };                    // [model_dim, model_dim]
+layout(std430) readonly buffer GradWeight { float grad_weight[]; };  // [model_dim, model_dim]
+layout(std430) buffer ADAM_M { float adam_m[]; };                    // [model_dim, model_dim]
+layout(std430) buffer ADAM_V { float adam_v[]; };                    // [model_dim, model_dim]
 
-uniform int input_dim;
-uniform int head_dim;
+uniform int model_dim;
 
 uniform float learning_rate;
 uniform float ADAM_beta1;
@@ -18,7 +17,7 @@ const float epsilon = 1e-8;
 
 void main() {
     uint weight_idx = gl_GlobalInvocationID.x;  // flattened weight index
-    if (weight_idx >= uint(input_dim * head_dim)) return;
+    if (weight_idx >= uint(model_dim * model_dim)) return;
     
     // Get pre-computed weight gradient from attention backward pass
     float weight_gradient = grad_weight[weight_idx];

@@ -1,38 +1,47 @@
 #version 430
 layout(local_size_x = 16) in;
 
-layout(std430) readonly buffer GradAttentionWeights { float grad_attn[]; };  // [seq_len, seq_len]
-layout(std430) readonly buffer CachedAttentionWeights { float cached_attn[]; }; // [seq_len, seq_len]
-layout(std430) writeonly buffer GradScores { float grad_scores[]; };         // [seq_len, seq_len]
+layout(std430) readonly buffer GradAttentionWeights { float grad_attn[]; };  // [num_heads * seq_len, seq_len]
+layout(std430) readonly buffer CachedAttentionWeights { float cached_attn[]; }; // [num_heads * seq_len, seq_len]
+layout(std430) writeonly buffer GradScores { float grad_scores[]; };         // [num_heads * seq_len, seq_len]
 
 uniform int seq_len;
+uniform int num_heads;
 uniform int use_mask;
 
-// Padding mask: 1 for real tokens, 0 for PAD tokens
 layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
 uniform bool has_padding_mask = false;
 
+const float EPS = 1e-8;
+const float SAFE_MIN = -1e9;
+const float SAFE_MAX = 1e9;
+
 void main() {
-    uint row = gl_GlobalInvocationID.x;
-    if (row >= uint(seq_len)) return;
-    
-    // Compute sum for softmax gradient (excluding masked positions)
+    uint global_row = gl_GlobalInvocationID.x;
+    if (global_row >= uint(num_heads * seq_len)) return;
+    uint head = global_row / seq_len;
+    uint row = global_row % seq_len;
+
     float sum_grad_attn = 0.0;
     for (int j = 0; j < seq_len; j++) {
-        if (use_mask == 1 && j > row) continue;  // Apply causal mask
-        if (has_padding_mask && padding_mask[j] == 0) continue;      // Apply padding mask
-        sum_grad_attn += grad_attn[row * seq_len + j] * cached_attn[row * seq_len + j];
+        if (use_mask == 1 && j > row) continue;
+        if (has_padding_mask && padding_mask[j] == 0) continue;
+        uint idx = (head * seq_len + row) * seq_len + j;
+        sum_grad_attn += grad_attn[idx] * cached_attn[idx];
     }
-    
-    // Compute gradient w.r.t. scores
+
     for (int j = 0; j < seq_len; j++) {
+        uint idx = (head * seq_len + row) * seq_len + j;
         if (use_mask == 1 && j > row) {
-            grad_scores[row * seq_len + j] = 0.0;  // Zero out future positions in causal mask
+            grad_scores[idx] = 0.0;
         } else if (has_padding_mask && padding_mask[j] == 0) {
-            grad_scores[row * seq_len + j] = 0.0;  // Zero out PAD positions
+            grad_scores[idx] = 0.0;
         } else {
-            grad_scores[row * seq_len + j] = cached_attn[row * seq_len + j] * 
-                (grad_attn[row * seq_len + j] - sum_grad_attn);
+            float grad_attn_val = grad_attn[idx];
+            float cached_attn_val = cached_attn[idx];
+            float grad_attn_sum = sum_grad_attn;
+            float grad_attn_normalized = (grad_attn_val - grad_attn_sum) / (cached_attn_val + EPS);
+            grad_scores[idx] = clamp(grad_attn_normalized, SAFE_MIN, SAFE_MAX);
         }
     }
 }

@@ -1173,9 +1173,9 @@ void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
-    int d_model = 32;  // Increased for complex text
+    int d_model = 256;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 8;   // Longer sequence for complex text
+    int seq_len = 64;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1218,7 +1218,7 @@ void gptransformer_simplified() {
         "green Apple has number two",
         "green always two",
         "number two has green fruit",
-        "What color of Apple number two It's green"
+        "What color of Apple number two It's green",
 
         "yellow and three make an Apple",
         "Apple is yellow when it's three",
@@ -1265,7 +1265,7 @@ void gptransformer_simplified() {
 
     std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
     int epochs = 1000000;
-    float initial_learning_rate = 0.00001f; // Reduced for more stable learning
+    float initial_learning_rate = 0.0001f; // Reduced for more stable learning
     
     // Early stopping variables
     int epochs_without_improvement = 0;

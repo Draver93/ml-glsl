@@ -1,28 +1,25 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) readonly buffer CachedInput { float cached_input[]; };       // [input_dim, seq_len]
-layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, head_dim]
-layout(std430) writeonly buffer GradWeight { float grad_weight[]; };        // [input_dim, head_dim]
+layout(std430) readonly buffer CachedInput { float cached_input[]; };       // [seq_len, model_dim]
+layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, model_dim]
+layout(std430) writeonly buffer GradWeight { float grad_weight[]; };        // [model_dim, model_dim]
 
-uniform int input_dim;
 uniform int seq_len;
-uniform int head_dim;
+uniform int model_dim;
 
 void main() {
-    uint input_dim_idx = gl_GlobalInvocationID.x;  // input dimension (row index)
-    uint head_dim_idx = gl_GlobalInvocationID.y;   // head dimension (column index)
-    
-    if (input_dim_idx >= input_dim || head_dim_idx >= head_dim) return;
-    
-    // Compute gradient w.r.t. weight: grad_weight = input^T @ grad_projection
+    uint input_dim_idx = gl_GlobalInvocationID.x;  // 0..model_dim-1
+    uint model_dim_idx = gl_GlobalInvocationID.y;  // 0..model_dim-1
+    if (input_dim_idx >= uint(model_dim) || model_dim_idx >= uint(model_dim)) return;
+
     float sum = 0.0;
     for (uint seq_pos = 0; seq_pos < seq_len; seq_pos++) {
-        uint input_col_major_idx = input_dim_idx * seq_len + seq_pos;
-        uint grad_proj_col_major_idx = head_dim_idx * seq_len + seq_pos;
-        sum += cached_input[input_col_major_idx] * grad_projection[grad_proj_col_major_idx];
+        uint input_idx = input_dim_idx * seq_len + seq_pos;
+        uint grad_proj_idx = model_dim_idx * seq_len + seq_pos;
+        sum += cached_input[input_idx] * grad_projection[grad_proj_idx];
     }
-    uint grad_weight_idx = input_dim_idx * head_dim + head_dim_idx;
+    uint grad_weight_idx = input_dim_idx * model_dim + model_dim_idx;
     if (isnan(sum) || isinf(sum)) sum = 0.0;
     grad_weight[grad_weight_idx] = sum;
 }

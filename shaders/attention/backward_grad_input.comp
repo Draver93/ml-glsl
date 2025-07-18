@@ -1,28 +1,24 @@
 #version 430
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, head_dim]
-layout(std430) readonly buffer Weight { float weight[]; };                  // [input_dim, head_dim]
-layout(std430) writeonly buffer GradInput { float grad_input[]; };          // [input_dim, seq_len]
+layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, model_dim]
+layout(std430) readonly buffer Weight { float weight[]; };                  // [model_dim, model_dim]
+layout(std430) writeonly buffer GradInput { float grad_input[]; };          // [seq_len, model_dim]
 
-uniform int input_dim;
 uniform int seq_len;
-uniform int head_dim;
+uniform int model_dim;
 
 void main() {
-    uint input_dim_idx = gl_GlobalInvocationID.x;  // input dimension (row index)
-    uint seq_pos = gl_GlobalInvocationID.y;        // sequence position (column index)
-    
-    if (input_dim_idx >= input_dim || seq_pos >= seq_len) return;
-    
-    // Compute gradient w.r.t. input: grad_input = grad_projection @ weight^T
-    // grad_projection: [seq_len, head_dim] column-major
+    uint input_dim_idx = gl_GlobalInvocationID.x;  // 0..model_dim-1
+    uint seq_pos = gl_GlobalInvocationID.y;       // 0..seq_len-1
+    if (input_dim_idx >= uint(model_dim) || seq_pos >= uint(seq_len)) return;
+
     float sum = 0.0;
-    for (uint head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
-        uint grad_proj_col_major_idx = head_dim_idx * seq_len + seq_pos;
-        uint weight_idx = input_dim_idx * head_dim + head_dim_idx;
-        sum += grad_projection[grad_proj_col_major_idx] * weight[weight_idx];
+    for (uint model_dim_idx = 0; model_dim_idx < model_dim; model_dim_idx++) {
+        uint grad_proj_idx = model_dim_idx * seq_len + seq_pos;
+        uint weight_idx = input_dim_idx * model_dim + model_dim_idx;
+        sum += grad_projection[grad_proj_idx] * weight[weight_idx];
     }
-    uint grad_input_col_major_idx = input_dim_idx * seq_len + seq_pos;
-    grad_input[grad_input_col_major_idx] = sum;
+    uint grad_input_idx = input_dim_idx * seq_len + seq_pos;
+    grad_input[grad_input_idx] = sum;
 }

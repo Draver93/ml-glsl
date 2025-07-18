@@ -1,13 +1,32 @@
 #include "NeuralNetwork.h"
 #include "Logger.h"
 #include "ShaderCPUAnalogs.h"
+#include "Matrix.h"
+#include <memory>
+#include <iostream>
+#include <iomanip>
+#include <algorithm>
 
 #include <execution>
-#include <iostream>
 #include <sstream>
-#include <iomanip>
 #include <string>
 #include <tuple>
+
+// Helper to print a 5x5 slice of a matrix
+void printMatrixSlice(const std::string& name, const std::shared_ptr<NNGL::Matrix>& mat) {
+    return;
+    if (!mat) { std::cout << name << ": nullptr" << std::endl; return; }
+    std::cout << "[DEBUG] " << name << " shape=[" << mat->rows << "," << mat->cols << "]\n";
+    for (int r = 0; r < std::min(5, mat->rows); ++r) {
+        std::cout << "  ";
+        for (int c = 0; c < std::min(5, mat->cols); ++c) {
+            std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
+        }
+        if (mat->cols > 5) std::cout << "...";
+        std::cout << std::endl;
+    }
+    if (mat->rows > 5) std::cout << "  ..." << std::endl;
+}
 
 static bool g_NeuralNetworkDebug = false;
 
@@ -49,11 +68,15 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
-        GLuint currentInput = inputBatchMat->buffer;
+        inputBatchMat->downloadFromGPU();
+        printMatrixSlice("InputBatchMat (forwardPass entry)", inputBatchMat);
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
-
-            m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
+            // Removed invalid printMatrixSlice calls for layer->m_WeightsMat, layer->m_OutputMat, layer->m_PreactivationMat
+            // Print shader dispatch params
+            //std::cout << "[DEBUG] forwardPass Dispatch: input_size=" << layer->getSize().x << ", output_size=" << layer->getSize().y << ", batch_size=" << m_BatchSize << std::endl;
+            //std::cout << "[DEBUG] Workgroups: X=" << layer->getSize().y << ", Y=" << m_BatchSize << std::endl;
+            m_ForwardPassCompute->bindBuffer(0, "InputBuffer", DEBUG_VALIDATION(inputBatchMat));
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
             m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
             m_ForwardPassCompute->bindBuffer(3, "OutputBuffer", layer->m_ActivationBuffer);
@@ -68,70 +91,6 @@ namespace NNGL {
 			int workgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
 			int workgroupsY = std::min((int)ceil(layer->getSize().y / 16.0f), 65535);
             m_ForwardPassCompute->dispatch(workgroupsX, workgroupsY, 1);
-            // --- CPU vs GPU validation for this layer ---
-            if (g_NeuralNetworkDebug) {
-                // Create Matrix objects to wrap GPU buffers for cleaner access
-                auto gpuWeightsMat = std::make_shared<Matrix>((int)layer->getSize().x, (int)layer->getSize().y);
-                auto gpuBiasesMat = std::make_shared<Matrix>((int)layer->getSize().y, 1);
-                auto gpuOutputMat = std::make_shared<Matrix>(m_BatchSize, (int)layer->getSize().y);
-                
-                // Download GPU data using Matrix methods
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_WeightBuffer);
-                float* weightMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                if (weightMapped) {
-                    std::memcpy(gpuWeightsMat->raw(), weightMapped, gpuWeightsMat->byteSize());
-                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                }
-                
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_BiasBuffer);
-                float* biasMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                if (biasMapped) {
-                    std::memcpy(gpuBiasesMat->raw(), biasMapped, gpuBiasesMat->byteSize());
-                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                }
-                
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_ActivationBuffer);
-                float* outputMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                if (outputMapped) {
-                    std::memcpy(gpuOutputMat->raw(), outputMapped, gpuOutputMat->byteSize());
-                    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                }
-                
-                // Get the correct input for this layer
-                std::vector<float> currentInputData;
-                if (layerIdx == 0) {
-                    // First layer uses the input batch matrix
-                    currentInputData = inputBatchMat->getFlatVec();
-                } else {
-                    // Other layers use the previous layer's activation buffer
-                    auto& prevLayer = m_Layers[layerIdx - 1];
-                    auto prevActivationMat = std::make_shared<Matrix>(m_BatchSize, (int)prevLayer->getSize().y);
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationBuffer);
-                    float* prevMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-                    if (prevMapped) {
-                        std::memcpy(prevActivationMat->raw(), prevMapped, prevActivationMat->byteSize());
-                        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                    }
-                    currentInputData = prevActivationMat->getFlatVec();
-                }
-                
-                std::vector<float> cpuOutput, cpuPreactivation;
-                NNGL::forwardPassCPU(
-                    currentInputData,
-                    gpuWeightsMat->getFlatVec(),
-                    gpuBiasesMat->getFlatVec(),
-                    cpuOutput, cpuPreactivation,
-                    (int)layer->getSize().x, (int)layer->getSize().y, m_BatchSize, static_cast<NNGL::ActivationType>(layer->m_ActivationFnType)
-                );
-                
-                bool pass = NNGL::compareVectors(cpuOutput, gpuOutputMat->getFlatVec(), 1e-4f, true);
-                if (!pass) {
-                    LOG_DEBUG("Feedforward CPU/GPU validation failed in forwardPass() at layer " + std::to_string(layerIdx));
-                }
-            }
-            // --- end validation ---
-
-			currentInput = layer->m_ActivationBuffer;
 		}
 
 		// Unbind buffers for this layer
@@ -475,8 +434,6 @@ namespace NNGL {
 
         m_TrainBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
         m_InputBatchMat->uploadToGPU();
-        m_OutputBatchMat->uploadToGPU();
-
         forwardPass(m_InputBatchMat);
 
         targetLayerLossCalc(m_OutputBatchMat);
@@ -658,6 +615,7 @@ namespace NNGL {
         if (!mapped) throw std::runtime_error("data failed to map");
         std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        inputGradMat->uploadToGPU();
 
         std::shared_ptr<Matrix> result = inputGradMat;
         returnMatrixToPool(inputGradMat);

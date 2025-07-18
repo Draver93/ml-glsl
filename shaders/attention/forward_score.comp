@@ -15,6 +15,10 @@ uniform float inv_sqrt_head_dim;
 layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
 uniform bool has_padding_mask = false;
 
+// Numerical safeguard constants
+const float SAFE_NEG = -1e9; // Use this instead of -FLT_MAX to avoid NaN in softmax/log
+const float SAFE_POS =  1e9;
+
 void main() {
     uint query_pos = gl_GlobalInvocationID.x;  // query sequence position
     uint key_pos = gl_GlobalInvocationID.y;    // key sequence position
@@ -24,7 +28,7 @@ void main() {
     if (use_mask == 1 && key_pos > query_pos) {
         for (int head = 0; head < num_heads; head++) {
             uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
-            scores[attention_score_idx] = -3.402823e38;
+            scores[attention_score_idx] = SAFE_NEG; // Use safe negative value
         }
         return;
     }
@@ -32,7 +36,7 @@ void main() {
     if (has_padding_mask && padding_mask[key_pos] == 0) {
         for (int head = 0; head < num_heads; head++) {
             uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
-            scores[attention_score_idx] = -3.402823e38;
+            scores[attention_score_idx] = SAFE_NEG; // Use safe negative value
         }
         return;
     }
@@ -44,9 +48,9 @@ void main() {
             uint k_col_major_idx = (head * head_dim + head_dim_idx) * seq_len + int(key_pos);
             score += Q[q_col_major_idx] * K[k_col_major_idx];
         }
-        
         score *= inv_sqrt_head_dim;
-
+        // Clamp score to avoid overflow/NaN
+        score = clamp(score, SAFE_NEG, SAFE_POS);
         uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
         scores[attention_score_idx] = score;
     }

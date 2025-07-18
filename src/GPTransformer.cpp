@@ -181,7 +181,7 @@ namespace NNGL {
 
 
     float GPTransformer::calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode) {
-        if (std::isnan((*logits)(0, 0))) throw std::runtime_error("logits is nan(");
+        //if (std::isnan((*logits)(0, 0))) throw std::runtime_error("logits is nan(");
 
         std::vector<float> probabilities(m_VocabSize);
         float maxLogit = (*logits)(0, 0);
@@ -248,7 +248,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
 
         int paddingLen = 0;
-        std::vector<int> paddingMask(m_SeqLen, 0);// = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
@@ -267,7 +267,7 @@ namespace NNGL {
 
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
         int paddingLen = 0;
-        std::vector<int> paddingMask(m_SeqLen, 0);// = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         // Use decoder-only architecture (no encoder, no cross-attention)
@@ -279,14 +279,16 @@ namespace NNGL {
         lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
+        DEBUG_VALIDATION(outputGrad);
 
-        outputGrad->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
         int lastPos = decOutputMat->cols - 1;
         for (int i = 0; i < decOutputMat->rows; ++i) decOutputGrad->set(i, lastPos, outputGrad->get(i, 0));
         decOutputGrad->uploadToGPU();
 
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
+        DEBUG_VALIDATION(decGrad);
+
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }

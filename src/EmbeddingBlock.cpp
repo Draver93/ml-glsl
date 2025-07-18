@@ -39,6 +39,13 @@ namespace NNGL {
         m_EmbeddingsMat->randomize(0.0f, 0.1f);
         m_EmbeddingsMat->uploadToGPU();
         m_EmbeddingsIds.reserve(m_VocabSize);
+
+        // --- Adam buffers for embeddings ---
+        m_AdamMEmbeddings = std::make_shared<Matrix>(m_ModelDim, m_VocabSize);
+        m_AdamMEmbeddings->uploadToGPU();
+
+        m_AdamVEmbeddings = std::make_shared<Matrix>(m_ModelDim, m_VocabSize);
+        m_AdamVEmbeddings->uploadToGPU();
     }
 
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<std::string>& tokens) {
@@ -69,7 +76,7 @@ namespace NNGL {
 
         GLuint indexBuffer = getIndexBuffer(tokens);
 
-        m_EmbeddingForwardCompute->bindBuffer(0, "EmbeddingsMat", m_EmbeddingsMat->buffer);
+        m_EmbeddingForwardCompute->bindBuffer(0, "EmbeddingsMat", DEBUG_VALIDATION(m_EmbeddingsMat));
         m_EmbeddingForwardCompute->bindBuffer(1, "Indices", indexBuffer);
         m_EmbeddingForwardCompute->bindBuffer(2, "OutputMat", m_CachedOutput->buffer);
 
@@ -85,33 +92,42 @@ namespace NNGL {
         m_EmbeddingForwardCompute->dispatch(workgroupsX, workgroupsY, 1);
 
         for (int j = 0; j <= 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
-
+        DEBUG_VALIDATION(m_CachedOutput);
         return m_CachedOutput;
     }
 
     void EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
         GLuint indexBuffer = getIndexBuffer(tokens);
 
-
         gradOutput->downloadFromGPU();
         if (!gradOutput || gradOutput->rows != m_ModelDim) throw std::runtime_error("Invalid gradient dimensions");
 
-        m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", m_EmbeddingsMat->buffer);
-        m_EmbeddingUpdateCompute->bindBuffer(1, "GradBuffer", gradOutput->buffer);
+        m_EmbeddingsMat->uploadToGPU();
+        m_AdamMEmbeddings->uploadToGPU();
+        m_AdamVEmbeddings->uploadToGPU();
+
+        m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", DEBUG_VALIDATION(m_EmbeddingsMat));
+        m_EmbeddingUpdateCompute->bindBuffer(1, "GradBuffer", DEBUG_VALIDATION(gradOutput));
         m_EmbeddingUpdateCompute->bindBuffer(2, "TokenIdxBuffer", indexBuffer);
+        m_EmbeddingUpdateCompute->bindBuffer(3, "AdamMBuffer", m_AdamMEmbeddings->buffer);
+        m_EmbeddingUpdateCompute->bindBuffer(4, "AdamVBuffer", m_AdamVEmbeddings->buffer);
 
         m_EmbeddingUpdateCompute->setUniform("vocab_size", (int)m_VocabSize);
         m_EmbeddingUpdateCompute->setUniform("model_dim", (int)m_ModelDim);
         m_EmbeddingUpdateCompute->setUniform("seq_len", (int)gradOutput->cols);
         m_EmbeddingUpdateCompute->setUniform("learning_rate", learningRate);
+        m_EmbeddingUpdateCompute->setUniform("ADAM_beta1", 0.9f);
+        m_EmbeddingUpdateCompute->setUniform("ADAM_beta2", 0.999f);
+        m_EmbeddingUpdateCompute->setUniform("ADAM_timestep", m_ADAM_Timestep);
 
-        int workgroupsX = std::min((int)ceil(m_ModelDim / 16.0f), 65535);
-        for (int i = 0; i < tokens.size(); i++) {
-            m_EmbeddingUpdateCompute->setUniform("out_idx", i);
-            m_EmbeddingUpdateCompute->dispatch(workgroupsX, 1, 1);
-        }
+        int workgroupsX = (m_ModelDim + 15) / 16;
+        m_EmbeddingUpdateCompute->dispatch(workgroupsX, 1, 1);
+        DEBUG_VALIDATION(m_AdamMEmbeddings);
+        DEBUG_VALIDATION(m_AdamVEmbeddings);
 
-        for (int j = 0; j <= 2; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+        for (int j = 0; j <= 4; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+
+        m_ADAM_Timestep++;
     }
 
     void EmbeddingBlock::applyPositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask) {
@@ -127,8 +143,8 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, maskSSBO);
         glBufferData(GL_SHADER_STORAGE_BUFFER, paddingMask.size() * sizeof(int), paddingMask.data(), GL_DYNAMIC_DRAW);
         // Bind buffers
-        m_ApplyPosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", embeddings->buffer);
-        m_ApplyPosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", m_PositionalEncodingMat->buffer);
+        m_ApplyPosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", DEBUG_VALIDATION(embeddings));
+        m_ApplyPosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", DEBUG_VALIDATION(m_PositionalEncodingMat));
         m_ApplyPosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
         // Set uniforms
         m_ApplyPosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
@@ -164,8 +180,8 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, maskSSBO);
         glBufferData(GL_SHADER_STORAGE_BUFFER, paddingMask.size() * sizeof(int), paddingMask.data(), GL_DYNAMIC_DRAW);
         // Bind buffers
-        m_RemovePosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", embeddings->buffer);
-        m_RemovePosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", m_PositionalEncodingMat->buffer);
+        m_RemovePosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", DEBUG_VALIDATION(embeddings));
+        m_RemovePosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", DEBUG_VALIDATION(m_PositionalEncodingMat));
         m_RemovePosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
 
         // Set uniforms

@@ -8,7 +8,12 @@ extern "C" {
 #include <memory>
 #include <queue>
 #include <mutex>
+#include <queue>
+#include <string>
+
 #include <cmath>
+#include <stdexcept>
+#include "Matrix.h"
 
 namespace NNGL {
     class Matrix {
@@ -88,4 +93,17 @@ namespace NNGL {
             }
         }
     };
+//#define DEBUG_MATRIX_VALIDATION
+#ifdef DEBUG_MATRIX_VALIDATION
+    inline GLuint DEBUG_VALIDATION(const std::shared_ptr<Matrix>& mat) {
+        mat->downloadFromGPU();
+        float norm = mat->getNorm();
+        if (norm == 0.0f || std::isinf(norm) || std::isnan(norm))
+            throw std::runtime_error("Matrix norm is invalid in DEBUG_VALIDATION: " + std::to_string(norm));
+        return mat->buffer;
+    }
+#else
+#define DEBUG_VALIDATION(mat) ((mat)->buffer)
+#endif
 }
+

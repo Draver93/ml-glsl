@@ -12,6 +12,10 @@ uniform int use_mask;
 layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
 uniform bool has_padding_mask = false;
 
+const float EPS = 1e-8;
+const float EXP_MIN = -80.0;
+const float EXP_MAX = 80.0;
+
 void main() {
     uint attention_row_idx = gl_GlobalInvocationID.x;  // attention row index (head * seq_len + query_pos)
     if (attention_row_idx >= uint(num_heads * seq_len)) return;
@@ -34,7 +38,7 @@ void main() {
         if (has_padding_mask && padding_mask[key_pos] == 0) continue;  // Apply padding mask
         uint score_idx = attention_row_idx * seq_len + key_pos;
         float score_val = input_scores[score_idx];
-        sum_exp += exp(score_val - max_score);
+        sum_exp += exp(clamp(score_val - max_score, EXP_MIN, EXP_MAX));
     }
     
     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
@@ -46,7 +50,7 @@ void main() {
         } else {
             uint score_idx = attention_row_idx * seq_len + key_pos;
             float score_val = input_scores[score_idx];
-            output_weights[weight_idx] = exp(score_val - max_score) / sum_exp;
+            output_weights[weight_idx] = exp(clamp(score_val - max_score, EXP_MIN, EXP_MAX)) / (sum_exp + EPS);
         }
     }
 }

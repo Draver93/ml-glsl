@@ -3,15 +3,14 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 // Embeddings: [seq_len, model_dim]
-layout(std430) buffer EmbeddingsBuffer {
-    float embeddings[];
-};
+layout(std430) buffer EmbeddingsBuffer { float embeddings[]; };
+
 // Positional encoding: [seq_len, model_dim]
-layout(std430) readonly buffer PositionalEncodingBuffer {
-    float positional_encoding[];
-};
+layout(std430) readonly buffer PositionalEncodingBuffer { float positional_encoding[]; };
+
 // Padding mask: 1 for real tokens, 0 for PAD tokens
 layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
+
 uniform bool has_padding_mask = false;
 
 uniform int seq_len;

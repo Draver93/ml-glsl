@@ -24,7 +24,7 @@ namespace NNGL {
 		void printHeatmap();
 		void displayLayer(const std::string& layerName);
 
-	private:
+	public:
 		GLuint m_WeightBuffer;
 		GLuint m_BiasBuffer;
 		GLuint m_ActivationBuffer;
