@@ -389,11 +389,6 @@ namespace NNGL {
     void AttentionBlock::updateWeights(const std::shared_ptr<Matrix>& weight, const std::shared_ptr<Matrix>& gradWeight, 
                                      const std::shared_ptr<Matrix>& adamM, const std::shared_ptr<Matrix>& adamV, float learningRate) {
 
-        weight->uploadToGPU();
-        gradWeight->uploadToGPU();
-        adamM->uploadToGPU();
-        adamV->uploadToGPU();
-
         m_WeightsUpdatePassCompute->bindBuffer(0, "Weight", weight->buffer);
         m_WeightsUpdatePassCompute->bindBuffer(1, "GradWeight", gradWeight->buffer);
         m_WeightsUpdatePassCompute->bindBuffer(2, "ADAM_M", adamM->buffer);
