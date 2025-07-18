@@ -21,9 +21,7 @@ void main() {
     
     if (query_pos >= uint(seq_len) || key_pos >= uint(seq_len)) return;
     
-    // Apply causal mask if enabled (for autoregressive attention)
     if (use_mask == 1 && key_pos > query_pos) {
-        // Set -infinity for all heads at this position to mask future tokens
         for (int head = 0; head < num_heads; head++) {
             uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
             scores[attention_score_idx] = -3.402823e38;
@@ -31,9 +29,7 @@ void main() {
         return;
     }
     
-    // Apply padding mask - mask out PAD tokens
     if (has_padding_mask && padding_mask[key_pos] == 0) {
-        // Set -infinity for all heads at this position to mask PAD tokens
         for (int head = 0; head < num_heads; head++) {
             uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
             scores[attention_score_idx] = -3.402823e38;
@@ -41,23 +37,16 @@ void main() {
         return;
     }
     
-    // Compute attention scores for each attention head
     for (int head = 0; head < num_heads; head++) {
-        // Compute dot product: Q[query_pos, head] @ K[key_pos, head]
-        // Column-major indexing for Q and K: [head_dimension * seq_len + sequence_position]
         float score = 0.0;
         for (int head_dim_idx = 0; head_dim_idx < head_dim; head_dim_idx++) {
-            // Q indexing: [head * head_dim + head_dim_idx] * seq_len + query_pos
             uint q_col_major_idx = (head * head_dim + head_dim_idx) * seq_len + int(query_pos);
-            // K indexing: [head * head_dim + head_dim_idx] * seq_len + key_pos
             uint k_col_major_idx = (head * head_dim + head_dim_idx) * seq_len + int(key_pos);
             score += Q[q_col_major_idx] * K[k_col_major_idx];
         }
         
-        // Scale by 1/sqrt(head_dim) for stable attention
         score *= inv_sqrt_head_dim;
 
-        // Store attention score for this head at [query_pos, key_pos]
         uint attention_score_idx = (head * seq_len + int(query_pos)) * seq_len + int(key_pos);
         scores[attention_score_idx] = score;
     }

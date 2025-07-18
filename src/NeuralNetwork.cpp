@@ -49,7 +49,7 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
-		GLuint currentInput = inputBatchMat->buffer;
+        GLuint currentInput = inputBatchMat->buffer;
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
 
@@ -474,6 +474,8 @@ namespace NNGL {
         }
 
         m_TrainBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+        m_InputBatchMat->uploadToGPU();
+        m_OutputBatchMat->uploadToGPU();
 
         forwardPass(m_InputBatchMat);
 
@@ -502,6 +504,8 @@ namespace NNGL {
 
         for (int i = 0; i < samplesToTest; i++) {
             m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
+            m_InputBatchMat->uploadToGPU();
+            m_OutputBatchMat->uploadToGPU();
             forwardPass(m_InputBatchMat);
 
             int outputSize = m_Layers.back()->getSize().y;
@@ -549,8 +553,8 @@ namespace NNGL {
         
         forwardPass(inputMat);
 
-        int outputRows = inputMat->cols;
-        int outputCols = m_Layers.back()->m_Height; // output size
+        int outputRows = m_Layers.back()->m_Height; 
+        int outputCols = inputMat->cols;// output size
         // Return previous output to pool before getting a new one
         if (forwardMatOutput) {
             returnMatrixToPool(forwardMatOutput);

@@ -100,6 +100,8 @@ namespace NNGL {
 
         //m_Gamma->uploadToGPU();
         //m_Beta->uploadToGPU();
+        gradOutput->downloadFromGPU();
+        auto v =gradOutput->getNorm();
 
         m_BackwardShader->bindBuffer(0, "GradOutput", gradOutput->buffer);
         m_BackwardShader->bindBuffer(1, "InputA", input->buffer);
@@ -117,6 +119,7 @@ namespace NNGL {
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_BackwardShader->dispatch(outputWorkgroupsX, 1, 1);
 
+        m_GradInput->downloadFromGPU();
 
         // Unbind buffers
         for (int i = 0; i <= 8; ++i) {
@@ -125,7 +128,6 @@ namespace NNGL {
 
         // Explicit CPU computation and comparison for backward
         if (g_LayerNormDebug) {
-            m_GradInput->downloadFromGPU();
             m_GradResidual->downloadFromGPU();
             m_GradGamma->downloadFromGPU();
             m_GradBeta->downloadFromGPU();

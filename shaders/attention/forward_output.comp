@@ -15,26 +15,20 @@ void main() {
     
     if (output_seq_pos >= uint(seq_len) || output_dim_idx >= uint(num_heads * head_dim)) return;
     
-    // Decompose output dimension into head and head dimension
     uint head_idx = output_dim_idx / uint(head_dim);
     uint head_dim_idx = output_dim_idx % uint(head_dim);
     
-    // Compute weighted sum: attention_weights @ V
     float result = 0.0;
     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
-        // Get attention weight for this head at [output_seq_pos, key_pos]
         uint attention_weight_idx = (head_idx * seq_len + output_seq_pos) * seq_len + key_pos;
         float attention_weight = weights[attention_weight_idx];
         
-        // Get V value for this head at [key_pos, head_dim_idx]
-        // Column-major indexing: [head_dimension * seq_len + sequence_position]
         uint v_col_major_idx = (head_idx * head_dim + head_dim_idx) * seq_len + key_pos;
         float v_val = V[v_col_major_idx];
         
         result += attention_weight * v_val;
     }
     
-    // Store result with column-major indexing: [output_dimension * seq_len + sequence_position]
     uint output_col_major_idx = (head_idx * head_dim + head_dim_idx) * seq_len + output_seq_pos;
     buffer_output[output_col_major_idx] = result;
 }

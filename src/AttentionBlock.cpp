@@ -152,7 +152,10 @@ namespace NNGL {
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context) {
         NNGL::Timer timer("AttentionBlock::forward");
         // CACHE INPUT FOR BACKPROP
+        input->downloadFromGPU();
         m_CachedInput->copyFrom(input);
+        m_CachedInput->uploadToGPU();
+
         if (context) {
             if (!m_CachedContext) {
                 m_CachedContext = std::make_shared<Matrix>(context->rows, context->cols);
@@ -193,16 +196,17 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->dispatch(workgroups_x, 1, 1);
 
             for (int i = 0; i <= 7; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
- 
+            m_CachedQ->downloadFromGPU();
+            m_CachedK->downloadFromGPU();
+            m_CachedV->downloadFromGPU();
+            m_WeightQueryMat->downloadFromGPU();
+            m_WeightKeyMat->downloadFromGPU();
+            m_WeightValueMat->downloadFromGPU();
+            input->downloadFromGPU();
+            input_kv->downloadFromGPU();
+
             if (g_AttentionBlockDebug) {
-                m_CachedQ->downloadFromGPU();
-                m_CachedK->downloadFromGPU();
-                m_CachedV->downloadFromGPU();
-                m_WeightQueryMat->downloadFromGPU();
-                m_WeightKeyMat->downloadFromGPU();
-                m_WeightValueMat->downloadFromGPU();
-                input->downloadFromGPU();
-                input_kv->downloadFromGPU();
+
 
                 std::vector<float> cpuQ, cpuK, cpuV;
                 std::vector<float> inputQ = input->getFlatVec();
@@ -251,6 +255,7 @@ namespace NNGL {
 
         // === STEP 3: Apply softmax to get attention weights ===
         {
+            m_CachedScores->downloadFromGPU();
             // Apply softmax to cached scores, store in cached attention weights
             m_SoftmaxCompute->bindBuffer(0, "Input", m_CachedScores->buffer);
             m_SoftmaxCompute->bindBuffer(1, "Output", m_CachedAttentionWeights->buffer);  // CACHE THIS
@@ -266,6 +271,8 @@ namespace NNGL {
             int workgroups = (total_rows + 15) / 16;
             m_SoftmaxCompute->dispatch(workgroups, 1, 1);
 
+            m_CachedAttentionWeights->downloadFromGPU();
+            auto s = m_CachedAttentionWeights->getNorm();
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
             if (g_AttentionBlockDebug) {
                 m_CachedAttentionWeights->downloadFromGPU();
@@ -315,6 +322,7 @@ namespace NNGL {
  
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& context, float learningRate ) {
         NNGL::Timer timer("AttentionBlock::backward");
+        gradOutput->downloadFromGPU();
         gradOutput->uploadToGPU();
 
         if (!m_PaddingMask.empty()) {
@@ -325,6 +333,7 @@ namespace NNGL {
         // === STEP 1: Backward through final matmul (grad_output -> grad_attention_weights, grad_V) ===
         {
             // Upload buffers to GPU before shader execution
+            m_GradAttentionWeights->downloadFromGPU();
             m_GradAttentionWeights->uploadToGPU();
             //m_GradV->uploadToGPU();
             
@@ -367,6 +376,12 @@ namespace NNGL {
 
             int workgroups_x = (m_SeqLen + 15) / 16;
             m_BackwardScoresCompute->dispatch(workgroups_x, 1, 1);
+
+            m_GradScores->downloadFromGPU();
+            auto d = m_GradScores->getNorm();
+            m_GradAttentionWeights->downloadFromGPU();
+            m_CachedAttentionWeights->downloadFromGPU();
+
             //m_GradScores->downloadFromGPU();
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
@@ -394,8 +409,10 @@ namespace NNGL {
 
             int workgroups_x = (m_SeqLen * m_ModelDim + 31) / 32;
             m_BackwardProjectionsCompute->dispatch(workgroups_x, 1, 1);
-            //m_GradQ->downloadFromGPU();
-            //m_GradK->downloadFromGPU();
+            m_GradScores->downloadFromGPU();
+            float f = m_GradScores->getNorm();
+            m_GradQ->downloadFromGPU();
+            m_GradK->downloadFromGPU();
 
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
@@ -417,8 +434,11 @@ namespace NNGL {
         }
         else {
             auto tempGradInput = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
+            tempGradInput->uploadToGPU();
+
             computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat,
                 tempGradInput, m_GradWeightKeyMat);
+
             //m_GradWeightKeyMat->downloadFromGPU();
             addMatricesGPU(m_GradInput, tempGradInput, m_GradInput);
         }
@@ -426,15 +446,21 @@ namespace NNGL {
         // Value gradients (from input or context)
         if (context) {
             auto tempGradContext = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
+            tempGradContext->uploadToGPU();
+
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradContext, m_GradWeightValueMat);
+
             //m_GradWeightValueMat->downloadFromGPU();
             addMatricesGPU(m_GradContext, tempGradContext, m_GradContext);
         }
         else {
             auto tempGradInput = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
+            tempGradInput->uploadToGPU();
+
             computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat,
                 tempGradInput, m_GradWeightValueMat);
+
             //m_GradWeightValueMat->downloadFromGPU();
             addMatricesGPU(m_GradInput, tempGradInput, m_GradInput);
         }
@@ -475,9 +501,8 @@ namespace NNGL {
         for (int i = 0; i <= 3; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
 
-    void AttentionBlock::computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection,
-        const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
-        std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight) {
+    void AttentionBlock::computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection, const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
+                                                                                                                                                std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight) {
         // grad_input = grad_projection @ W^T
         // grad_weight = input^T @ grad_projection
 

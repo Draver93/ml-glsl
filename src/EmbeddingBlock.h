@@ -22,9 +22,9 @@ namespace NNGL {
         size_t m_VocabSize, m_ModelDim, m_MaxSeqLen;
         int m_ADAM_Timestep;
         
-        // ADAM optimization buffers for embeddings
-        std::unordered_map<std::string, std::vector<float>> m_ADAM_M_Embeddings;
-        std::unordered_map<std::string, std::vector<float>> m_ADAM_V_Embeddings;
+        // ADAM optimization buffers for embeddings (GPU)
+        std::shared_ptr<Matrix> m_AdamMEmbeddings;
+        std::shared_ptr<Matrix> m_AdamVEmbeddings;
 
         std::shared_ptr<Matrix> m_PositionalEncodingMat;
 

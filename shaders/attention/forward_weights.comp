@@ -21,11 +21,9 @@ void main() {
     uint global_idx = gl_GlobalInvocationID.x;
     if (global_idx >= uint(seq_len * model_dim)) return;
 
-    // Decompose global index into sequence position and model dimension
     uint seq_pos = global_idx / uint(model_dim);  // sequence position (row index)
     uint model_dim_idx = global_idx % uint(model_dim);  // model dimension (column index)
 
-    // Compute Q projection: input_q @ weight_q
     float q_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
         uint input_col_major_idx = i * seq_len + seq_pos;
@@ -35,7 +33,6 @@ void main() {
     uint output_q_col_major_idx = model_dim_idx * seq_len + seq_pos;
     output_q[output_q_col_major_idx] = q_val;
 
-    // Compute K projection: input_kv @ weight_k
     float k_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
         uint input_col_major_idx = i * seq_len + seq_pos;
@@ -45,7 +42,6 @@ void main() {
     uint output_k_col_major_idx = model_dim_idx * seq_len + seq_pos;
     output_k[output_k_col_major_idx] = k_val;
 
-    // Compute V projection: input_kv @ weight_v
     float v_val = 0.0;
     for (int i = 0; i < input_dim; i++) {
         uint input_col_major_idx = i * seq_len + seq_pos;

@@ -25,11 +25,6 @@ void main() {
         float delta_val = next_deltas[delta_idx];
         float weight_val = weights[weight_idx];
         
-        // NaN check for debugging
-        if (isnan(delta_val) || isnan(weight_val)) {
-            input_gradient = 0.5; // Use a different debug value
-            break;
-        }
         input_gradient += delta_val * weight_val;
     }
     

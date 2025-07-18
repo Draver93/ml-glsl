@@ -186,11 +186,11 @@ namespace NNGL {
         std::vector<float> probabilities(m_VocabSize);
         float maxLogit = (*logits)(0, 0);
         for (int i = 1; i < m_VocabSize; ++i) {
-            if ((*logits)(0, i) > maxLogit) maxLogit = (*logits)(0, i);
+            if ((*logits)(i, 0) > maxLogit) maxLogit = (*logits)(i, 0);
         }
         float sum = 0.0f;
         for (int i = 0; i < m_VocabSize; ++i) {
-            probabilities[i] = std::exp((*logits)(0, i) - maxLogit);
+            probabilities[i] = std::exp((*logits)(i, 0) - maxLogit);
             sum += probabilities[i];
         }
         for (int i = 0; i < m_VocabSize; ++i) probabilities[i] /= sum;
@@ -210,11 +210,11 @@ namespace NNGL {
                 return 0.0f;
             }
             case LossMode::Margin: {
-                float correctLogit = (*logits)(0, targetTokenId);
+                float correctLogit = (*logits)(targetTokenId, 0);
                 float maxOtherLogit = -std::numeric_limits<float>::infinity();
                 for (int i = 0; i < m_VocabSize; ++i) {
-                    if (i != targetTokenId && (*logits)(0, i) > maxOtherLogit) {
-                        maxOtherLogit = (*logits)(0, i);
+                    if (i != targetTokenId && (*logits)(i, 0) > maxOtherLogit) {
+                        maxOtherLogit = (*logits)(i, 0);
                     }
                 }
                 return 100 * (maxOtherLogit - correctLogit); // Higher is better
@@ -224,8 +224,8 @@ namespace NNGL {
                 int predicted = 0;
                 float maxVal = (*logits)(0, 0);
                 for (int i = 1; i < m_VocabSize; ++i) {
-                    if ((*logits)(0, i) > maxVal) {
-                        maxVal = (*logits)(0, i);
+                    if ((*logits)(i, 0) > maxVal) {
+                        maxVal = (*logits)(i, 0);
                         predicted = i;
                     }
                 }
@@ -248,14 +248,14 @@ namespace NNGL {
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
 
         int paddingLen = 0;
-        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+        std::vector<int> paddingMask(m_SeqLen, 0);// = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
 
         decOutputMat->downloadFromGPU();
-        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->cols, 1);
-        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->rows, 1);
+        for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(i, decOutputMat->cols - 1);
         lastTokenRep->uploadToGPU();
 
         return m_OutputProjection->forward(lastTokenRep);
@@ -267,27 +267,26 @@ namespace NNGL {
 
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
         int paddingLen = 0;
-        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+        std::vector<int> paddingMask(m_SeqLen, 0);// = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
 
         decOutputMat->downloadFromGPU();
-        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->cols, 1);
-        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->rows, 1);
+        for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(i, decOutputMat->cols - 1);
         lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
         outputGrad->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
-        int lastPos = decOutputMat->rows - 1;
-        for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(i, 0));
+        int lastPos = decOutputMat->cols - 1;
+        for (int i = 0; i < decOutputMat->rows; ++i) decOutputGrad->set(i, lastPos, outputGrad->get(i, 0));
         decOutputGrad->uploadToGPU();
 
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
-
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }
@@ -296,9 +295,9 @@ namespace NNGL {
         int padTokenId = getPadTokenId();
         int predictedToken = -1;
         float maxProb = -std::numeric_limits<float>::infinity();
-        for (int i = 0; i < probabilities->cols; i++) {
+        for (int i = 0; i < probabilities->rows; i++) {
             if (i == padTokenId) continue;
-            float prob = (*probabilities)(0, i);
+            float prob = (*probabilities)(i, 0);
             if (prob > maxProb) {
                 maxProb = prob;
                 predictedToken = i;
