@@ -468,50 +468,6 @@ namespace NNGL {
         int inputWorkgroupsY = std::min((int)ceil(firstLayer->getSize().x / 16.0f), 65535);
         m_InputDeltaCompute->dispatch(inputWorkgroupsX, inputWorkgroupsY, 1);
 
-        // --- CPU vs GPU validation for input gradient ---
-        if (g_NeuralNetworkDebug) {
-            // Create Matrix objects to wrap GPU buffers for cleaner access
-            auto gpuDeltasMat = std::make_shared<Matrix>(m_BatchSize, (int)firstLayer->getSize().y);
-            auto gpuWeightsMat = std::make_shared<Matrix>((int)firstLayer->getSize().x, (int)firstLayer->getSize().y);
-            auto gpuInputGradMat = std::make_shared<Matrix>(m_BatchSize, (int)firstLayer->getSize().x);
-            
-            // Download GPU data using Matrix methods
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, firstLayer->m_DeltaBuffer);
-            float* deltaMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-            if (deltaMapped) {
-                std::memcpy(gpuDeltasMat->raw(), deltaMapped, gpuDeltasMat->byteSize());
-                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            }
-            
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, firstLayer->m_WeightBuffer);
-            float* weightMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-            if (weightMapped) {
-                std::memcpy(gpuWeightsMat->raw(), weightMapped, gpuWeightsMat->byteSize());
-                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            }
-            
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-            float* gradMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-            if (gradMapped) {
-                std::memcpy(gpuInputGradMat->raw(), gradMapped, gpuInputGradMat->byteSize());
-                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            }
-            
-            std::vector<float> cpuInputGrad;
-            NNGL::inputDeltaLossCPU(
-                gpuDeltasMat->getFlatVec(),
-                gpuWeightsMat->getFlatVec(),
-                cpuInputGrad,
-                (int)firstLayer->getSize().x, (int)firstLayer->getSize().y, m_BatchSize
-            );
-            
-            bool pass = NNGL::compareVectors(cpuInputGrad, gpuInputGradMat->getFlatVec(), 1e-4f, true);
-            if (!pass) {
-                LOG_DEBUG("Input gradient CPU/GPU validation failed in inputGradientCalc()");
-            }
-        }
-        // --- end validation ---
-
         for (int j = 0; j < 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
     }
 

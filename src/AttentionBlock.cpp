@@ -101,14 +101,6 @@ namespace NNGL {
         m_OutValueMat  = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
         m_OutValueMat->uploadToGPU();
 
-        // Initialize gradient matrices for Q, K, V projections (standard: [seq_len, model_dim])
-        m_GradQueryInputMat  = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
-        m_GradQueryInputMat->uploadToGPU();
-        m_GradKeyInputMat    = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
-        m_GradKeyInputMat->uploadToGPU();
-        m_GradValueInputMat  = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
-        m_GradValueInputMat->uploadToGPU();
-
         // Cached forward pass values for backprop (standard: [seq_len, model_dim])
         m_CachedInput   = std::make_shared<Matrix>(m_ModelDim, m_SeqLen); // input: [model_dim, seq_len]
         m_CachedInput->uploadToGPU();
@@ -354,29 +346,15 @@ namespace NNGL {
             m_BackwardProjectionsCompute->dispatch(workgroups_x, 1, 1);
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
-        // === STEP 4: Backward through linear projections ===
         const auto& keyValueInput = context ? m_CachedContext : m_CachedInput;
-        computeProjectionGradients(m_GradQ, m_CachedInput, m_WeightQueryMat, m_GradInput, m_GradWeightQueryMat);
+        // Accumulate Q, K, V gradients directly into m_GradInput/m_GradContext
+        computeProjectionGradients(m_GradQ, m_CachedInput, m_WeightQueryMat, m_GradInput, m_GradWeightQueryMat, /*accumulate=*/false);
         if (context) {
-            computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat, m_GradContext, m_GradWeightKeyMat);
+            computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat, m_GradContext, m_GradWeightKeyMat, /*accumulate=*/false);
+            computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat, m_GradContext, m_GradWeightValueMat, /*accumulate=*/true);
         } else {
-            auto tempGradInput = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
-            tempGradInput->uploadToGPU();
-            computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat, tempGradInput, m_GradWeightKeyMat);
-            addMatricesGPU(m_GradInput, tempGradInput, m_GradInput);
-        }
-        if (context) {
-            auto tempGradContext = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
-            tempGradContext->uploadToGPU();
-            computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat, tempGradContext, m_GradWeightValueMat);
-            addMatricesGPU(m_GradContext, tempGradContext, m_GradContext);
-
-        } else {
-            auto tempGradInput = std::make_shared<Matrix>(m_ModelDim, m_SeqLen, 0);
-            tempGradInput->uploadToGPU();
-            computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat, tempGradInput, m_GradWeightValueMat);
-            addMatricesGPU(m_GradInput, tempGradInput, m_GradInput);
-
+            computeProjectionGradients(m_GradK, keyValueInput, m_WeightKeyMat, m_GradInput, m_GradWeightKeyMat, /*accumulate=*/true);
+            computeProjectionGradients(m_GradV, keyValueInput, m_WeightValueMat, m_GradInput, m_GradWeightValueMat, /*accumulate=*/true);
         }
         // === STEP 5: Update weights with ADAM ===
         updateWeights(m_WeightQueryMat, m_GradWeightQueryMat, m_ADAM_M_QueryMat, m_ADAM_V_QueryMat, learningRate);
@@ -407,7 +385,7 @@ namespace NNGL {
     }
 
     void AttentionBlock::computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection, const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
-                                                                                                                                                std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight) {
+                                                                                                                                                std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight, bool accumulate) {
         // grad_input = grad_projection @ W^T
         // grad_weight = input^T @ grad_projection
         {
@@ -417,6 +395,7 @@ namespace NNGL {
 
             m_GradInputCompute->setUniform("seq_len", m_SeqLen);
             m_GradInputCompute->setUniform("model_dim", m_ModelDim);
+            m_GradInputCompute->setUniform("accumulate", accumulate ? 1 : 0); // Pass accumulate flag
 
             // Dispatch with appropriate work group sizes
             int workgroups_x = (m_ModelDim + 15) / 16;
@@ -434,6 +413,7 @@ namespace NNGL {
 
             m_GradWeightCompute->setUniform("seq_len", m_SeqLen);
             m_GradWeightCompute->setUniform("model_dim", m_ModelDim);
+            m_GradWeightCompute->setUniform("accumulate", accumulate ? 1 : 0); // Pass accumulate flag
 
             // Debug: print buffer size and dispatch dimensions
             int workgroups_x = (m_ModelDim + 15) / 16;

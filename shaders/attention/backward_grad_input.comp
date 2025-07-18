@@ -3,10 +3,11 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, model_dim]
 layout(std430) readonly buffer Weight { float weight[]; };                  // [model_dim, model_dim]
-layout(std430) writeonly buffer GradInput { float grad_input[]; };          // [seq_len, model_dim]
+layout(std430) buffer GradInput { float grad_input[]; };          // [seq_len, model_dim]
 
 uniform int seq_len;
 uniform int model_dim;
+uniform int accumulate; // 0 = overwrite, 1 = add
 
 void main() {
     uint input_dim_idx = gl_GlobalInvocationID.x;  // 0..model_dim-1
@@ -20,5 +21,9 @@ void main() {
         sum += grad_projection[grad_proj_idx] * weight[weight_idx];
     }
     uint grad_input_idx = input_dim_idx * seq_len + seq_pos;
-    grad_input[grad_input_idx] = sum;
+    if (accumulate == 1) {
+        grad_input[grad_input_idx] += sum;
+    } else {
+        grad_input[grad_input_idx] = sum;
+    }
 }

@@ -23,7 +23,7 @@ namespace NNGL {
     private:
         void computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection,
             const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
-            std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight);
+            std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight, bool accumulate);
         void addMatricesGPU(const std::shared_ptr<Matrix>& A, const std::shared_ptr<Matrix>& B, std::shared_ptr<Matrix>& out);
 
     private:
@@ -66,10 +66,6 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_OutQueryMat;
         std::shared_ptr<Matrix> m_OutKeyMat;
         std::shared_ptr<Matrix> m_OutValueMat;
-
-        std::shared_ptr<Matrix> m_GradQueryInputMat;
-        std::shared_ptr<Matrix> m_GradKeyInputMat;
-        std::shared_ptr<Matrix> m_GradValueInputMat;
 
         // Cached forward pass values for backprop
         std::shared_ptr<Matrix> m_CachedInput;
