@@ -99,7 +99,6 @@ namespace NNGL {
     void EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
         GLuint indexBuffer = getIndexBuffer(tokens);
 
-        gradOutput->downloadFromGPU();
         if (!gradOutput || gradOutput->rows != m_ModelDim) throw std::runtime_error("Invalid gradient dimensions");
 
         m_EmbeddingsMat->uploadToGPU();
@@ -155,7 +154,6 @@ namespace NNGL {
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
-        //embeddings->downloadFromGPU();
         glDeleteBuffers(1, &maskSSBO);
 
         for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
@@ -192,8 +190,6 @@ namespace NNGL {
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_RemovePosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
-
-        //embeddings->downloadFromGPU();
 
         glDeleteBuffers(1, &maskSSBO);
         // Unbind buffers

@@ -1229,8 +1229,8 @@ void gptransformer_simplified() {
     std::vector<std::pair<std::string, std::string>> eval_prompts;
     std::vector<std::string> test_queries = {
         "What color of Apple number one ",
-        "What color of Apple number two ",
-        "What color of Apple number three "
+        "three when it's ",
+        "Apple number one "
     };
     for (const auto& query : test_queries) {
         std::vector<std::string> tokens = bpe->tokenizeInput(query.c_str(), query.size());
