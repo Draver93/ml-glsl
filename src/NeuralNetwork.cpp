@@ -68,14 +68,8 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
-        inputBatchMat->downloadFromGPU();
-        printMatrixSlice("InputBatchMat (forwardPass entry)", inputBatchMat);
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
-            // Removed invalid printMatrixSlice calls for layer->m_WeightsMat, layer->m_OutputMat, layer->m_PreactivationMat
-            // Print shader dispatch params
-            //std::cout << "[DEBUG] forwardPass Dispatch: input_size=" << layer->getSize().x << ", output_size=" << layer->getSize().y << ", batch_size=" << m_BatchSize << std::endl;
-            //std::cout << "[DEBUG] Workgroups: X=" << layer->getSize().y << ", Y=" << m_BatchSize << std::endl;
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", DEBUG_VALIDATION(inputBatchMat));
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
             m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
@@ -657,6 +651,7 @@ namespace NNGL {
 
 
     void NeuralNetwork::setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss) {
+        targetLoss->downloadFromGPU();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->rows * targetLoss->cols * sizeof(float), targetLoss->getFlatVec().data(), GL_DYNAMIC_DRAW);
         

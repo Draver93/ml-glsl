@@ -84,11 +84,6 @@ namespace NNGL {
 
         }
 
-        //m_Gamma->uploadToGPU();
-        //m_Beta->uploadToGPU();
-        gradOutput->downloadFromGPU();
-        auto v =gradOutput->getNorm();
-
         m_BackwardShader->bindBuffer(0, "GradOutput", DEBUG_VALIDATION(gradOutput));
         m_BackwardShader->bindBuffer(1, "InputA", DEBUG_VALIDATION(input));
         m_BackwardShader->bindBuffer(2, "InputB", DEBUG_VALIDATION(residual));
@@ -104,8 +99,6 @@ namespace NNGL {
         // Use correct workgroup count for local_size_x = 32
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_BackwardShader->dispatch(outputWorkgroupsX, 1, 1);
-
-        m_GradInput->downloadFromGPU();
 
         // Unbind buffers
         for (int i = 0; i <= 8; ++i) {
