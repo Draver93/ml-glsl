@@ -33,8 +33,6 @@ namespace NNGL {
             m_CachedOutput = std::make_shared<Matrix>(modelDim, seqLen);
             m_CachedOutput->uploadToGPU();
         }
-        //input->uploadToGPU();
-        //residual->uploadToGPU();
 
         m_ForwardShader->bindBuffer(0, "InputA", DEBUG_VALIDATION(input));
         m_ForwardShader->bindBuffer(1, "InputB", DEBUG_VALIDATION(residual));
@@ -81,7 +79,6 @@ namespace NNGL {
         if (!m_GradBeta || m_GradBeta->rows != modelDim || m_GradBeta->cols != seqLen) {
             m_GradBeta = std::make_shared<Matrix>(modelDim, seqLen, 0.0f);
             m_GradBeta->uploadToGPU();
-
         }
 
         m_BackwardShader->bindBuffer(0, "GradOutput", DEBUG_VALIDATION(gradOutput));

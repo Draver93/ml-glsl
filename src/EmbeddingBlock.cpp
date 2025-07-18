@@ -101,9 +101,6 @@ namespace NNGL {
 
         if (!gradOutput || gradOutput->rows != m_ModelDim) throw std::runtime_error("Invalid gradient dimensions");
 
-        m_EmbeddingsMat->uploadToGPU();
-        m_AdamMEmbeddings->uploadToGPU();
-        m_AdamVEmbeddings->uploadToGPU();
 
         m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", DEBUG_VALIDATION(m_EmbeddingsMat));
         m_EmbeddingUpdateCompute->bindBuffer(1, "GradBuffer", DEBUG_VALIDATION(gradOutput));
@@ -134,7 +131,6 @@ namespace NNGL {
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding");
         }
         size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
-        //embeddings->uploadToGPU();
 
         // Upload padding mask buffer
         GLuint maskSSBO;
@@ -170,8 +166,6 @@ namespace NNGL {
         }
         size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
 
-        //embeddings->uploadToGPU();
-        
         // Upload padding mask buffer
         GLuint maskSSBO;
         glGenBuffers(1, &maskSSBO);

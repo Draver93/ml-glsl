@@ -1222,8 +1222,8 @@ void gptransformer_simplified() {
 
         "yellow and three make an Apple",
         "Apple is yellow when it's three",
-        "three when it's yellow",
-        "Apple number three has color yellow",
+        "three when it's yellow ",
+        "Apple number three has color yellow ",
     };
     // Precompute tokenized prefixes for eval
     std::vector<std::pair<std::string, std::string>> eval_prompts;
