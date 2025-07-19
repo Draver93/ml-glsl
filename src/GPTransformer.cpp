@@ -231,16 +231,14 @@ namespace NNGL {
         lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
-        outputGrad->downloadFromGPU();
-        DEBUG_VALIDATION(outputGrad);
 
+        outputGrad->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
         int lastPos = decOutputMat->cols - 1;
         for (int i = 0; i < decOutputMat->rows; ++i) decOutputGrad->set(i, lastPos, outputGrad->get(i, 0));
         decOutputGrad->uploadToGPU();
 
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
-        DEBUG_VALIDATION(decGrad);
 
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);

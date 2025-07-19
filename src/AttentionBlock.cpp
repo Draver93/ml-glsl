@@ -167,17 +167,9 @@ namespace NNGL {
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context) {
         NNGL::Timer timer("AttentionBlock::forward");
-        // CACHE INPUT FOR BACKPROP
-        input->downloadFromGPU();
-        m_CachedInput->copyFrom(input);
-        m_CachedInput->uploadToGPU();
 
-        if (context) {
-            if (!m_CachedContext) {
-                m_CachedContext = std::make_shared<Matrix>(context->rows, context->cols);
-            }
-            m_CachedContext->copyFrom(context);
-        }
+        m_CachedInput = input;
+        if (context) m_CachedContext = context;
 
         const auto& input_kv = context ? context : input;
 
@@ -188,9 +180,6 @@ namespace NNGL {
 
         // === STEP 1: Compute Q, K, V projections ===
         {
-            input->uploadToGPU();
-            input_kv->uploadToGPU();
-
             m_ForwardPassWeightsCompute->bindBuffer(0, "InputQ", DEBUG_VALIDATION(input));
             m_ForwardPassWeightsCompute->bindBuffer(1, "InputKV", DEBUG_VALIDATION(input_kv));
             m_ForwardPassWeightsCompute->bindBuffer(2, "WeightQ", DEBUG_VALIDATION(m_WeightQueryMat));
