@@ -12,7 +12,6 @@ uniform int seq_len;
 uniform int head_dim;
 uniform int num_heads;
 
-const float EPS = 1e-8;
 const float SAFE_MIN = -1e9;
 const float SAFE_MAX = 1e9;
 

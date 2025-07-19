@@ -1175,7 +1175,7 @@ void gptransformer_simplified() {
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
     int d_model = 256;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 32;   // Longer sequence for complex text
+    int seq_len = 16;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1208,29 +1208,29 @@ void gptransformer_simplified() {
 
         // Overfit on apple-color association and QA sentences
     std::vector<std::string> training_data = {
-        "red Apple is number one",
-        "red and number one is Apple",
-        "number one and red is Apple",
-        "Apple number one has color red",
-        "What color of Apple number one It's red",
-
-        "Apple number two has color green",
-        "green Apple has number two",
-        "green always two",
-        "number two has green fruit",
-        "What color of Apple number two It's green",
-
-        "yellow and three make an Apple",
-        "Apple is yellow when it's three",
-        "three when it's yellow ",
-        "Apple number three has color yellow ",
+        " red Apple is number one ",
+        " red and number one is Apple ",
+        " number one and red is Apple ",
+        " Apple number one has color red ",
+        " What color of Apple number one It's red ",
+          
+        " Apple number two has color green ",
+        " green Apple has number two ",
+        " green always two ",
+        " number two has green fruit ",
+        " What color of Apple number two It's green ",
+          
+        " yellow and three make an Apple ",
+        " Apple is yellow when it's three ",
+        " three when it's yellow ",
+        " Apple number three has color yellow ",
     };
     // Precompute tokenized prefixes for eval
     std::vector<std::pair<std::string, std::string>> eval_prompts;
     std::vector<std::string> test_queries = {
-        "What color of Apple number one ",
-        "three when it's ",
-        "Apple number one "
+        " What color of Apple number one ",
+        " three when it's ",
+        " Apple number one "
     };
     for (const auto& query : test_queries) {
         std::vector<std::string> tokens = bpe->tokenizeInput(query.c_str(), query.size());
@@ -1287,8 +1287,8 @@ void gptransformer_simplified() {
                 num_tokens++;
             }
         }
-        // Print progress every 10 epochs
-        if ((epoch + 1) % 10 == 0 || epoch == 0) {
+        // Print progress every 2 epochs
+        if ((epoch + 1) % 2 == 0 || epoch == 0) {
             float avg_loss = total_loss / num_tokens;
             std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
                       << " | LR = " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
@@ -1355,7 +1355,7 @@ int main(int argc, char** argv) {
 
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    int choice = 0; // Change this to test different functions
+    int choice = 1; // Change this to test different functions
     //runAllUnitTests();
 
     switch (choice) {

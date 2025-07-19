@@ -285,7 +285,7 @@ namespace NNGL {
         //HACK to be able to work with transformer
         m_Layers.back()->m_ActivationMat->rows = m_Layers.back()->m_Height;
         m_Layers.back()->m_ActivationMat->cols = inputMat->cols;
-        m_Layers.back()->m_ActivationMat->downloadFromGPU();
+
         return  m_Layers.back()->m_ActivationMat;
     }
 
