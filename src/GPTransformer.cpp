@@ -279,6 +279,7 @@ namespace NNGL {
         lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
+        outputGrad->downloadFromGPU();
         DEBUG_VALIDATION(outputGrad);
 
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);

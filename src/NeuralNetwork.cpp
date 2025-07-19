@@ -44,15 +44,10 @@ namespace NNGL {
         if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
 
         if(!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
-
-        m_InputGradBuffer = 0;
     };
 
 	NeuralNetwork::~NeuralNetwork() {
-        if (m_InputGradBuffer) {
-            LOG_TRACE("[GPU BUFFER] Deleting input grad buffer " + std::to_string(m_InputGradBuffer));
-            glDeleteBuffers(1, &m_InputGradBuffer);
-        }
+
     }
 
 	void NeuralNetwork::addLayer(int width, int height,  ActivationFnType type) {
@@ -64,6 +59,7 @@ namespace NNGL {
         //we changed layer structure so we need to update mat's
         m_InputBatchMat = nullptr;
         m_OutputBatchMat = nullptr;
+        m_InputGradMat = nullptr;
         forwardMatOutput = nullptr;
 	}
 
@@ -450,17 +446,18 @@ namespace NNGL {
     void NeuralNetwork::inputGradientCalc() {
         auto& firstLayer = m_Layers.front();
 
-        if (m_InputGradBuffer == 0) {
-            glGenBuffers(1, &m_InputGradBuffer);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * firstLayer->getSize().x * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-            LOG_TRACE("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradBuffer) +
+        if (!m_InputGradMat) {
+
+            m_InputGradMat = std::make_shared<Matrix>(firstLayer->getSize().x, m_BatchSize); 
+            m_InputGradMat->uploadToGPU();
+
+            LOG_TRACE("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradMat->buffer) +
                 " (" + std::to_string(m_BatchSize * firstLayer->getSize().x * sizeof(float)) + " bytes)");
         }
 
         m_InputDeltaCompute->bindBuffer(0, "NextDeltaBuffer", firstLayer->m_DeltaBuffer);
         m_InputDeltaCompute->bindBuffer(1, "WeightBuffer", firstLayer->m_WeightBuffer);
-        m_InputDeltaCompute->bindBuffer(2, "InputDeltaBuffer", m_InputGradBuffer);
+        m_InputDeltaCompute->bindBuffer(2, "InputDeltaBuffer", m_InputGradMat->buffer);
         m_InputDeltaCompute->setUniform("input_size", (int)firstLayer->getSize().x);
         m_InputDeltaCompute->setUniform("output_size", (int)firstLayer->getSize().y);
         m_InputDeltaCompute->setUniform("batch_size", m_BatchSize);
@@ -479,18 +476,7 @@ namespace NNGL {
         weightsAndBiasesUpdate(inputMat, learningRate);
         inputGradientCalc();
 
-        // Get matrix from pool and download GPU data into it
-        std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        if (!mapped) throw std::runtime_error("data failed to map");
-        std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        inputGradMat->uploadToGPU();
-
-        std::shared_ptr<Matrix> result = inputGradMat;
-        returnMatrixToPool(inputGradMat);
-        return result;
+        return m_InputGradMat;
     }
 
     std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
@@ -511,19 +497,7 @@ namespace NNGL {
         // Compute input gradient
         inputGradientCalc();
 
-        // Get matrix from pool and download GPU data into it
-        std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(m_CachedInput->rows, m_CachedInput->cols);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        if (!mapped) throw std::runtime_error("data failed to map");
-        std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-        inputGradMat->uploadToGPU();
-
-        std::shared_ptr<Matrix> result = inputGradMat;
-        returnMatrixToPool(inputGradMat);
-
-        return result;
+        return m_InputGradMat;
     }
 
 
