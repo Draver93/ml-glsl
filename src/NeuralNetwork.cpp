@@ -62,9 +62,11 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
+
+        GLuint currentInput = inputBatchMat->buffer;
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
-            m_ForwardPassCompute->bindBuffer(0, "InputBuffer", DEBUG_VALIDATION(inputBatchMat));
+            m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
             m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
             m_ForwardPassCompute->bindBuffer(3, "OutputBuffer", layer->m_ActivationMat->buffer);
@@ -79,6 +81,8 @@ namespace NNGL {
 			int workgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
 			int workgroupsY = std::min((int)ceil(layer->getSize().y / 16.0f), 65535);
             m_ForwardPassCompute->dispatch(workgroupsX, workgroupsY, 1);
+
+            currentInput = layer->m_ActivationMat->buffer;
 		}
 
 		// Unbind buffers for this layer
