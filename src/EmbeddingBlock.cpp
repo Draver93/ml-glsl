@@ -57,7 +57,9 @@ namespace NNGL {
             }
             indices[i] = m_EmbeddingsIds[tokens[i]];
         }
-
+        getIndexBuffer(indices);
+    }
+    GLuint EmbeddingBlock::getIndexBuffer(const std::vector<int>& indices) {
         if (!m_CachedIndexBuffer) {
             glGenBuffers(1, &m_CachedIndexBuffer);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedIndexBuffer);
@@ -69,7 +71,6 @@ namespace NNGL {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         return m_CachedIndexBuffer;
     }
-
 
     std::shared_ptr<Matrix> EmbeddingBlock::forward(const std::vector<std::string>& tokens) {
         NNGL::Timer timer("EmbeddingBlock::forward");
@@ -97,10 +98,10 @@ namespace NNGL {
     }
 
     void EmbeddingBlock::backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate) {
+        if (!gradOutput || gradOutput->rows != m_ModelDim) 
+            throw std::runtime_error("Invalid gradient dimensions");
+
         GLuint indexBuffer = getIndexBuffer(tokens);
-
-        if (!gradOutput || gradOutput->rows != m_ModelDim) throw std::runtime_error("Invalid gradient dimensions");
-
 
         m_EmbeddingUpdateCompute->bindBuffer(0, "EmbeddingBuffer", DEBUG_VALIDATION(m_EmbeddingsMat));
         m_EmbeddingUpdateCompute->bindBuffer(1, "GradBuffer", DEBUG_VALIDATION(gradOutput));
@@ -127,20 +128,16 @@ namespace NNGL {
     }
 
     void EmbeddingBlock::applyPositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask) {
-        if (!embeddings || embeddings->rows != m_ModelDim) {
+        if (!embeddings || embeddings->rows != m_ModelDim) 
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding");
-        }
-        size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
 
-        // Upload padding mask buffer
-        GLuint maskSSBO;
-        glGenBuffers(1, &maskSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, maskSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, paddingMask.size() * sizeof(int), paddingMask.data(), GL_DYNAMIC_DRAW);
+        size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
+        GLuint indexBuffer = getIndexBuffer(paddingMask);
+
         // Bind buffers
         m_ApplyPosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", DEBUG_VALIDATION(embeddings));
         m_ApplyPosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", DEBUG_VALIDATION(m_PositionalEncodingMat));
-        m_ApplyPosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
+        m_ApplyPosEncodingCompute->bindBuffer(2, "PaddingMask", indexBuffer);
         // Set uniforms
         m_ApplyPosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
         m_ApplyPosEncodingCompute->setUniform("model_dim", static_cast<int>(m_ModelDim));
@@ -150,7 +147,6 @@ namespace NNGL {
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
-        glDeleteBuffers(1, &maskSSBO);
 
         for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
@@ -161,20 +157,17 @@ namespace NNGL {
     }
 
     void EmbeddingBlock::removePositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask) {
-        if (!embeddings || embeddings->rows != m_ModelDim) {
+        if (!embeddings || embeddings->rows != m_ModelDim) 
             throw std::runtime_error("Invalid embedding matrix dimensions for positional encoding removal");
-        }
+
         size_t seqLen = std::min(static_cast<size_t>(embeddings->cols), m_MaxSeqLen);
 
-        // Upload padding mask buffer
-        GLuint maskSSBO;
-        glGenBuffers(1, &maskSSBO);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, maskSSBO);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, paddingMask.size() * sizeof(int), paddingMask.data(), GL_DYNAMIC_DRAW);
+        GLuint indexBuffer = getIndexBuffer(paddingMask);
+
         // Bind buffers
         m_RemovePosEncodingCompute->bindBuffer(0, "EmbeddingsBuffer", DEBUG_VALIDATION(embeddings));
         m_RemovePosEncodingCompute->bindBuffer(1, "PositionalEncodingBuffer", DEBUG_VALIDATION(m_PositionalEncodingMat));
-        m_RemovePosEncodingCompute->bindBuffer(2, "PaddingMask", maskSSBO);
+        m_RemovePosEncodingCompute->bindBuffer(2, "PaddingMask", indexBuffer);
 
         // Set uniforms
         m_RemovePosEncodingCompute->setUniform("seq_len", static_cast<int>(seqLen));
@@ -185,7 +178,6 @@ namespace NNGL {
         int workgroupsY = (m_ModelDim + 15) / 16;
         m_RemovePosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
-        glDeleteBuffers(1, &maskSSBO);
         // Unbind buffers
         for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }

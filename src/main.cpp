@@ -1175,7 +1175,7 @@ void gptransformer_simplified() {
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
     int d_model = 256;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 64;   // Longer sequence for complex text
+    int seq_len = 32;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1355,7 +1355,7 @@ int main(int argc, char** argv) {
 
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    int choice = 1; // Change this to test different functions
+    int choice = 0; // Change this to test different functions
     //runAllUnitTests();
 
     switch (choice) {

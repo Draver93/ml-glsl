@@ -28,64 +28,6 @@ namespace NNGL {
         m_CurrentLoss = 0.0f;
     }
 
-    void GPTransformer::train(const std::string& inputText, float learningRate) {
-        std::vector<std::string> tokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
-        if (tokens.size() < 2) return;
-        tokens.push_back("<EOS>");
-        trainOnSequence(tokens, 0, learningRate);
-    }
-
-    void GPTransformer::trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize, float learningRate) {
-        if (windowSize == 0) windowSize = m_SeqLen + 1;
-        if (longSequence.size() < windowSize) {
-            trainNextToken(longSequence, learningRate);
-            return;
-        }
-        for (size_t i = 0; i <= longSequence.size() - windowSize; ++i) {
-            std::vector<std::string> window(
-                longSequence.begin() + i,
-                longSequence.begin() + i + windowSize
-            );
-            trainNextToken(window, learningRate);
-        }
-    }
-
-    void GPTransformer::trainNextToken(const std::vector<std::string>& inputTokens, float learningRate) {
-        if (inputTokens.size() < 2) throw std::runtime_error("Need at least 2 tokens for next-token prediction");
-        std::vector<std::string> contextTokens(inputTokens.begin(), inputTokens.end() - 1);
-        std::string targetToken = inputTokens.back();
-        while (contextTokens.size() < m_SeqLen) contextTokens.push_back("<PAD>");
-        if (contextTokens.size() > m_SeqLen) contextTokens = std::vector<std::string>(contextTokens.end() - m_SeqLen, contextTokens.end());
-        std::shared_ptr<Matrix> logits = forwardPass(contextTokens);
-        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
-        float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
-        m_CurrentLoss = loss;
-        m_TrainingSteps++;
-        m_LossHistory.push_back(loss);
-        if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
-        int predictedTokenId = predictToken(logits);
-        std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-        static int debugCounter = 0;
-        if (++debugCounter % 14 == 0) {
-            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss 
-                      << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
-                      << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
-                      << " | Context: [";
-            for (size_t i = 0; i < std::min(contextTokens.size(), (size_t)5); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << "'" << contextTokens[i] << "'";
-            }
-            if (contextTokens.size() > 5) std::cout << ", ...";
-            std::cout << "]" << std::endl;
-        }
-
-        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
-        targetMat->set(0, targetTokenId, 1.0f);
-        targetMat->uploadToGPU();
-
-        backwardPass(contextTokens, targetMat, learningRate);
-    }
-
     float GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
         // Fix padding logic: keep most recent tokens at the end, pad from the beginning
         std::vector<std::string> paddedContext = contextTokens;
@@ -99,6 +41,7 @@ namespace NNGL {
         }
         
         std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
+        logits->downloadFromGPU();
         int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
         float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
         m_CurrentLoss = loss;
@@ -151,6 +94,7 @@ namespace NNGL {
         // 3. Generate tokens one by one, maintaining full context
         for (int step = 0; step < maxLength; ++step) {
             auto logits = forwardPass(paddedContext);
+            logits->downloadFromGPU();
             int nextTokenId = predictToken(logits);
             
             // Check for EOS
@@ -409,9 +353,5 @@ namespace NNGL {
         }
         std::cout << colors[COLOR_COUNT] << std::endl;
     }
-    float GPTransformer::trainOnTokenSequence(const std::vector<std::string>& tokenSequence, float learningRate) {
-        if (tokenSequence.size() < 2) throw std::runtime_error("Need at least 2 tokens for next-token prediction");
-        trainNextToken(tokenSequence, learningRate);
-        return m_CurrentLoss;
-    }
+
 } 

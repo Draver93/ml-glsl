@@ -8,6 +8,7 @@ extern "C" {
 #include <GLFW/glfw3.h>
 #include "ActivationFunctions.h"
 #include <glm/glm.hpp>
+#include "Matrix.h"
 
 
 namespace NNGL {
@@ -27,7 +28,7 @@ namespace NNGL {
 	public:
 		GLuint m_WeightBuffer;
 		GLuint m_BiasBuffer;
-		GLuint m_ActivationBuffer;
+		std::shared_ptr<Matrix> m_ActivationMat;
 		GLuint m_PreactivationBuffer;
 		GLuint m_DeltaBuffer;
 

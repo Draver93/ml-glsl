@@ -20,9 +20,9 @@ namespace NNGL {
 		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
 		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
 		std::shared_ptr<Matrix> backward_with_targetloss(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> targetLoss, float learningRate);
-		std::shared_ptr<Matrix> forwardMatOutput;
-		std::shared_ptr<Matrix> m_CachedInput; // Cache the input for backward pass
-		std::shared_ptr<Matrix> getCachedOutput() { return forwardMatOutput; }
+		std::shared_ptr<Matrix> getCachedOutput() { 
+			return m_Layers.back()->m_ActivationMat; 
+		}
 	public:
 		void addLayer(int width, int height, ActivationFnType type);
 		void train(float learningRate = 0.01f);
@@ -58,6 +58,8 @@ namespace NNGL {
 		std::shared_ptr<Matrix> m_InputBatchMat;
 		std::shared_ptr<Matrix> m_OutputBatchMat;
 		std::shared_ptr<Matrix> m_InputGradMat;
+
+		std::shared_ptr<Matrix> m_CachedInput;
 
 		std::shared_ptr<Shader> 
 			m_ForwardPassCompute,

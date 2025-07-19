@@ -46,7 +46,7 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_CachedOutput; 
     private:
         GLuint getIndexBuffer(const std::vector<std::string>& tokens);
-
+        GLuint getIndexBuffer(const std::vector<int>& indices);
     public:
         EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen);
         

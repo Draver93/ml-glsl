@@ -19,10 +19,7 @@ namespace NNGL {
     class GPTransformer {
     public:
         GPTransformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen);
-        void train(const std::string& inputText, float learningRate);
-        void trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize, float learningRate);
-        void trainNextToken(const std::vector<std::string>& inputTokens, float learningRate);
-        // New method for separate context and target
+
         float trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate);
         std::string eval(const std::string& inputText);
 
