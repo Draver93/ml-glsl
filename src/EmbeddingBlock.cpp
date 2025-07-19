@@ -57,7 +57,7 @@ namespace NNGL {
             }
             indices[i] = m_EmbeddingsIds[tokens[i]];
         }
-        getIndexBuffer(indices);
+        return getIndexBuffer(indices);
     }
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<int>& indices) {
         if (!m_CachedIndexBuffer) {
