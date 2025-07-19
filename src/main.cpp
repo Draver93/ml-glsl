@@ -1208,29 +1208,29 @@ void gptransformer_simplified() {
 
         // Overfit on apple-color association and QA sentences
     std::vector<std::string> training_data = {
-        "red Apple is number one.",
-        "red and number one is Apple.",
-        "number one and red is Apple.",
-        "Apple number one has color red.",
-        "What color of Apple number one It's red.",
+        "red Apple is number one",
+        "red and number one is Apple",
+        "number one and red is Apple",
+        "Apple number one has color red",
+        "What color of Apple number one It's red",
 
-        "Apple number two has color green.",
-        "green Apple has number two.",
-        "green always two.",
-        "number two has green fruit.",
-        "What color of Apple number two It's green.",
+        "Apple number two has color green",
+        "green Apple has number two",
+        "green always two",
+        "number two has green fruit",
+        "What color of Apple number two It's green",
 
-        "yellow and three make an Apple.",
-        "Apple is yellow when it's three.",
-        "three when it's yellow.",
-        "Apple number three has color yellow.",
+        "yellow and three make an Apple",
+        "Apple is yellow when it's three",
+        "three when it's yellow ",
+        "Apple number three has color yellow ",
     };
     // Precompute tokenized prefixes for eval
     std::vector<std::pair<std::string, std::string>> eval_prompts;
     std::vector<std::string> test_queries = {
-        "What color of Apple number one",
-        "three when it's",
-        "Apple number one"
+        "What color of Apple number one ",
+        "three when it's ",
+        "Apple number one "
     };
     for (const auto& query : test_queries) {
         std::vector<std::string> tokens = bpe->tokenizeInput(query.c_str(), query.size());
