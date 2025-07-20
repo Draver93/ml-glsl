@@ -31,7 +31,7 @@ void main() {
     // Compute gradient for hidden layer: dL/dz = (next_deltas @ weights^T) * activation_derivative
     float gradient_sum = 0.0;
     for (int next_neuron_idx = 0; next_neuron_idx < next_size; next_neuron_idx++) {
-        // Row-major indexing for batch processing
+        // Column-major indexing for batch processing
         uint next_delta_idx = batch_idx * next_size + next_neuron_idx;
         uint weight_idx = current_neuron_idx * next_size + next_neuron_idx;
         gradient_sum += next_deltas[next_delta_idx] * weights[weight_idx];

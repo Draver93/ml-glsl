@@ -48,7 +48,7 @@ namespace NNGL {
         static int logCounter = 0;
         logCounter++;
 
-        while (loss > 0 && runCounter < 3) {
+        while (loss > 0 && runCounter < 2) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
             printMatrixSlice("Logits after forwardPass", logits);
@@ -62,7 +62,7 @@ namespace NNGL {
             if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
             int predictedTokenId = predictToken(logits);
             std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-            if (0 && logCounter % 10 == 0) {
+            if (logCounter % 10 == 0) {
                 std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
                     << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
                     << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"

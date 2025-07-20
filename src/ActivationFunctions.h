@@ -12,6 +12,7 @@
 namespace NNGL {
     // Helper to print a 5x5 slice of a matrix
     static void printMatrixSlice(const std::string& name, const std::shared_ptr<NNGL::Matrix>& mat) {
+        return;
         if (!mat) { std::cout << name << ": nullptr" << std::endl; return; }
         std::cout << "[DEBUG] " << name << " shape=[" << mat->rows << "," << mat->cols << "]\n";
         int max_rows = std::min(5, mat->rows);

@@ -267,7 +267,7 @@ void digit_recognition() {
     const int hiddenSize = 64;
     const int outputSize = 10;
 
-    const int batchSize = 8;
+    const int batchSize = 2;
     const int steps = 2000000;
 
     NNGL::NeuralNetwork nn(batchSize);
@@ -1174,8 +1174,8 @@ void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
-    int d_model = 256;  // Increased for complex text
-    int d_hidden = d_model * 4;
+    int d_model = 512;  // Increased for complex text
+    int d_hidden = d_model * 2;
     int seq_len = 32;   // Longer sequence for complex text
 
 
@@ -1266,7 +1266,7 @@ void gptransformer_simplified() {
 
     std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
     int epochs = 1000000;
-    float initial_learning_rate = 0.0001f; // Reduced for more stable learning
+    float initial_learning_rate = 0.000001f; // Reduced for more stable learning
     
     // Early stopping variables
     int epochs_without_improvement = 0;
@@ -1442,7 +1442,7 @@ int main(int argc, char** argv) {
 
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    int choice = 2; // Change this to test different functions
+    int choice = 1; // Change this to test different functions
     //runAllUnitTests();
 
     switch (choice) {

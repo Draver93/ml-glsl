@@ -19,7 +19,7 @@ void main() {
     // Compute gradient w.r.t. input: dL/dx = deltas @ weights^T
     float input_gradient = 0.0;
     for (int output_neuron_idx = 0; output_neuron_idx < output_size; output_neuron_idx++) {
-        // Row-major indexing for batch processing
+        // Column-major indexing for batch processing
         uint delta_idx = batch_idx * output_size + output_neuron_idx;
         uint weight_idx = input_neuron_idx * output_size + output_neuron_idx;
         float delta_val = next_deltas[delta_idx];
@@ -28,7 +28,7 @@ void main() {
         input_gradient += delta_val * weight_val;
     }
     
-    // Store input gradient with row-major indexing: [batch * input_size + input_neuron]
+    // Store input gradient with column-major indexing: [batch_idx * input_size + input_neuron_idx]
     uint input_delta_idx = batch_idx * input_size + input_neuron_idx;
     input_deltas[input_delta_idx] = input_gradient;
 } 

@@ -48,7 +48,7 @@ namespace NNGL {
             " (" + std::to_string(biases.size() * sizeof(float)) + " bytes)");
 
         // Initialize activation and delta buffers
-        m_ActivationMat = std::make_shared<Matrix>(batchSize, m_Height, 0.0f);
+        m_ActivationMat = std::make_shared<Matrix>(m_Height, batchSize, 0.0f);
         m_ActivationMat->uploadToGPU();
         LOG_DEBUG("[GPU BUFFER] Created activation buffer " + std::to_string(m_ActivationMat->buffer) +
             " (" + std::to_string(batchSize * m_Height * sizeof(float)) + " bytes)");
