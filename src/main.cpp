@@ -1175,7 +1175,7 @@ void gptransformer_simplified() {
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
     int d_model = 256;  // Increased for complex text
     int d_hidden = d_model * 4;
-    int seq_len = 16;   // Longer sequence for complex text
+    int seq_len = 32;   // Longer sequence for complex text
 
 
     std::string bpe_file = "bpe50k.checkpoint";
@@ -1279,7 +1279,7 @@ void gptransformer_simplified() {
             std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
             tokens.insert(tokens.begin(), "<SOS>");
             tokens.push_back("<EOS>");
-            for (size_t i = 1; i < tokens.size(); ++i) {
+            for (size_t i = tokens.size() / 3; i < tokens.size(); ++i) {
                 std::vector<std::string> context(tokens.begin(), tokens.begin() + i);
                 std::string target = tokens[i];
                 float loss = gpt->trainNextToken(context, target, learning_rate);

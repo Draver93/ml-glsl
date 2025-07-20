@@ -34,11 +34,11 @@ namespace NNGL {
         return addNorm2Out;
     }
 
-    std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
+    std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate, int colIdx) {
         NNGL::Timer timer("DecoderOnlyBlock::backward");
 
         // Backprop through addNorm2 (main: mlpOut, residual: addNorm1Out)
-        m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput());
+        m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput(), colIdx);
         auto gradFFNInput = m_FeedForward->backward(m_AddNorm2->getGradInput(), learningRate);
 
         // Backprop through addNorm1 (main: maskedOut, residual: input)

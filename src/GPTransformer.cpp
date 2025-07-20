@@ -43,8 +43,8 @@ namespace NNGL {
             paddedContext.insert(paddedContext.begin(), "<PAD>");
         }
         float loss = 1;
-        int logCounter = 0;
-        while (loss > 0) {
+        int runCounter = 0;
+        while (loss > 0 && runCounter < 3) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
 
@@ -57,7 +57,8 @@ namespace NNGL {
             if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
             int predictedTokenId = predictToken(logits);
             std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-            if (++logCounter % 20 == 0 || loss < 0) {
+            static int logCounter = 0;
+            if (++logCounter % 10 == 0) {
                 std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
                     << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
                     << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
@@ -78,6 +79,7 @@ namespace NNGL {
             m_TargetMat->uploadToGPU();
 
             backwardPass(paddedContext, m_TargetMat, learningRate);
+            runCounter++;
         }
 
         return loss;
@@ -232,14 +234,9 @@ namespace NNGL {
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
-        outputGrad->downloadFromGPU();
-        std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
-        int lastPos = decOutputMat->cols - 1;
-        for (int i = 0; i < decOutputMat->rows; ++i) decOutputGrad->set(i, lastPos, outputGrad->get(i, 0));
-        decOutputGrad->uploadToGPU();
-
-        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
-
+        // Use last column directly for backward
+        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(outputGrad, learningRate, decOutputMat->cols - 1);
+        DEBUG_VALIDATION(decGrad);
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }

@@ -15,7 +15,8 @@ namespace NNGL {
         void backward(
             const std::shared_ptr<Matrix>& gradOutput,
             const std::shared_ptr<Matrix>& input,
-            const std::shared_ptr<Matrix>& residual
+            const std::shared_ptr<Matrix>& residual,
+            int colIdx = -1
         );
 
         std::shared_ptr<Matrix> getGamma() { return m_Gamma; }

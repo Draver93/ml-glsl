@@ -57,7 +57,8 @@ namespace NNGL {
     void LayerNorm::backward(
         const std::shared_ptr<Matrix>& gradOutput,
         const std::shared_ptr<Matrix>& input,
-        const std::shared_ptr<Matrix>& residual
+        const std::shared_ptr<Matrix>& residual,
+        int colIdx
     ) {
         NNGL::Timer timer("LayerNorm::backward");
         int seqLen = input->cols;
@@ -85,7 +86,7 @@ namespace NNGL {
         m_BackwardShader->bindBuffer(1, "InputA", DEBUG_VALIDATION(input));
         m_BackwardShader->bindBuffer(2, "InputB", DEBUG_VALIDATION(residual));
         m_BackwardShader->bindBuffer(3, "Gamma", DEBUG_VALIDATION(m_Gamma));
-        m_BackwardShader->bindBuffer(4, "Beta", m_Beta->buffer); //0
+        m_BackwardShader->bindBuffer(4, "Beta", m_Beta->buffer);
         m_BackwardShader->bindBuffer(5, "GradInputA", m_GradInput->buffer);
         m_BackwardShader->bindBuffer(6, "GradInputB", m_GradResidual->buffer);
         m_BackwardShader->bindBuffer(7, "GradGamma", m_GradGamma->buffer);
@@ -93,7 +94,7 @@ namespace NNGL {
         m_BackwardShader->setUniform("seq_len", seqLen);
         m_BackwardShader->setUniform("model_dim", modelDim);
         m_BackwardShader->setUniform("epsilon", m_Epsilon);
-        // Use correct workgroup count for local_size_x = 32
+        m_BackwardShader->setUniform("col_idx", colIdx);
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_BackwardShader->dispatch(outputWorkgroupsX, 1, 1);
 

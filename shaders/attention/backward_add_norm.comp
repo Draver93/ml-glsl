@@ -16,9 +16,11 @@ layout(std430) buffer GradBeta { float grad_beta[]; };      // [model_dim * seq_
 uniform int seq_len;
 uniform int model_dim;
 uniform float epsilon;
+uniform int col_idx; // -1 for all columns, >=0 for single column
 
 void main() {
     uint seq_pos = gl_GlobalInvocationID.x; // sequence position (row index)
+    if (col_idx >= 0 && seq_pos != uint(col_idx)) return;
     if (seq_pos >= uint(seq_len)) return;
 
     // Compute mean
