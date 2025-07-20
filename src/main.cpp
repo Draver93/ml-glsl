@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <cmath>
 #include <cassert>
+#include <cctype>
 
 uint32_t hash32(const std::string& str) {
     const uint32_t FNV_PRIME = 0x01000193; //   16777619
@@ -1329,6 +1330,92 @@ void gptransformer_simplified() {
     }
 }
 
+void gptransformer_pg76287() {
+    std::srand(42);
+    std::cout << "=== GPTransformer Training on pg76287.txt ===" << std::endl;
+    int d_model = 256;
+    int d_hidden = d_model * 4;
+    int seq_len = 64;
+    std::string bpe_file = "bpe50k.checkpoint";
+    std::string text_file = "pg76287.txt";
+    std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(1024 * 10);
+    bpe->load(bpe_file);
+    std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(bpe_file, d_model, d_hidden, seq_len);
+    // Build the training sequence from the first 100 valid lines for eval prompts, but use all lines for training
+    std::ifstream infile(text_file);
+    if (!infile.is_open()) {
+        std::cerr << "Failed to open file: " << text_file << std::endl;
+        return;
+    }
+    std::vector<std::string> sequence;
+    std::vector<std::vector<std::string>> valid_lines_tokens; // Store tokens for evaluation
+    std::string line;
+    int eval_max_lines = 100;
+    int eval_lineCount = 0;
+    int total_lineCount = 0;
+    while (std::getline(infile, line)) {
+        // Clean line: trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\n\r"));
+        line.erase(line.find_last_not_of(" \t\n\r") + 1);
+        // Skip empty or non-alphabetic lines
+        if (line.empty()) continue;
+        bool hasAlpha = false;
+        for (char c : line) { if (std::isalpha(static_cast<unsigned char>(c))) { hasAlpha = true; break; } }
+        if (!hasAlpha) continue;
+        // Tokenize line
+        std::vector<std::string> tokens = bpe->tokenizeInput(line.data(), line.size());
+        if (tokens.empty()) continue;
+        sequence.push_back("<SOS>");
+        sequence.insert(sequence.end(), tokens.begin(), tokens.end());
+        sequence.push_back("<EOS>");
+        if (eval_lineCount < eval_max_lines) {
+            valid_lines_tokens.push_back(tokens);
+            ++eval_lineCount;
+        }
+        ++total_lineCount;
+    }
+    std::cout << "[GPTransformer] Training sequence built with " << sequence.size() << " tokens from " << total_lineCount << " lines." << std::endl;
+    // Sample evaluation prompts randomly from the first 100 valid lines
+    std::vector<std::pair<std::string, std::string>> eval_prompts;
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<size_t> dist(0, valid_lines_tokens.size() - 1);
+    int num_eval_prompts = std::min(3, (int)valid_lines_tokens.size());
+    for (int i = 0; i < num_eval_prompts; ++i) {
+        size_t idx = dist(rng);
+        std::vector<std::string> context = valid_lines_tokens[idx];
+        context.insert(context.begin(), "<SOS>");
+        // Pad/truncate to seq_len
+        if (context.size() > (size_t)seq_len) context.resize(seq_len);
+        else if (context.size() < (size_t)seq_len) context.insert(context.begin(), seq_len - context.size(), "<PAD>");
+        std::string prompt, display;
+        for (const auto& t : context) { if (t != "<PAD>") { prompt += t; display += "'" + t + "' "; } }
+        eval_prompts.emplace_back(display, prompt);
+    }
+    // Training loop: single pass over sequence, evaluate every 100 tokens
+    float initial_learning_rate = 0.0001f;
+    float learning_rate = initial_learning_rate;
+    float total_loss = 0.0f;
+    int num_tokens = 0;
+    int eval_interval = 100;
+    for (size_t i = seq_len; i < sequence.size(); ++i) {
+        std::vector<std::string> context(sequence.begin() + i - seq_len, sequence.begin() + i);
+        std::string target = sequence[i];
+        float loss = gpt->trainNextToken(context, target, learning_rate);
+        total_loss += loss;
+        num_tokens++;
+        if (0 && num_tokens % eval_interval == 0) {
+            float avg_loss = total_loss / num_tokens;
+            std::cout << "\n================ EVALUATION AFTER " << num_tokens << " TOKENS ================\n";
+            std::cout << "Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss
+                      << " | LR = " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
+            for (const auto& eval_pair : eval_prompts) {
+                std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
+            }
+            std::cout << "============================================================\n";
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     srand(time(nullptr));
  
@@ -1355,7 +1442,7 @@ int main(int argc, char** argv) {
 
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    int choice = 1; // Change this to test different functions
+    int choice = 2; // Change this to test different functions
     //runAllUnitTests();
 
     switch (choice) {
@@ -1371,6 +1458,12 @@ int main(int argc, char** argv) {
             LOG_INFO("RUNNING GPT TRANSLATION");
             LOG_INFO(std::string(60, '='));
             gptransformer_simplified();
+            break;
+        case 2:
+            LOG_INFO("");
+            LOG_INFO("RUNNING GPTRANSFORMER ON PG76287.TXT");
+            LOG_INFO(std::string(60, '='));
+            gptransformer_pg76287();
             break;
         default:
             LOG_ERROR("Invalid choice, running simple EOS prediction...");

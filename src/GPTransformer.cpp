@@ -44,9 +44,14 @@ namespace NNGL {
         }
         float loss = 1;
         int runCounter = 0;
+
+        static int logCounter = 0;
+        logCounter++;
+
         while (loss > 0 && runCounter < 3) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
+            printMatrixSlice("Logits after forwardPass", logits);
 
             int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
 
@@ -57,8 +62,7 @@ namespace NNGL {
             if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
             int predictedTokenId = predictToken(logits);
             std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-            static int logCounter = 0;
-            if (++logCounter % 10 == 0) {
+            if (0 && logCounter % 10 == 0) {
                 std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
                     << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
                     << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
@@ -206,10 +210,11 @@ namespace NNGL {
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
-
         decOutputMat->downloadFromGPU();
+        printMatrixSlice("Decoder output after forward", decOutputMat);
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->rows, 1);
         for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(i, decOutputMat->cols - 1);
+        printMatrixSlice("Last token representation before upload", lastTokenRep);
         lastTokenRep->uploadToGPU();
 
         return m_OutputProjection->forward(lastTokenRep);
@@ -228,8 +233,10 @@ namespace NNGL {
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
 
         decOutputMat->downloadFromGPU();
+        printMatrixSlice("Decoder output after forward", decOutputMat);
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->rows, 1);
         for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(i, decOutputMat->cols - 1);
+        printMatrixSlice("Last token representation before upload", lastTokenRep);
         lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);

@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <unordered_map> // Added for unordered_map
+#include "ActivationFunctions.h"
 #include "Logger.h"
 
 
@@ -91,8 +92,9 @@ namespace NNGL {
         int workgroupsX = (m_ModelDim + localSizeX - 1) / localSizeX;
         int workgroupsY = (tokens.size() + localSizeY - 1) / localSizeY;
         m_EmbeddingForwardCompute->dispatch(workgroupsX, workgroupsY, 1);
-
         for (int j = 0; j <= 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
+        m_CachedOutput->downloadFromGPU();
+        printMatrixSlice("Embedding output after forward", m_CachedOutput);
         DEBUG_VALIDATION(m_CachedOutput);
         return m_CachedOutput;
     }

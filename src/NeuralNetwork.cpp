@@ -12,22 +12,6 @@
 #include <string>
 #include <tuple>
 
-// Helper to print a 5x5 slice of a matrix
-void printMatrixSlice(const std::string& name, const std::shared_ptr<NNGL::Matrix>& mat) {
-    return;
-    if (!mat) { std::cout << name << ": nullptr" << std::endl; return; }
-    std::cout << "[DEBUG] " << name << " shape=[" << mat->rows << "," << mat->cols << "]\n";
-    for (int r = 0; r < std::min(5, mat->rows); ++r) {
-        std::cout << "  ";
-        for (int c = 0; c < std::min(5, mat->cols); ++c) {
-            std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-        }
-        if (mat->cols > 5) std::cout << "...";
-        std::cout << std::endl;
-    }
-    if (mat->rows > 5) std::cout << "  ..." << std::endl;
-}
-
 
 namespace NNGL {
     NeuralNetwork::NeuralNetwork(int batchSize) : m_BatchSize(batchSize), m_ADAM_Timestep(0) {
@@ -207,6 +191,8 @@ namespace NNGL {
         m_OutputBatchMat->uploadToGPU();
 
         forwardPass(m_InputBatchMat);
+        m_Layers.back()->m_ActivationMat->downloadFromGPU();
+        printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
         targetLayerLossCalc(m_OutputBatchMat);
 
@@ -236,6 +222,7 @@ namespace NNGL {
             m_InputBatchMat->uploadToGPU();
             m_OutputBatchMat->uploadToGPU();
             forwardPass(m_InputBatchMat);
+            printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
             int outputSize = m_Layers.back()->getSize().y;
             std::vector<float> results(outputSize);
@@ -248,7 +235,7 @@ namespace NNGL {
                     results[j] = mapped[j];
                 }
                 glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                
+                printMatrixSlice("Output after GPU download", m_Layers.back()->m_ActivationMat);
                 // Log GPU data read for testing
                 LOG_TRACE("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
                     " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
@@ -412,6 +399,7 @@ namespace NNGL {
                 // Generate random batch of 1
                 m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
                 forwardPass(m_InputBatchMat);
+                printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
                 // Read results from GPU
                 int outputSize = m_Layers.back()->getSize().y;
@@ -425,9 +413,10 @@ namespace NNGL {
                         results[i] = mapped[i];
                     }
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                    printMatrixSlice("Output after GPU download", m_Layers.back()->m_ActivationMat);
                     
                     // Log GPU data read for testing
-                    LOG("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
+                    LOG_TRACE("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
                         " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
                 }
                 results = softmax(results);
@@ -500,6 +489,7 @@ namespace NNGL {
                     for (int i = 0; i < n; i++) {
                         m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
                         forwardPass(m_InputBatchMat);
+                        printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
                         std::vector<float> results(outputSize);
                         std::vector<float> expected(outputSize);

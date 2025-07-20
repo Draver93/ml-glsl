@@ -124,7 +124,7 @@ namespace NNGL {
         while (i < inputLen) {
             auto [token, len] = m_TokenTrie.match(input, inputLen, i);
             if (!token) {
-                throw std::runtime_error("Critical! Token not found!");
+                //throw std::runtime_error("Critical! Token not found!");
                 token = std::make_shared<Token>(input[i]);
                 len = 1;
             }

@@ -1,51 +1,12 @@
 #include "AttentionBlock.h"
 #include "Logger.h"
+#include "ActivationFunctions.h"
 #include "ShaderCPUAnalogs.h"
 #include <iostream>
 #include "Matrix.h"
 #include <iomanip>
 #include <algorithm>
 
-// Helper to print a 5x5 slice of a matrix
-static void printMatrixSlice(const std::string& name, const std::shared_ptr<NNGL::Matrix>& mat) {
-    return;
-    if (!mat) { std::cout << name << ": nullptr" << std::endl; return; }
-    std::cout << "[DEBUG] " << name << " shape=[" << mat->rows << "," << mat->cols << "]\n";
-    int max_rows = std::min(5, mat->rows);
-    int max_cols = std::min(5, mat->cols);
-    // Print first 5 rows
-    for (int r = 0; r < max_rows; ++r) {
-        std::cout << "  ";
-        for (int c = 0; c < max_cols; ++c) {
-            std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-        }
-        if (mat->cols > 5) std::cout << "... ";
-        // Print last 5 columns if matrix is wide
-        if (mat->cols > 10) {
-            for (int c = mat->cols - 5; c < mat->cols; ++c) {
-                std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-            }
-        }
-        std::cout << std::endl;
-    }
-    if (mat->rows > 5) std::cout << "  ..." << std::endl;
-    // Print last 5 rows if matrix is tall
-    if (mat->rows > 10) {
-        for (int r = mat->rows - 5; r < mat->rows; ++r) {
-            std::cout << "  ";
-            for (int c = 0; c < max_cols; ++c) {
-                std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-            }
-            if (mat->cols > 5) std::cout << "... ";
-            if (mat->cols > 10) {
-                for (int c = mat->cols - 5; c < mat->cols; ++c) {
-                    std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-                }
-            }
-            std::cout << std::endl;
-        }
-    }
-}
 
 namespace NNGL {
     // Static debug flag for validation
@@ -202,6 +163,12 @@ namespace NNGL {
             DEBUG_VALIDATION(m_CachedQ);
             DEBUG_VALIDATION(m_CachedK);
             DEBUG_VALIDATION(m_CachedV);
+            m_CachedQ->downloadFromGPU();
+            printMatrixSlice("Q after forward weights", m_CachedQ);
+            m_CachedK->downloadFromGPU();
+            printMatrixSlice("K after forward weights", m_CachedK);
+            m_CachedV->downloadFromGPU();
+            printMatrixSlice("V after forward weights", m_CachedV);
         }
 
         // === STEP 2: Compute attention scores (Q * K^T / sqrt(d_k)) ===
@@ -228,6 +195,8 @@ namespace NNGL {
 
             for (int i = 0; i <= 3; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
             DEBUG_VALIDATION(m_CachedScores);
+            m_CachedScores->downloadFromGPU();
+            printMatrixSlice("Scores after QK^T", m_CachedScores);
         }
 
         // === STEP 3: Apply softmax to get attention weights ===
@@ -268,6 +237,8 @@ namespace NNGL {
             
             for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
             DEBUG_VALIDATION(m_OutputMat);
+            m_OutputMat->downloadFromGPU();
+            printMatrixSlice("Output after attention", m_OutputMat);
         }
         //we don't download data we leave them in gpu so no need to worry that array is empty
         return m_OutputMat;
