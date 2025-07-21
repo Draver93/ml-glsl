@@ -1,38 +1,47 @@
 #version 430
 
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
-// Embedding matrix: [vocab_size, model_dim] (now column-major)
-layout(std430) restrict buffer EmbeddingBuffer {
-    float embeddings[];
-};
-// Gradients: [batch_size, model_dim] (now column-major)
-layout(std430) readonly buffer GradBuffer {
-    float grads[];
-};
-// Token indices: [batch_size]
-layout(std430) readonly buffer TokenIdxBuffer {
-    int token_indices[];
-};
+// Embedding matrix: [vocab_size, model_dim] (column-major)
+layout(std430) restrict buffer EmbeddingBuffer { float embeddings[]; };
+// Gradients: [seq_len, model_dim]
+layout(std430) readonly buffer GradBuffer { float grads[]; };
+// Token indices:
+layout(std430) readonly buffer TokenIdxBuffer { int token_indices[]; };
+// ADAM moment buffers: [vocab_size, model_dim]
+layout(std430) buffer AdamMBuffer { float adam_m[]; };
+layout(std430) buffer AdamVBuffer { float adam_v[]; };
 
-uniform int batch_size;
+uniform int seq_len;
 uniform int vocab_size;
 uniform int model_dim;
 uniform float learning_rate;
+uniform float ADAM_beta1;
+uniform float ADAM_beta2;
+uniform int ADAM_timestep;
+
+const float epsilon = 1e-8;
 
 void main() {
-    uint token_pos = gl_GlobalInvocationID.x; // position in batch
-    uint model_dim_idx = gl_GlobalInvocationID.y; // embedding dimension
+    uint dim = gl_GlobalInvocationID.x;      // model_dim (column)
+    if (dim >= model_dim) return;
 
-    if (token_pos >= batch_size || model_dim_idx >= model_dim) {
-        return;
+    // For each token in the sequence, update its embedding
+    for (int out_idx = 0; out_idx < seq_len; ++out_idx) {
+        int token_idx = token_indices[out_idx];
+        if (token_idx < 0 || token_idx >= vocab_size) continue;
+        uint idx = dim * model_dim + token_idx;
+        float grad = grads[dim * seq_len + out_idx];
+
+        // Adam update
+        adam_m[idx] = ADAM_beta1 * adam_m[idx] + (1.0 - ADAM_beta1) * grad;
+        adam_v[idx] = ADAM_beta2 * adam_v[idx] + (1.0 - ADAM_beta2) * grad * grad;
+        float m_hat = adam_m[idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
+        float v_hat = adam_v[idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
+        v_hat = max(v_hat, epsilon);
+        float denom = sqrt(v_hat) + epsilon;
+        if (denom == 0.0) denom = epsilon;
+        embeddings[idx] -= learning_rate * m_hat / denom;
+        if (isnan(embeddings[idx]) || isinf(embeddings[idx])) embeddings[idx] = 0.0;
     }
-
-    int token_idx = token_indices[token_pos];
-    if (token_idx < 0 || token_idx >= vocab_size) return;
-
-    // Column-major access:
-    // embeddings[model_dim_idx * vocab_size + token_idx]
-    // grads[model_dim_idx * batch_size + token_pos]
-    embeddings[model_dim_idx * vocab_size + token_idx] -= learning_rate * grads[model_dim_idx * batch_size + token_pos];
 } 

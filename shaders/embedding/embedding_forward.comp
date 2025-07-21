@@ -23,5 +23,5 @@ void main() { //VALID
     int token_idx = token_indices[out_idx];
     if (token_idx < 0 || token_idx >= vocab_size)  return;
 
-    output_buffer[out_idx * model_dim + dim] = embeddings[token_idx * model_dim + dim]; //dirty buffer
+    output_buffer[dim * seq_len + out_idx] = embeddings[token_idx * model_dim + dim]; 
 } 
