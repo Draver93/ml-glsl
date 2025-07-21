@@ -44,7 +44,6 @@ namespace NNGL {
         //we changed layer structure so we need to update mat's
         m_InputBatchMat = nullptr;
         m_OutputBatchMat = nullptr;
-        forwardMatOutput = nullptr;
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
@@ -266,25 +265,8 @@ namespace NNGL {
         
         forwardPass(inputMat);
 
-        int outputRows = inputMat->rows;
-        int outputCols = m_Layers.back()->m_Height; // output size
-        // Return previous output to pool before getting a new one
-        if (forwardMatOutput) {
-            returnMatrixToPool(forwardMatOutput);
-        }
-        forwardMatOutput = getMatrixFromPool(outputRows, outputCols);
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
-        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        if (mapped) {
-            std::memcpy(forwardMatOutput->raw(), mapped, forwardMatOutput->byteSize());
-            glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-            LOG_TRACE("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) +
-                " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
-        }
-        else throw std::runtime_error("data failed to map");
-
-        return forwardMatOutput;
+        m_Layers.back()->m_ActivationMat->downloadFromGPU();
+        return m_Layers.back()->m_ActivationMat;
     }
 
     void NeuralNetwork::inputGradientCalc() {
