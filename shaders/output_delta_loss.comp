@@ -27,7 +27,7 @@ void main() {
     uint output_neuron_idx = gl_GlobalInvocationID.y;  // output neuron index
     if (batch_idx >= batch_size || output_neuron_idx >= output_size) return;
     
-    // Row-major indexing for batch processing: [batch * output_size + output_neuron]
+    // Column-major indexing: [batch_idx * output_size + output_neuron_idx] for [output_size, batch_size]
     uint output_idx = batch_idx * output_size + output_neuron_idx;
     float output_val = outputs[output_idx];
     float target_val = targets[output_idx];
