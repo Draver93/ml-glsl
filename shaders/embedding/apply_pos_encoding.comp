@@ -24,11 +24,7 @@ void main() {
     if (seq_pos >= seq_len || model_dim_idx >= model_dim) return;
     if (has_padding_mask && padding_mask[seq_pos] == 0) return;
 
-    // Column-major indexing: [model_dimension * seq_len + sequence_position]
-    // This accesses the embedding value at [seq_pos, model_dim_idx]
-    uint embedding_col_major_idx = model_dim_idx * seq_len + seq_pos;
-    uint pos_encoding_col_major_idx = model_dim_idx * seq_len + seq_pos;
-    
+    uint idx = model_dim_idx * seq_len + seq_pos;
     // Add positional encoding to embedding
-    embeddings[embedding_col_major_idx] += positional_encoding[pos_encoding_col_major_idx];
+    embeddings[idx] += positional_encoding[idx];
 }

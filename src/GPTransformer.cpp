@@ -97,38 +97,51 @@ namespace NNGL {
             paddedContext.insert(paddedContext.begin(), "<PAD>");
         }
         
-        std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
-        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
-        float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
-        m_CurrentLoss = loss;
-        m_TrainingSteps++;
-        m_LossHistory.push_back(loss);
-        if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
-        int predictedTokenId = predictToken(logits);
-        std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-        static int debugCounter = 0;
-        if (++debugCounter % 14 == 0) {
-            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss 
-                      << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
-                      << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
-                      << " | Context: [";
-            
-            // Show the last 5 tokens (most recent context) instead of first 5
-            size_t startIdx = (paddedContext.size() > 5) ? paddedContext.size() - 5 : 0;
-            for (size_t i = startIdx; i < paddedContext.size(); ++i) {
-                if (i > startIdx) std::cout << ", ";
-                std::cout << "'" << paddedContext[i] << "'";
+        float loss = 1;
+        int runCounter = 0;
+
+        static int logCounter = 0;
+        logCounter++;
+
+        while (loss > 0 && runCounter < 2) {
+            std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
+            int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
+            loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
+            m_CurrentLoss = loss;
+            m_TrainingSteps++;
+            m_LossHistory.push_back(loss);
+            if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
+            int predictedTokenId = predictToken(logits);
+            std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
+            static int debugCounter = 0;
+            if (logCounter % 14 == 0) {
+                std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
+                    << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
+                    << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
+                    << " | Context: [";
+
+                // Show the last 5 tokens (most recent context) instead of first 5
+                size_t startIdx = (paddedContext.size() > 5) ? paddedContext.size() - 5 : 0;
+                for (size_t i = startIdx; i < paddedContext.size(); ++i) {
+                    if (i > startIdx) std::cout << ", ";
+                    std::cout << "'" << paddedContext[i] << "'";
+                }
+                if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
+                std::cout << "]" << std::endl;
             }
-            if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
-            std::cout << "]" << std::endl;
+
+            std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
+            targetMat->set(0, targetTokenId, 1.0f);
+
+            backwardPass(paddedContext, targetMat, learningRate);
+            runCounter++;
         }
 
-        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
-        targetMat->set(0, targetTokenId, 1.0f);
 
-        backwardPass(paddedContext, targetMat, learningRate);
         return loss;
     }
+
+
 
     std::string GPTransformer::eval(const std::string& inputText) {
         // 1. Tokenize input text
