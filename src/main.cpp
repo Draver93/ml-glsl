@@ -1204,16 +1204,7 @@ void gptransformer_simplified() {
 
         // Overfit on 10 different sentences
     std::vector<std::string> training_data = {
-            "hello world!",
-            "hello neural network.",
-            "hello transformer!",
-            "world of networks.",
-            "transformer world.",
-            "deep learning is fun.",
-            "attention is all you need.",
-            "sequence to sequence models.",
-            "natural language processing.",
-            "machine learning rocks!"
+         " Apple number three has color yellow ",
         };
     // Precompute tokenized prefixes for eval
     std::vector<std::pair<std::string, std::string>> eval_prompts; // (display, prompt)
