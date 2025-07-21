@@ -57,7 +57,7 @@ namespace NNGL {
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
             m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
-            m_ForwardPassCompute->bindBuffer(3, "OutputBuffer", layer->m_ActivationBuffer);
+            m_ForwardPassCompute->bindBuffer(3, "OutputBuffer", layer->m_ActivationMat->buffer);
             m_ForwardPassCompute->bindBuffer(4, "PreActivationBuffer", layer->m_PreactivationBuffer);
 
             m_ForwardPassCompute->setUniform("input_size", (int)layer->getSize().x);
@@ -91,7 +91,7 @@ namespace NNGL {
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                 }
                 
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_ActivationBuffer);
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, layer->m_ActivationMat->buffer);
                 float* outputMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                 if (outputMapped) {
                     std::memcpy(gpuOutputMat->raw(), outputMapped, gpuOutputMat->byteSize());
@@ -107,7 +107,7 @@ namespace NNGL {
                     // Other layers use the previous layer's activation buffer
                     auto& prevLayer = m_Layers[layerIdx - 1];
                     auto prevActivationMat = std::make_shared<Matrix>(m_BatchSize, (int)prevLayer->getSize().y);
-                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationBuffer);
+                    glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationMat->buffer);
                     float* prevMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                     if (prevMapped) {
                         std::memcpy(prevActivationMat->raw(), prevMapped, prevActivationMat->byteSize());
@@ -132,7 +132,7 @@ namespace NNGL {
             }
             // --- end validation ---
 
-			currentInput = layer->m_ActivationBuffer;
+			currentInput = layer->m_ActivationMat->buffer;
 		}
 
 		// Unbind buffers for this layer
@@ -142,7 +142,7 @@ namespace NNGL {
 	void NeuralNetwork::targetLayerLossCalc(std::shared_ptr<Matrix>& outputBatchMat) {
         outputBatchMat->uploadToGPU();
 
-        m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationBuffer);
+        m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationMat->buffer);
         m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", outputBatchMat->buffer);
         m_OutputDeltaCompute->bindBuffer(2, "PreActivationBuffer", m_Layers.back()->m_PreactivationBuffer);
         m_OutputDeltaCompute->bindBuffer(3, "DeltaBuffer", m_Layers.back()->m_DeltaBuffer);
@@ -164,7 +164,7 @@ namespace NNGL {
             auto gpuOutputGradMat = std::make_shared<Matrix>(m_BatchSize, (int)m_Layers.back()->getSize().y);
             
             // Download GPU data using Matrix methods
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
             float* actMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
             if (actMapped) {
                 std::memcpy(gpuActivationsMat->raw(), actMapped, gpuActivationsMat->byteSize());
@@ -359,7 +359,7 @@ namespace NNGL {
                         // Other layers use the previous layer's activation buffer
                         auto& prevLayer = m_Layers[layerIdx - 1];
                         auto prevActivationMat = std::make_shared<Matrix>(m_BatchSize, (int)prevLayer->getSize().y);
-                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationBuffer);
+                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, prevLayer->m_ActivationMat->buffer);
                         float* prevMapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                         if (prevMapped) {
                             std::memcpy(prevActivationMat->raw(), prevMapped, prevActivationMat->byteSize());
@@ -394,7 +394,7 @@ namespace NNGL {
                 // --- end validation ---
 
                 // Update input for next layer
-                currentInput = layer->m_ActivationBuffer;
+                currentInput = layer->m_ActivationMat->buffer;
 
                 // Unbind weight update buffers
                 for (int j = 0; j < 5; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
@@ -510,7 +510,7 @@ namespace NNGL {
             std::vector<float> results(outputSize);
             std::vector<float> expected(outputSize);
 
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
             float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
             if (mapped) {
                 for (int j = 0; j < outputSize; ++j) {
@@ -520,7 +520,7 @@ namespace NNGL {
                 
                 // Log GPU data read for testing
                 LOG_TRACE("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
-                    " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
+                    " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
             }
 
             for (int j = 0; j < outputSize; ++j)
@@ -559,13 +559,13 @@ namespace NNGL {
         }
         forwardMatOutput = getMatrixFromPool(outputRows, outputCols);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
         if (mapped) {
             std::memcpy(forwardMatOutput->raw(), mapped, forwardMatOutput->byteSize());
             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
             LOG_TRACE("[GPU DOWNLOAD] Forward pass results (" + std::to_string(forwardMatOutput->byteSize()) +
-                " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
+                " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
         }
         else throw std::runtime_error("data failed to map");
 
@@ -766,7 +766,7 @@ namespace NNGL {
                 std::vector<float> results(outputSize);
                 std::vector<float> expected(outputSize);
 
-                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+                glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
                 float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                 if (mapped) {
                     for (int i = 0; i < outputSize; i++) {
@@ -776,7 +776,7 @@ namespace NNGL {
                     
                     // Log GPU data read for testing
                     LOG("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
-                        " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationBuffer));
+                        " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
                 }
                 results = softmax(results);
 
@@ -852,7 +852,7 @@ namespace NNGL {
                         std::vector<float> results(outputSize);
                         std::vector<float> expected(outputSize);
 
-                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationBuffer);
+                        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
                         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                         if (mapped) {
                             for (int j = 0; j < outputSize; j++) {

@@ -48,10 +48,9 @@ namespace NNGL {
             " (" + std::to_string(biases.size() * sizeof(float)) + " bytes)");
 
         // Initialize activation and delta buffers
-        glGenBuffers(1, &m_ActivationBuffer);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_ActivationBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, batchSize * m_Height * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-        LOG_DEBUG("[GPU BUFFER] Created activation buffer " + std::to_string(m_ActivationBuffer) +
+        m_ActivationMat = std::make_shared<Matrix>(m_Height, batchSize, 0.0f);
+        m_ActivationMat->uploadToGPU();
+        LOG_DEBUG("[GPU BUFFER] Created activation buffer " + std::to_string(m_ActivationMat->buffer) +
             " (" + std::to_string(batchSize * m_Height * sizeof(float)) + " bytes)");
 
         glGenBuffers(1, &m_PreactivationBuffer);
@@ -79,10 +78,6 @@ namespace NNGL {
         if(m_BiasBuffer) {
             LOG_DEBUG("[GPU BUFFER] Deleting bias buffer " + std::to_string(m_BiasBuffer));
             glDeleteBuffers(1, &m_BiasBuffer);
-        }
-        if(m_ActivationBuffer) {
-            LOG_DEBUG("[GPU BUFFER] Deleting activation buffer " + std::to_string(m_ActivationBuffer));
-            glDeleteBuffers(1, &m_ActivationBuffer);
         }
         if(m_PreactivationBuffer) {
             LOG_DEBUG("[GPU BUFFER] Deleting preactivation buffer " + std::to_string(m_PreactivationBuffer));
