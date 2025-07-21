@@ -23,7 +23,7 @@ namespace NNGL {
     private:
         void computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection,
             const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,
-            std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight);
+            std::shared_ptr<Matrix>& gradInput, std::shared_ptr<Matrix>& gradWeight, bool accumulate);
     private:
 
         int m_ModelDim, m_NumHeads, m_HeadDim, m_SeqLen;

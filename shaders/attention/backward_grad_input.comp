@@ -3,11 +3,12 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(std430) readonly buffer GradProjection { float grad_projection[]; }; // [seq_len, head_dim]
 layout(std430) readonly buffer Weight { float weight[]; };                  // [input_dim, head_dim]
-layout(std430) writeonly buffer GradInput { float grad_input[]; };          // [seq_len, input_dim]
+layout(std430) buffer GradInput { float grad_input[]; };          // [seq_len, input_dim]
 
 uniform int seq_len;
 uniform int input_dim;
 uniform int head_dim;
+uniform int accumulate; // 0 = overwrite, 1 = add
 
 void main() {
     uint seq_pos = gl_GlobalInvocationID.x;  // sequence position (row index)
@@ -28,5 +29,6 @@ void main() {
     
     // Store gradient with column-major indexing: [input_dimension * seq_len + sequence_position]
     uint grad_input_col_major_idx = input_dim_idx * seq_len + seq_pos;
-    grad_input[grad_input_col_major_idx] = sum;
+    if (accumulate == 1) grad_input[grad_input_col_major_idx] += sum;
+    else grad_input[grad_input_col_major_idx] = sum;
 }
