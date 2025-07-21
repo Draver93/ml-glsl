@@ -23,66 +23,11 @@ namespace NNGL {
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
+       
+        m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
 
         m_TrainingSteps = 0;
         m_CurrentLoss = 0.0f;
-    }
-
-    void GPTransformer::train(const std::string& inputText, float learningRate) {
-        std::vector<std::string> tokens = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
-        if (tokens.size() < 2) return;
-        tokens.push_back("<EOS>");
-        trainOnSequence(tokens, 0, learningRate);
-    }
-
-    void GPTransformer::trainOnSequence(const std::vector<std::string>& longSequence, size_t windowSize, float learningRate) {
-        if (windowSize == 0) windowSize = m_SeqLen + 1;
-        if (longSequence.size() < windowSize) {
-            trainNextToken(longSequence, learningRate);
-            return;
-        }
-        for (size_t i = 0; i <= longSequence.size() - windowSize; ++i) {
-            std::vector<std::string> window(
-                longSequence.begin() + i,
-                longSequence.begin() + i + windowSize
-            );
-            trainNextToken(window, learningRate);
-        }
-    }
-
-    void GPTransformer::trainNextToken(const std::vector<std::string>& inputTokens, float learningRate) {
-        if (inputTokens.size() < 2) throw std::runtime_error("Need at least 2 tokens for next-token prediction");
-        std::vector<std::string> contextTokens(inputTokens.begin(), inputTokens.end() - 1);
-        std::string targetToken = inputTokens.back();
-        while (contextTokens.size() < m_SeqLen) contextTokens.push_back("<PAD>");
-        if (contextTokens.size() > m_SeqLen) contextTokens = std::vector<std::string>(contextTokens.end() - m_SeqLen, contextTokens.end());
-        std::shared_ptr<Matrix> logits = forwardPass(contextTokens);
-        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
-        float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
-        m_CurrentLoss = loss;
-        m_TrainingSteps++;
-        m_LossHistory.push_back(loss);
-        if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
-        int predictedTokenId = predictToken(logits);
-        std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-        static int debugCounter = 0;
-        if (++debugCounter % 14 == 0) {
-            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss 
-                      << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
-                      << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
-                      << " | Context: [";
-            for (size_t i = 0; i < std::min(contextTokens.size(), (size_t)5); ++i) {
-                if (i > 0) std::cout << ", ";
-                std::cout << "'" << contextTokens[i] << "'";
-            }
-            if (contextTokens.size() > 5) std::cout << ", ...";
-            std::cout << "]" << std::endl;
-        }
-
-        std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
-        targetMat->set(0, targetTokenId, 1.0f);
-
-        backwardPass(contextTokens, targetMat, learningRate);
     }
 
     float GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
@@ -130,10 +75,11 @@ namespace NNGL {
                 std::cout << "]" << std::endl;
             }
 
-            std::shared_ptr<Matrix> targetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
-            targetMat->set(0, targetTokenId, 1.0f);
+            m_TargetMat->clear();
+            m_TargetMat->set(0, targetTokenId, 1.0f);
+            m_TargetMat->uploadToGPU();
 
-            backwardPass(paddedContext, targetMat, learningRate);
+            backwardPass(paddedContext, m_TargetMat, learningRate);
             runCounter++;
         }
 
@@ -185,7 +131,6 @@ namespace NNGL {
                 result += token + "|";
             }
         }
-        
         
         return result;
     }
@@ -262,8 +207,11 @@ namespace NNGL {
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
+        
+        decOutputMat->downloadFromGPU();
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        lastTokenRep->uploadToGPU();
 
         return m_OutputProjection->forward(lastTokenRep);
     }
@@ -279,17 +227,21 @@ namespace NNGL {
 
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
+        
+        decOutputMat->downloadFromGPU();
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
         for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+        lastTokenRep->uploadToGPU();
 
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
-
+        outputGrad->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
         int lastPos = decOutputMat->rows - 1;
         for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
-        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
+        decOutputGrad->uploadToGPU();
 
+        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }
@@ -410,10 +362,5 @@ namespace NNGL {
             std::cout << "\n";
         }
         std::cout << colors[COLOR_COUNT] << std::endl;
-    }
-    float GPTransformer::trainOnTokenSequence(const std::vector<std::string>& tokenSequence, float learningRate) {
-        if (tokenSequence.size() < 2) throw std::runtime_error("Need at least 2 tokens for next-token prediction");
-        trainNextToken(tokenSequence, learningRate);
-        return m_CurrentLoss;
     }
 } 

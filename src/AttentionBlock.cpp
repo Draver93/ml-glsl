@@ -118,9 +118,6 @@ namespace NNGL {
 
         // === STEP 1: Compute Q, K, V projections ===
         {
-            input->uploadToGPU();
-            input_kv->uploadToGPU();
-
             m_ForwardPassWeightsCompute->bindBuffer(0, "InputQ", input->buffer);
             m_ForwardPassWeightsCompute->bindBuffer(1, "InputKV", input_kv->buffer);
             m_ForwardPassWeightsCompute->bindBuffer(2, "WeightQ", m_WeightQueryMat->buffer);
@@ -221,7 +218,6 @@ namespace NNGL {
  
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& context, float learningRate ) {
         NNGL::Timer timer("AttentionBlock::backward");
-        gradOutput->uploadToGPU();
         
         if (!m_PaddingMask.empty()) {
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
@@ -229,11 +225,7 @@ namespace NNGL {
         }
 
         // === STEP 1: Backward through final matmul (grad_output -> grad_attention_weights, grad_V) ===
-        {
-            // Upload buffers to GPU before shader execution
-            m_GradAttentionWeights->uploadToGPU();
-            m_GradV->uploadToGPU();
-            
+        { 
             m_BackwardOutputCompute->bindBuffer(0, "GradOutput", gradOutput->buffer);
             m_BackwardOutputCompute->bindBuffer(1, "CachedV", m_CachedV->buffer);
             m_BackwardOutputCompute->bindBuffer(2, "CachedAttentionWeights", m_CachedAttentionWeights->buffer);
@@ -247,8 +239,6 @@ namespace NNGL {
             int workgroups_x = (m_SeqLen + 15) / 16;
             int workgroups_y = (m_SeqLen + 15) / 16;
             m_BackwardOutputCompute->dispatch(workgroups_x, workgroups_y, 1);
-            m_GradV->downloadFromGPU();
-            m_GradAttentionWeights->downloadFromGPU();
             for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
         }
 
@@ -261,7 +251,6 @@ namespace NNGL {
 
             m_BackwardScoresCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
             if (!m_PaddingMask.empty())m_BackwardScoresCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
-
             m_BackwardScoresCompute->setUniform("seq_len", m_SeqLen);
             m_BackwardScoresCompute->setUniform("num_heads", m_NumHeads);
             m_BackwardScoresCompute->setUniform("use_mask", m_UseMask ? 1 : 0);

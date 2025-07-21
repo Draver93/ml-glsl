@@ -55,6 +55,7 @@ namespace NNGL {
 		std::shared_ptr<Matrix> m_InputBatchMat;
 		std::shared_ptr<Matrix> m_OutputBatchMat;
 		std::shared_ptr<Matrix> m_CachedInput;
+		std::shared_ptr<Matrix> m_InputGradMat;
 
 		std::shared_ptr<Shader> 
 			m_ForwardPassCompute,
@@ -67,7 +68,6 @@ namespace NNGL {
 		std::queue<std::shared_ptr<Matrix>> m_MatrixPool;
 		std::mutex m_PoolMutex;
 
-		GLuint m_InputGradBuffer; // Buffer for input gradient, now owned by NeuralNetwork
 	public:
 		std::vector<std::unique_ptr<NNGL::Layer>> m_Layers;
 		void inputGradientCalc();

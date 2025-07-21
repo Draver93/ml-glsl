@@ -25,15 +25,9 @@ namespace NNGL {
 
         if(!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
 
-        m_InputGradBuffer = 0;
     };
 
-	NeuralNetwork::~NeuralNetwork() {
-        if (m_InputGradBuffer) {
-            LOG_TRACE("[GPU BUFFER] Deleting input grad buffer " + std::to_string(m_InputGradBuffer));
-            glDeleteBuffers(1, &m_InputGradBuffer);
-        }
-    }
+	NeuralNetwork::~NeuralNetwork() { }
 
 	void NeuralNetwork::addLayer(int width, int height,  ActivationFnType type) {
 		if (!m_Layers.empty() && m_Layers.back()->getSize().y != width)
@@ -47,7 +41,6 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
-        inputBatchMat->uploadToGPU();
 		GLuint currentInput = inputBatchMat->buffer;
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
@@ -76,7 +69,6 @@ namespace NNGL {
 	}
 
 	void NeuralNetwork::targetLayerLossCalc(std::shared_ptr<Matrix>& outputBatchMat) {
-        outputBatchMat->uploadToGPU();
 
         m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationMat->buffer);
         m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", outputBatchMat->buffer);
@@ -123,7 +115,6 @@ namespace NNGL {
 	// Update weights and biases for all layers
 	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate) {
         NNGL::Timer timer("NeuralNetwork::weightsAndBiasesUpdate");
-        inputBatchMat->uploadToGPU();
         GLuint currentInput = inputBatchMat->buffer;
 
         for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
@@ -272,17 +263,18 @@ namespace NNGL {
     void NeuralNetwork::inputGradientCalc() {
         auto& firstLayer = m_Layers.front();
 
-        if (m_InputGradBuffer == 0) {
-            glGenBuffers(1, &m_InputGradBuffer);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, m_BatchSize * firstLayer->getSize().x * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
-            LOG_TRACE("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradBuffer) +
+        if (!m_InputGradMat) {
+
+            m_InputGradMat = std::make_shared<Matrix>(m_BatchSize, firstLayer->getSize().x);
+            m_InputGradMat->uploadToGPU();
+
+            LOG_TRACE("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradMat->buffer) +
                 " (" + std::to_string(m_BatchSize * firstLayer->getSize().x * sizeof(float)) + " bytes)");
         }
 
         m_InputDeltaCompute->bindBuffer(0, "NextDeltaBuffer", firstLayer->m_DeltaBuffer);
         m_InputDeltaCompute->bindBuffer(1, "WeightBuffer", firstLayer->m_WeightBuffer);
-        m_InputDeltaCompute->bindBuffer(2, "InputDeltaBuffer", m_InputGradBuffer);
+        m_InputDeltaCompute->bindBuffer(2, "InputDeltaBuffer", m_InputGradMat->buffer);
         m_InputDeltaCompute->setUniform("input_size", (int)firstLayer->getSize().x);
         m_InputDeltaCompute->setUniform("output_size", (int)firstLayer->getSize().y);
         m_InputDeltaCompute->setUniform("batch_size", m_BatchSize);
@@ -302,16 +294,7 @@ namespace NNGL {
         inputGradientCalc();
 
         // Get matrix from pool and download GPU data into it
-        std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(inputMat->rows, inputMat->cols);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        if (!mapped) throw std::runtime_error("data failed to map");
-        std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-
-        std::shared_ptr<Matrix> result = inputGradMat;
-        returnMatrixToPool(inputGradMat);
-        return result;
+        return m_InputGradMat;
     }
 
     std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
@@ -323,29 +306,16 @@ namespace NNGL {
         // Compute gradients for hidden layers
         hiddenLayersLossCalc();
 
-        // Update weights and biases
-        if (learningRate > 0.0f) {
-            // We need the input that was used in the forward pass
-            if (m_CachedInput) {
-                // Use the cached input from forward pass
-                weightsAndBiasesUpdate(m_CachedInput, learningRate);
-            }
+        // We need the input that was used in the forward pass
+        if (m_CachedInput) {
+            // Use the cached input from forward pass
+            weightsAndBiasesUpdate(m_CachedInput, learningRate);
         }
 
         // Compute input gradient
         inputGradientCalc();
 
-        // Get matrix from pool and download GPU data into it
-        std::shared_ptr<Matrix> inputGradMat = getMatrixFromPool(m_CachedInput->rows, m_CachedInput->cols);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_InputGradBuffer);
-        float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-        if (!mapped) throw std::runtime_error("data failed to map");
-        std::memcpy(inputGradMat->raw(), mapped, inputGradMat->byteSize());
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-
-        std::shared_ptr<Matrix> result = inputGradMat;
-        returnMatrixToPool(inputGradMat);
-        return result;
+        return m_InputGradMat;
     }
 
 

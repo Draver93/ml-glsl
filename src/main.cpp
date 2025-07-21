@@ -1109,62 +1109,6 @@ void runAllUnitTests() {
     LOG_INFO("GPU state reset completed");
 }
 
-void transformer() {
-    //d_model	256–512
-    //vocab_size	10000–20000
-    //seq_len	64–256(max ~512)
-    //batch size	1–4
-    //# heads	4–8
-    //layers	2–6
-
-    int d_model = 256;  // Must be divisible by num_heads (8)
-    int d_hidden = d_model * 4;
-    int seq_len = 64;
-
-    std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
-    std::shared_ptr<NNGL::BPE> bytePairEnc = std::make_shared<NNGL::BPE>(1024 * 10);
-    //bytePairEnc->trainFromFiles(filenames);
-    //bytePairEnc->reduceVocab(50000);
-    //bytePairEnc->save("bpe.checkpoint");
-    bytePairEnc->load("bpe.checkpoint");
-    std::string test = "the quick brown fox jumps over the lazy dog";
-
-
-    std::vector<std::string> enc_tokens = bytePairEnc->tokenizeInput(test.c_str(), test.size());
-    std::vector<std::string> dec_tokens = { "<SOS>" };
-
-    std::shared_ptr<NNGL::GPTransformer> transformer = std::make_shared<NNGL::GPTransformer>( "bpe.checkpoint", d_model, d_hidden, seq_len );
-
-
-    auto trainFromFile = [&](const std::string& filename) {
-        std::ifstream infile(filename);
-        if (!infile.is_open()) {
-            std::cerr << "Error opening file: " << filename << std::endl;
-            return;
-        }
-
-        std::string line;
-        while (std::getline(infile, line)) {
-            resetCursor();
-            transformer->train(line, 0.001f);
-        }
-
-        infile.close();
-    };
-    trainFromFile("pg76287.txt");
-
-    while (true) {
-        std::string next_token = transformer->eval(test);
-
-        test.append(next_token);
-        // Stop condition (optional)
-        if (next_token == "<EOS>") break;
-
-        // Print/debug generated tokens
-        std::cout << next_token << ' ';
-    }
-}
-
 void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
