@@ -93,7 +93,6 @@ namespace NNGL {
         int workgroupsY = (tokens.size() + localSizeY - 1) / localSizeY;
         m_EmbeddingForwardCompute->dispatch(workgroupsX, workgroupsY, 1);
         for (int j = 0; j <= 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
-        m_CachedOutput->downloadFromGPU();
 
         return m_CachedOutput;
     }

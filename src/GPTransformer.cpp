@@ -46,10 +46,12 @@ namespace NNGL {
         int runCounter = 0;
 
         static int logCounter = 0;
-        logCounter++;
 
         while (loss > 0 && runCounter < 2) {
+            NNGL::Timer timer("GPTransformer::trainNextToken============================================================");
+
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
+            logits->downloadFromGPU();
             int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
             loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
             m_CurrentLoss = loss;
@@ -59,6 +61,7 @@ namespace NNGL {
             int predictedTokenId = predictToken(logits);
             std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
             static int debugCounter = 0;
+            logCounter++;
             if (logCounter % 14 == 0) {
                 std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
                     << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
@@ -108,6 +111,7 @@ namespace NNGL {
         // 3. Generate tokens one by one, maintaining full context
         for (int step = 0; step < maxLength; ++step) {
             auto logits = forwardPass(paddedContext);
+            logits->downloadFromGPU();
             int nextTokenId = predictToken(logits);
             
             // Check for EOS
@@ -207,11 +211,15 @@ namespace NNGL {
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
-        
-        decOutputMat->downloadFromGPU();
+
+
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
-        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
-        lastTokenRep->uploadToGPU();
+        {
+            NNGL::Timer timer("GPTransformer::forwardPass:1");
+            decOutputMat->downloadFromGPU();
+            for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+            lastTokenRep->uploadToGPU();
+        }
 
         return m_OutputProjection->forward(lastTokenRep);
     }
@@ -228,18 +236,24 @@ namespace NNGL {
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
         
-        decOutputMat->downloadFromGPU();
         std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->cols);
-        for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
-        lastTokenRep->uploadToGPU();
-
+        {
+            NNGL::Timer timer("GPTransformer::backwardPass:1");
+            decOutputMat->downloadFromGPU();
+            for (int i = 0; i < decOutputMat->cols; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(decOutputMat->rows - 1, i);
+            lastTokenRep->uploadToGPU();
+        }
+  
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
-        outputGrad->downloadFromGPU();
         std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
-        int lastPos = decOutputMat->rows - 1;
-        for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
-        decOutputGrad->uploadToGPU();
+        {
+            NNGL::Timer timer("GPTransformer::backwardPass:2");
+            outputGrad->downloadFromGPU();
+            int lastPos = decOutputMat->rows - 1;
+            for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
+            decOutputGrad->uploadToGPU();
+        }
 
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);

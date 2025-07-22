@@ -64,18 +64,22 @@ namespace NNGL {
     };
 
     class Timer {
+        inline static int tabs = 1;
     public:
-        Timer(const std::string& name, LogLevel level = LogLevel::LL_TRACE)
+        Timer(const std::string& name, LogLevel level = LogLevel::LL_INFO)
             : m_Name(name), m_Level(level), m_Stopped(false) {
             m_Start = std::chrono::high_resolution_clock::now();
+            Timer::tabs++;
         }
         ~Timer() {
+            Timer::tabs--;
             if (!m_Stopped) stop();
         }
         void stop() {
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - m_Start).count();
-            Logger::getInstance().log(m_Name + " took " + std::to_string(duration / 1000.0) + " ms", m_Level);
+            std::string tabs(Timer::tabs, '=');
+            Logger::getInstance().log(tabs + m_Name + " took " + std::to_string(duration / 1000.0) + " ms", m_Level);
             m_Stopped = true;
         }
     private:

@@ -256,7 +256,6 @@ namespace NNGL {
         
         forwardPass(inputMat);
 
-        m_Layers.back()->m_ActivationMat->downloadFromGPU();
         return m_Layers.back()->m_ActivationMat;
     }
 

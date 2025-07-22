@@ -1113,7 +1113,7 @@ void gptransformer_simplified() {
     // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
     std::srand(42);
     std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
-    int d_model = 128;  // Increased for complex text
+    int d_model = 256;  // Increased for complex text
     int d_hidden = d_model * 4;
     int seq_len = 64;   // Longer sequence for complex text
 
@@ -1148,7 +1148,22 @@ void gptransformer_simplified() {
 
         // Overfit on 10 different sentences
     std::vector<std::string> training_data = {
-         " Apple number three has color yellow ",
+        "red Apple is number one",
+        "red and number one is Apple",
+        "number one and red is Apple",
+        "Apple number one has color red",
+        "What color of Apple number one It's red",
+
+        "Apple number two has color green",
+        "green Apple has number two",
+        "green always two",
+        "number two has green fruit",
+        "What color of Apple number two It's green",
+
+        "yellow and three make an Apple",
+        "Apple is yellow when it's three",
+        "three when it's yellow ",
+        "Apple number three has color yellow "
         };
     // Precompute tokenized prefixes for eval
     std::vector<std::pair<std::string, std::string>> eval_prompts; // (display, prompt)
@@ -1158,7 +1173,7 @@ void gptransformer_simplified() {
 
         std::string prompt;
         std::string display;
-        for (size_t i = 0; i < tokens.size() / 2; ++i) {
+        for (size_t i = 0; i < tokens.size() * 0.8f; ++i) {
             prompt += tokens[i];
             display += "'" + tokens[i] + "' ";
         }
@@ -1194,17 +1209,19 @@ void gptransformer_simplified() {
     
     for (int epoch = 0; epoch < epochs; ++epoch) {
         // Learning rate scheduling - less aggressive decay
-        float learning_rate = initial_learning_rate * std::pow(0.99f, epoch / 200.0f);
+        float learning_rate = initial_learning_rate * std::pow(0.9f, epoch / 100.0f);
         
         float total_loss = 0.0f;
         int num_tokens = 0;
-        
+        float total_bad_loss = 0.0f;
+
         // Train on next-token prediction for each position in the sequence
         for (size_t i = 1; i < sequence.size(); ++i) {
             std::vector<std::string> context(sequence.begin(), sequence.begin() + i);
             std::string target = sequence[i];
             float loss = gpt->trainNextToken(context, target, learning_rate);
             total_loss += loss;
+            if (loss > 0)total_bad_loss += loss;
             num_tokens++;
         }
         
@@ -1213,7 +1230,9 @@ void gptransformer_simplified() {
             float avg_loss = total_loss / num_tokens;
             std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
                       << " | LR = " << std::fixed << std::setprecision(6) << learning_rate 
-                      << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss << std::endl;
+                      << " | Best Loss = " << std::fixed << std::setprecision(4) << best_loss 
+                      << " | Bad Total Loss = " << std::fixed << std::setprecision(4) << total_bad_loss
+                      << " | Total Loss = " << std::fixed << std::setprecision(4) << total_loss << std::endl;
             // Show predictions for the start of each sentence using tokenized prefixes
             for (const auto& eval_pair : eval_prompts) {
                 std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
@@ -1248,27 +1267,6 @@ void gptransformer_simplified() {
         }
     }
     std::cout << "\n=== Overfit Test Complete ===" << std::endl;
-
-    
-    // Test with various partial inputs
-    std::cout << "Final predictions:" << std::endl;
-    for (const auto& eval_pair : eval_prompts) {
-        std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
-    }
-    
-    // Training summary
-    std::cout << "\n=== Training Summary ===" << std::endl;
-    std::cout << "Total training steps: " << gpt->getTrainingSteps() << std::endl;
-    std::cout << "Loss history size: " << gpt->getLossHistory().size() << std::endl;
-    if (!gpt->getLossHistory().empty()) {
-        float min_loss = *std::min_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
-        float max_loss = *std::max_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
-        float avg_loss = std::accumulate(gpt->getLossHistory().begin(), gpt->getLossHistory().end(), 0.0f) / gpt->getLossHistory().size();
-        std::cout << "Loss statistics:" << std::endl;
-        std::cout << "  Min: " << std::fixed << std::setprecision(4) << min_loss << std::endl;
-        std::cout << "  Max: " << std::fixed << std::setprecision(4) << max_loss << std::endl;
-        std::cout << "  Avg: " << std::fixed << std::setprecision(4) << avg_loss << std::endl;
-    }
 }
 
 int main(int argc, char** argv) {
