@@ -52,7 +52,8 @@ namespace NNGL {
     void LayerNorm::backward(
         const std::shared_ptr<Matrix>& gradOutput,
         const std::shared_ptr<Matrix>& input,
-        const std::shared_ptr<Matrix>& residual
+        const std::shared_ptr<Matrix>& residual,
+        const GLuint gradMaskBuffer
     ) {
         NNGL::Timer timer("LayerNorm::backward");
         int seqLen = input->rows;
@@ -86,14 +87,21 @@ namespace NNGL {
         m_BackwardShader->bindBuffer(6, "GradInputB", m_GradResidual->buffer);
         m_BackwardShader->bindBuffer(7, "GradGamma", m_GradGamma->buffer);
         m_BackwardShader->bindBuffer(8, "GradBeta", m_GradBeta->buffer);
+        if(gradMaskBuffer) 
+            m_BackwardShader->bindBuffer(9, "GradOutputMask", gradMaskBuffer);
+        m_BackwardShader->setUniform("use_mask", gradMaskBuffer != 0);
+
         m_BackwardShader->setUniform("seq_len", seqLen);
         m_BackwardShader->setUniform("model_dim", modelDim);
         m_BackwardShader->setUniform("epsilon", m_Epsilon);
+
+
+
         // Use correct workgroup count for local_size_x = 32
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_BackwardShader->dispatch(outputWorkgroupsX, 1, 1);
 
         // Unbind buffers
-        for (int i = 0; i <= 8; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+        for (int i = 0; i <= 9; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
 } 

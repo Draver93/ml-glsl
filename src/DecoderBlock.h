@@ -24,6 +24,6 @@ namespace NNGL {
             const std::vector<int>& paddingMask
         );
         
-        std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
+        std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, const GLuint gradMaskBuffer, float learningRate);
     };
 }

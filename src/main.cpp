@@ -1044,10 +1044,10 @@ void testDecoderBlockBackward() {
     auto output = decoder.forward(input, paddingMask);
 
     // Analytical gradient: dL/dOutput is all ones
-    auto gradOutput = std::make_shared<Matrix>(output->rows, output->cols, 1.0f);
+    auto gradOutput = std::make_shared<Matrix>(output->rows,output->cols, 1.0f);
 
     // Backward pass: get dL/dInput
-    auto gradInput = decoder.backward(gradOutput, 0.0f); // learningRate=0 to avoid weight update
+    auto gradInput = decoder.backward(gradOutput, 0, 0.0f); // learningRate=0 to avoid weight update  // 0 is bad we don't use mask
     // Numerical gradient check for a single input element
     int test_i = 0, test_j = 0;
     float orig = (*input)(test_i, test_j);

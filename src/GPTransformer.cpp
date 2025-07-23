@@ -26,6 +26,15 @@ namespace NNGL {
        
         m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
 
+        {
+            std::vector<int> gradMask(seqLen, 0);
+            gradMask[seqLen - 1] = 1;
+            glGenBuffers(1, &m_GradMaskBuffer);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_GradMaskBuffer);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, gradMask.size() * sizeof(int), gradMask.data(), GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        }
+
         m_TrainingSteps = 0;
         m_CurrentLoss = 0.0f;
     }
@@ -44,15 +53,18 @@ namespace NNGL {
         
         float loss = 1;
         int runCounter = 0;
-
         static int logCounter = 0;
+
+        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
+        m_TargetMat->clear();
+        m_TargetMat->set(0, targetTokenId, 1.0f);
+        m_TargetMat->uploadToGPU();
 
         while (loss > 0 && runCounter < 2) {
             NNGL::Timer timer("GPTransformer::trainNextToken============================================================");
 
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
-            int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
             loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
             m_CurrentLoss = loss;
             m_TrainingSteps++;
@@ -77,10 +89,6 @@ namespace NNGL {
                 if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
                 std::cout << "]" << std::endl;
             }
-
-            m_TargetMat->clear();
-            m_TargetMat->set(0, targetTokenId, 1.0f);
-            m_TargetMat->uploadToGPU();
 
             backwardPass(paddedContext, m_TargetMat, learningRate);
             runCounter++;
@@ -246,16 +254,7 @@ namespace NNGL {
   
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
 
-        std::shared_ptr<Matrix> decOutputGrad = std::make_shared<Matrix>(decOutputMat->rows, decOutputMat->cols, 0.0f);
-        {
-            NNGL::Timer timer("GPTransformer::backwardPass:2");
-            outputGrad->downloadFromGPU();
-            int lastPos = decOutputMat->rows - 1;
-            for (int i = 0; i < decOutputMat->cols; ++i) decOutputGrad->set(lastPos, i, outputGrad->get(0, i));
-            decOutputGrad->uploadToGPU();
-        }
-
-        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(decOutputGrad, learningRate);
+        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(outputGrad, m_GradMaskBuffer, learningRate);
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }

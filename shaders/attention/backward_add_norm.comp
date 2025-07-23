@@ -3,6 +3,8 @@
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout(std430) readonly buffer GradOutput { float grad_output[]; }; // [seq_len, model_dim]
+layout(std430) readonly buffer GradOutputMask { int grad_output_mask[]; }; // [seq_len]
+
 layout(std430) readonly buffer InputA { float input_a[]; };         // [seq_len, model_dim]
 layout(std430) readonly buffer InputB { float input_b[]; };         // [seq_len, model_dim]
 layout(std430) readonly buffer Gamma { float gamma[]; };            // [model_dim]
@@ -16,6 +18,7 @@ layout(std430) buffer GradBeta { float grad_beta[]; };      // [model_dim * seq_
 uniform int seq_len;
 uniform int model_dim;
 uniform float epsilon;
+uniform bool use_mask;
 
 void main() {
     uint seq_pos = gl_GlobalInvocationID.x; // sequence position (row index)
@@ -46,6 +49,7 @@ void main() {
         float val = input_a[idx] + input_b[idx];
         float norm = (val - mean) / stddev;
         float dy = grad_output[idx];
+        if (use_mask && uint(grad_output_mask[seq_pos]) == 0) dy = 0;
         float g = gamma[dim];
 
         // Write per-position gradients (row-major)

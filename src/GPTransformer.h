@@ -52,5 +52,7 @@ namespace NNGL {
         std::mutex m_CacheMutex;
         std::unordered_map<std::string, std::shared_ptr<Matrix>> m_EmbeddingCache;
         std::shared_ptr<Matrix> m_TargetMat;
+
+        GLuint m_GradMaskBuffer;
     };
 } 
