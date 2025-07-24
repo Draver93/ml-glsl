@@ -17,6 +17,7 @@ uniform float learning_rate;
 uniform float ADAM_beta1;
 uniform float ADAM_beta2;
 uniform int ADAM_timestep;
+uniform int use_batch_idx = -1;
 
 const float epsilon = 1e-8;
 
@@ -34,6 +35,8 @@ void main() {
     for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
         // Column-major indexing: [batch_idx * input_size/output_size + input_neuron_idx/output_neuron_idx]
         uint input_idx = batch_idx * input_size + input_neuron_idx;
+        if(use_batch_idx != -1) input_idx = use_batch_idx * input_size + input_neuron_idx;
+        
         uint delta_idx = batch_idx * output_size + output_neuron_idx;
         weight_gradient += inputs[input_idx] * deltas[delta_idx];
     }

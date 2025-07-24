@@ -13,6 +13,7 @@ uniform int input_size;
 uniform int output_size;
 uniform int batch_size;
 uniform int activation_type;
+uniform int use_batch_idx = -1;
 
 float activate(float x, int type) {
     switch(type) {
@@ -38,6 +39,8 @@ void main() {
     // Column-major indexing: [batch_idx * input_size + input_neuron_idx]
     for (int input_neuron_idx = 0; input_neuron_idx < input_size; input_neuron_idx++) {
         uint input_idx = batch_idx * input_size + input_neuron_idx;
+        if(use_batch_idx != -1) input_idx = use_batch_idx * input_size + input_neuron_idx;
+       
         uint weight_idx = input_neuron_idx * output_size + output_neuron_idx;
         weighted_sum += input_data[input_idx] * weights[weight_idx];
     }

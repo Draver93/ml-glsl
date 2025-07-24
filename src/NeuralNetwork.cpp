@@ -40,8 +40,9 @@ namespace NNGL {
         m_OutputBatchMat = nullptr;
 	}
 
-	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
+	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat, int use_col_idx) {
 		GLuint currentInput = inputBatchMat->buffer;
+
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
 
@@ -55,6 +56,7 @@ namespace NNGL {
             m_ForwardPassCompute->setUniform("output_size", (int)layer->getSize().y);
             m_ForwardPassCompute->setUniform("batch_size", m_BatchSize);
             m_ForwardPassCompute->setUniform("activation_type", layer->m_ActivationFnType);
+            m_ForwardPassCompute->setUniform("use_batch_idx", currentInput == inputBatchMat->buffer ? use_col_idx : -1);
 
 			// Safe workgroup calculation with bounds checking
 			int workgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
@@ -113,7 +115,7 @@ namespace NNGL {
 	}
 
 	// Update weights and biases for all layers
-	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate) {
+	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate, int use_col_idx) {
         NNGL::Timer timer("NeuralNetwork::weightsAndBiasesUpdate");
         GLuint currentInput = inputBatchMat->buffer;
 
@@ -135,6 +137,7 @@ namespace NNGL {
                 m_WeightsCompute->setUniform("ADAM_beta1", 0.9f);
                 m_WeightsCompute->setUniform("ADAM_beta2", 0.999f);
                 m_WeightsCompute->setUniform("ADAM_timestep", m_ADAM_Timestep);
+                m_WeightsCompute->setUniform("use_batch_idx", currentInput == inputBatchMat->buffer ? use_col_idx : -1);
 
                 // Dispatch compute for weight updates
                 int workgroupsX = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
@@ -248,13 +251,13 @@ namespace NNGL {
         return meanConfidence;
     }
 
-    std::shared_ptr<Matrix> NeuralNetwork::forward(std::shared_ptr<Matrix> inputMat) {
+    std::shared_ptr<Matrix> NeuralNetwork::forward(std::shared_ptr<Matrix> inputMat, int use_col_idx) {
         NNGL::Timer timer("NeuralNetwork::forward");
         
         // Cache the input for backward pass
         m_CachedInput = inputMat;
         
-        forwardPass(inputMat);
+        forwardPass(inputMat, use_col_idx);
 
         return m_Layers.back()->m_ActivationMat;
     }
@@ -284,12 +287,12 @@ namespace NNGL {
         for (int j = 0; j < 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
     }
 
-    std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate) {
+    std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate, int use_col_idx) {
         NNGL::Timer timer("NeuralNetwork::backward");
-        forward(inputMat);
+        forward(inputMat, use_col_idx);
         targetLayerLossCalc(outputMat);
         hiddenLayersLossCalc();
-        weightsAndBiasesUpdate(inputMat, learningRate);
+        weightsAndBiasesUpdate(inputMat, learningRate, use_col_idx);
         inputGradientCalc();
 
         // Get matrix from pool and download GPU data into it

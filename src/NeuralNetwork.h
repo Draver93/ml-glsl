@@ -15,8 +15,8 @@ namespace NNGL {
 		~NeuralNetwork();
 
 	public:
-		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat);
-		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate);
+		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat, int use_col_idx = -1);
+		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate, int use_col_idx = -1);
 		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate);
 		std::shared_ptr<Matrix> getCachedOutput() { return m_Layers.back()->m_ActivationMat; }
 	public:
@@ -36,11 +36,11 @@ namespace NNGL {
 		void onTrainBatch(const BatchProvider& provider) { m_TrainBatchProvider = provider; }
 
 	private:
-		void forwardPass(std::shared_ptr<Matrix>& inputBatchMat);
+		void forwardPass(std::shared_ptr<Matrix>& inputBatchMat, int use_col_idx = -1);
 		void targetLayerLossCalc(std::shared_ptr<Matrix>& outputBatchMat);
 		void hiddenLayersLossCalc();
 		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
-		void weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate);
+		void weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate, int use_col_idx = -1);
 
 		// Memory pooling
 		std::shared_ptr<Matrix> getMatrixFromPool(int rows, int cols);
