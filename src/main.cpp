@@ -32,7 +32,6 @@
 #include <cstdint>
 #include <cmath>
 #include <cassert>
-#include <cctype>
 
 uint32_t hash32(const std::string& str) {
     const uint32_t FNV_PRIME = 0x01000193; //   16777619
@@ -267,7 +266,7 @@ void digit_recognition() {
     const int hiddenSize = 64;
     const int outputSize = 10;
 
-    const int batchSize = 2;
+    const int batchSize = 8;
     const int steps = 2000000;
 
     NNGL::NeuralNetwork nn(batchSize);
@@ -491,23 +490,22 @@ void testLayerNormClass() {
         int seqLen = 3;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
-                (*input)(i, j) = 10 * i + j + 1;
-                (*residual)(i, j) = 100 * i + 10 * j;
-            }
-        }
+        // Create input and residual with known values
+        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
+        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
+        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
+        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
         auto output = layerNorm.forward(input, residual);
-        if (output->rows != modelDim || output->cols != seqLen) {
-            std::cout << "  [FAIL] Output dimensions incorrect. Expected [" << modelDim << "," << seqLen 
+        if (output->rows != seqLen || output->cols != batchSize) {
+            std::cout << "  [FAIL] Output dimensions incorrect. Expected [" << seqLen << "," << batchSize 
                       << "], got [" << output->rows << "," << output->cols << "]" << std::endl;
             return;
         }
         bool isNormalized = false;
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
+        for (int i = 0; i < seqLen; ++i) {
+            for (int j = 0; j < batchSize; ++j) {
                 if (std::abs((*output)(i, j) - (*input)(i, j)) > 1e-6) {
                     isNormalized = true;
                     break;
@@ -527,17 +525,15 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
-                (*input)(i, j) = 10 * i + j + 1;
-                (*residual)(i, j) = 100 * i + 10 * j;
-            }
-        }
+        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
+        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
+        (*residual)(0, 0) = 10.0f; (*residual)(0, 1) = 20.0f;
+        (*residual)(1, 0) = 30.0f; (*residual)(1, 1) = 40.0f;
         auto output = layerNorm.forward(input, residual);
         bool relationshipsPreserved = true;
-        for (int i = 0; i < modelDim; ++i) {
+        for (int i = 0; i < seqLen; ++i) {
             if (((*input)(i, 0) + (*residual)(i, 0)) < ((*input)(i, 1) + (*residual)(i, 1)) &&
                 (*output)(i, 0) >= (*output)(i, 1)) {
                 relationshipsPreserved = false;
@@ -557,30 +553,28 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
-                (*input)(i, j) = 10 * i + j + 1;
-                (*residual)(i, j) = 100 * i + 10 * j;
-            }
-        }
+        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
+        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
+        (*residual)(0, 0) = 0.5f; (*residual)(0, 1) = 0.5f;
+        (*residual)(1, 0) = 0.5f; (*residual)(1, 1) = 0.5f;
         auto output = layerNorm.forward(input, residual);
-        auto gradOutput = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
         (*gradOutput)(0, 0) = 0.1f; (*gradOutput)(0, 1) = 0.2f;
         (*gradOutput)(1, 0) = 0.3f; (*gradOutput)(1, 1) = 0.4f;
         layerNorm.backward(gradOutput, input, residual);
         auto gradInput = layerNorm.getGradInput();
         auto gradResidual = layerNorm.getGradResidual();
 
-        if (gradInput->rows != modelDim || gradInput->cols != seqLen ||
-            gradResidual->rows != modelDim || gradResidual->cols != seqLen) {
+        if (gradInput->rows != seqLen || gradInput->cols != batchSize ||
+            gradResidual->rows != seqLen || gradResidual->cols != batchSize) {
             std::cout << "  [FAIL] Gradient input/residual dimensions incorrect." << std::endl;
             return;
         }
         bool hasNonZeroGradients = false;
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
+        for (int i = 0; i < seqLen; ++i) {
+            for (int j = 0; j < batchSize; ++j) {
                 if (std::abs((*gradInput)(i, j)) > 1e-6 || std::abs((*gradResidual)(i, j)) > 1e-6) {
                     hasNonZeroGradients = true;
                     break;
@@ -600,16 +594,14 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
-                (*input)(i, j) = 10 * i + j + 1;
-                (*residual)(i, j) = 100 * i + 10 * j;
-            }
-        }
+        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
+        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
+        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
+        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
         auto output = layerNorm.forward(input, residual);
-        auto gradOutput = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
+        auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
         (*gradOutput)(0, 0) = 0.1f; (*gradOutput)(0, 1) = 0.2f;
         (*gradOutput)(1, 0) = 0.3f; (*gradOutput)(1, 1) = 0.4f;
         layerNorm.backward(gradOutput, input, residual);
@@ -622,20 +614,18 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
-                (*input)(i, j) = 10 * i + j + 1;
-                (*residual)(i, j) = 100 * i + 10 * j;
-            }
-        }
+        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        (*input)(0, 0) = 1.0f; (*input)(0, 1) = 2.0f;
+        (*input)(1, 0) = 3.0f; (*input)(1, 1) = 4.0f;
+        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
+        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
         for (int epoch = 0; epoch < 10; ++epoch) {
             auto output = layerNorm.forward(input, residual);
             auto target = std::make_shared<NNGL::Matrix>(*input);
-            auto gradOutput = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-            for (int i = 0; i < modelDim; ++i) {
-                for (int j = 0; j < seqLen; ++j) {
+            auto gradOutput = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+            for (int i = 0; i < seqLen; ++i) {
+                for (int j = 0; j < batchSize; ++j) {
                     (*gradOutput)(i, j) = (*output)(i, j) - (*target)(i, j);
                 }
             }
@@ -643,12 +633,12 @@ void testLayerNormClass() {
         }
         auto finalOutput = layerNorm.forward(input, residual);
         float initialDiff = 0.0f;
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
+        for (int i = 0; i < seqLen; ++i) {
+            for (int j = 0; j < batchSize; ++j) {
                 initialDiff += std::abs((*input)(i, j) - (*finalOutput)(i, j));
             }
         }
-        initialDiff /= (modelDim * seqLen);
+        initialDiff /= (seqLen * batchSize);
         if (initialDiff < 2.0f) {
             std::cout << "  [PASS] Identity transformation with learned parameters (avg diff: " << initialDiff << ")" << std::endl;
         } else {
@@ -662,18 +652,16 @@ void testLayerNormClass() {
         int seqLen = 2;
         int batchSize = 2;
         NNGL::LayerNorm layerNorm(modelDim);
-        auto input = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        auto residual = std::make_shared<NNGL::Matrix>(modelDim, seqLen);
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
-                (*input)(i, j) = 1e-6f * (10 * i + j + 1);
-                (*residual)(i, j) = 1e-6f * (100 * i + 10 * j);
-            }
-        }
+        auto input = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        auto residual = std::make_shared<NNGL::Matrix>(seqLen, batchSize);
+        (*input)(0, 0) = 1e-6f; (*input)(0, 1) = 2e-6f;
+        (*input)(1, 0) = 3e-6f; (*input)(1, 1) = 4e-6f;
+        (*residual)(0, 0) = 0.0f; (*residual)(0, 1) = 0.0f;
+        (*residual)(1, 0) = 0.0f; (*residual)(1, 1) = 0.0f;
         auto output = layerNorm.forward(input, residual);
         bool hasValidOutput = true;
-        for (int i = 0; i < modelDim; ++i) {
-            for (int j = 0; j < seqLen; ++j) {
+        for (int i = 0; i < seqLen; ++i) {
+            for (int j = 0; j < batchSize; ++j) {
                 float val = (*output)(i, j);
                 if (std::isnan(val) || std::isinf(val)) {
                     hasValidOutput = false;
@@ -876,13 +864,13 @@ void testAttentionBlockClass() {
         NNGL::AttentionBlock attention(32, 4, 5, false);
         
         // Set up simple test case
-        auto input = std::make_shared<NNGL::Matrix>(32, 5); // [model_dim, seq_len]
+        auto input = std::make_shared<NNGL::Matrix>(5, 32); // [seq_len, model_dim]
         input->randomize(-1.0f, 1.0f);
         
         std::cout << "Test 2: Attention forward pass - ";
         try {
             auto output = attention.forward(input, input);
-            if (output && output->rows == 32 && output->cols == 5) {
+            if (output && output->rows == 5 && output->cols == 32) {
                 std::cout << "PASS (forward pass completed)" << std::endl;
             } else {
                 std::cout << "FAIL (wrong output dimensions)" << std::endl;
@@ -927,126 +915,78 @@ void test_embeddingblock_gpu_update() {
     using namespace NNGL;
     std::cout << "\n[UnitTest] EmbeddingBlock GPU Update\n";
     size_t modelDim = 3;
-    size_t vocabSize = 10;
+    EmbeddingBlock embedder(10, modelDim, 10);
+    float lr = 0.1f;
 
-    EmbeddingBlock embedder(vocabSize, modelDim, 10);
+    // Test 1: Single token
+    std::vector<std::string> tokens1 = { "A" };
+    embedder.forward(tokens1); // ensure "A" is initialized
+    auto beforeA = std::make_shared<Matrix>(*embedder.forward(tokens1)); // deep copy
+    std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(1, modelDim);
+    (*grad1)(0, 0) = 1; (*grad1)(0, 1) = 2; (*grad1)(0, 2) = 3;
+    std::cout << "Test grad1: ";
+    for (int j = 0; j < modelDim; ++j) std::cout << (*grad1)(0, j) << " ";
+    std::cout << std::endl;
+    embedder.backward(tokens1, grad1, lr);
+    auto afterA = std::make_shared<Matrix>(*embedder.forward(tokens1)); // deep copy
+    std::cout << "A before: "; beforeA->print();
+    std::cout << "A after:  "; afterA->print();
+    for (int j = 0; j < modelDim; ++j) {
+        float expected = (*beforeA)(0, j) - lr * (*grad1)(0, j);
+        assert(std::abs((*afterA)(0, j) - expected) < 1e-4);
+    }
+
+    // Test 2: Repeated token
     std::vector<std::string> tokens2 = { "B", "B" };
     embedder.forward(tokens2);
-    float lr = 0.1f;
-    {
-        // Test 1: Single token
-        std::vector<std::string> tokens1 = { "A" };
-        auto beforeA = embedder.forward(tokens1); // deep copy
-        beforeA->downloadFromGPU();
-        beforeA = std::make_shared<Matrix>(beforeA->rows, beforeA->cols, beforeA->getFlatVec().data());
-        std::shared_ptr<Matrix> grad1 = std::make_shared<Matrix>(modelDim, 1);
-        (*grad1)(0, 0) = 1; (*grad1)(1, 0) = 2; (*grad1)(2, 0) = 3;
-        std::cout << "Test grad1: ";
-        for (int j = 0; j < modelDim; ++j) std::cout << (*grad1)(j, 0) << " ";
-        std::cout << std::endl;
-        embedder.backward(tokens1, grad1, lr);
-
-        auto afterA = embedder.forward(tokens1); // deep copy
-        afterA->downloadFromGPU();
-
-        std::cout << "A before: "; beforeA->print();
-        std::cout << "A after:  "; afterA->print();
-        for (int j = 0; j < modelDim; ++j) {
-            float expected = (*beforeA)(j, 0) - lr * (*grad1)(j, 0);
-            float d = (*beforeA)(j, 0);
-            float d1 = (*afterA)(j, 0);
-            float diff = std::abs((*afterA)(j, 0) - expected);
-            assert(diff < 1e-4);
-        }
+    std::vector<std::string> singleB = { "B" };
+    auto beforeB = std::make_shared<Matrix>(*embedder.forward(singleB)); // deep copy
+    std::shared_ptr<Matrix> grad2 = std::make_shared<Matrix>(2, modelDim);
+    (*grad2)(0, 0) = 1; (*grad2)(0, 1) = 2; (*grad2)(0, 2) = 3;
+    (*grad2)(1, 0) = 4; (*grad2)(1, 1) = 5; (*grad2)(1, 2) = 6;
+    std::cout << "Test grad2: ";
+    for (int i = 0; i < 2; ++i) for (int j = 0; j < modelDim; ++j) std::cout << (*grad2)(i, j) << " ";
+    std::cout << std::endl;
+    embedder.backward(tokens2, grad2, lr);
+    auto afterB = std::make_shared<Matrix>(*embedder.forward(singleB)); // deep copy
+    std::cout << "B before: "; beforeB->print();
+    std::cout << "B after:  "; afterB->print();
+    // Simulate sequential SGD updates for repeated token B
+    for (int j = 0; j < modelDim; ++j) {
+        float val = (*beforeB)(0, j);
+        val -= lr * (*grad2)(0, j); // first occurrence
+        val -= lr * (*grad2)(1, j); // second occurrence
+        float expected = val;
+        assert(std::abs((*afterB)(0, j) - expected) < 1e-4);
     }
 
-    {
-        std::vector<std::string> singleB = { "B" };
-        auto beforeB = embedder.forward(singleB); // deep copy
-        beforeB->downloadFromGPU();
-        beforeB = std::make_shared<Matrix>(beforeB->rows, beforeB->cols, beforeB->getFlatVec().data());
-
-
-        // Test 2: Repeated token
-        std::vector<std::string> tokens = { "B", "B" };
-        embedder.forward(tokens);
-        std::shared_ptr<Matrix> grad = std::make_shared<Matrix>(modelDim, 2);
-        (*grad)(0, 0) = 1; (*grad)(1, 0) = 2; (*grad)(2, 0) = 3;
-        (*grad)(0, 1) = 4; (*grad)(1, 1) = 5; (*grad)(2, 1) = 6;
-        std::cout << "Test grad2: ";
-        for (int i = 0; i < modelDim; ++i) for (int j = 0; j < 2; ++j) std::cout << (*grad)(i, j) << " ";
-        std::cout << std::endl;
-        embedder.backward(tokens, grad, lr);
-
-
-        auto afterB = embedder.forward(singleB); // deep copy
-        afterB->downloadFromGPU();
-
-        std::cout << "B before: \n"; beforeB->print();
-        std::cout << "grad2: \n"; grad->print();
-        std::cout << "B after:  \n"; afterB->print();
-        // Simulate sequential SGD updates for repeated token B
-        for (int j = 0; j < modelDim; ++j) {
-            float expected = (*beforeB)(j, 0);
-            float a = (*grad)(j, 0);
-            float b = (*grad)(j, 1);
-            expected -= lr * (*grad)(j, 0); // first occurrence
-            expected -= lr * (*grad)(j, 1); // second occurrence
-
-            float diff = std::abs((*afterB)(j, 0) - expected);
-            assert(diff < 1e-4);
-        }
+    // Test 3: Multiple tokens
+    std::vector<std::string> tokens3 = { "C", "D" };
+    embedder.forward(tokens3);
+    std::vector<std::string> singleC = { "C" };
+    std::vector<std::string> singleD = { "D" };
+    auto beforeC = std::make_shared<Matrix>(*embedder.forward(singleC)); // deep copy
+    auto beforeD = std::make_shared<Matrix>(*embedder.forward(singleD)); // deep copy
+    std::shared_ptr<Matrix> grad3 = std::make_shared<Matrix>(2, modelDim);
+    (*grad3)(0, 0) = 1; (*grad3)(0, 1) = 2; (*grad3)(0, 2) = 3;
+    (*grad3)(1, 0) = 4; (*grad3)(1, 1) = 5; (*grad3)(1, 2) = 6;
+    std::cout << "Test grad3: ";
+    for (int i = 0; i < 2; ++i) for (int j = 0; j < modelDim; ++j) std::cout << (*grad3)(i, j) << " ";
+    std::cout << std::endl;
+    embedder.backward(tokens3, grad3, lr);
+    auto afterC = std::make_shared<Matrix>(*embedder.forward(singleC)); // deep copy
+    auto afterD = std::make_shared<Matrix>(*embedder.forward(singleD)); // deep copy
+    std::cout << "C before: "; beforeC->print();
+    std::cout << "C after:  "; afterC->print();
+    std::cout << "D before: "; beforeD->print();
+    std::cout << "D after:  "; afterD->print();
+    for (int j = 0; j < modelDim; ++j) {
+        float expectedC = (*beforeC)(0, j) - lr * (*grad3)(0, j);
+        float expectedD = (*beforeD)(0, j) - lr * (*grad3)(1, j);
+        assert(std::abs((*afterC)(0, j) - expectedC) < 1e-4);
+        assert(std::abs((*afterD)(0, j) - expectedD) < 1e-4);
     }
- 
-    {
-
-        std::vector<std::string> singleC = { "C" };
-        std::vector<std::string> singleD = { "D" };
-
-        auto beforeC = embedder.forward(singleC);
-        beforeC->downloadFromGPU();
-        beforeC = std::make_shared<Matrix>(beforeC->rows, beforeC->cols, beforeC->getFlatVec().data());
-
-        auto beforeD = embedder.forward(singleD);
-        beforeD->downloadFromGPU();
-        beforeD = std::make_shared<Matrix>(beforeD->rows, beforeD->cols, beforeD->getFlatVec().data());
-
-        // Test 3: Multiple tokens
-        std::vector<std::string> tokens = { "C", "D" };
-        embedder.forward(tokens);
-
-        std::shared_ptr<Matrix> grad = std::make_shared<Matrix>(modelDim, 2);
-        (*grad)(0, 0) = 1; (*grad)(1, 0) = 2; (*grad)(2, 0) = 3;
-        (*grad)(0, 1) = 4; (*grad)(1, 1) = 5; (*grad)(2, 1) = 6;
-        std::cout << "Test grad: ";
-        for (int i = 0; i < modelDim; ++i) for (int j = 0; j < 2; ++j) std::cout << (*grad)(i, j) << " ";
-        std::cout << std::endl;
-        embedder.backward(tokens, grad, lr);
-
-        auto afterC = embedder.forward(singleC);
-        afterC->downloadFromGPU();
-        afterC = std::make_shared<Matrix>(afterC->rows, afterC->cols, afterC->getFlatVec().data());
-
-        auto afterD = embedder.forward(singleD); // deep copy
-        afterD->downloadFromGPU();
-        afterD = std::make_shared<Matrix>(afterD->rows, afterD->cols, afterD->getFlatVec().data());
-
-        std::cout << "C before: "; beforeC->print();
-        std::cout << "C after:  "; afterC->print();
-        std::cout << "grad: \n"; grad->print();
-        std::cout << "D before: "; beforeD->print();
-        std::cout << "D after:  "; afterD->print();
-        for (int j = 0; j < modelDim; ++j) {
-            float expectedC = (*beforeC)(j, 0) - lr * (*grad)(j, 0);
-            float expectedD = (*beforeD)(j, 0) - lr * (*grad)(j, 1);
-            float diff = std::abs((*afterC)(j, 0) - expectedC);
-            assert(diff < 1e-4);
-            diff = std::abs((*afterD)(j, 0) - expectedD);
-            assert(diff < 1e-4);
-        }
-        std::cout << "[UnitTest] EmbeddingBlock GPU Update PASSED\n";
-    }
-
+    std::cout << "[UnitTest] EmbeddingBlock GPU Update PASSED\n";
 }
 
 void test_positional_encoding() {
@@ -1054,13 +994,12 @@ void test_positional_encoding() {
     std::cout << "\n[UnitTest] EmbeddingBlock Positional Encoding\n";
     size_t seqLen = 4;
     size_t modelDim = 3;
-    size_t vocabSize = 10;
-    EmbeddingBlock embedder(vocabSize, modelDim, seqLen);
+    EmbeddingBlock embedder(10, modelDim, seqLen);
     // Create a known input matrix
-    std::vector<std::vector<float>> inputVec(modelDim, std::vector<float>(seqLen));
+    std::vector<std::vector<float>> inputVec(seqLen, std::vector<float>(modelDim));
     float val = 1.0f;
-    for (size_t i = 0; i < modelDim; ++i) {
-        for (size_t j = 0; j < seqLen; ++j) {
+    for (size_t i = 0; i < seqLen; ++i) {
+        for (size_t j = 0; j < modelDim; ++j) {
             inputVec[i][j] = val++;
         }
     }
@@ -1075,8 +1014,8 @@ void test_positional_encoding() {
     std::cout << "After removePositionalEncoding:" << std::endl;
     inputMat->print();
     // Assert that inputMat matches originalMat (within tolerance)
-    for (size_t i = 0; i < modelDim; ++i) {
-        for (size_t j = 0; j < seqLen; ++j) {
+    for (size_t i = 0; i < seqLen; ++i) {
+        for (size_t j = 0; j < modelDim; ++j) {
             assert(std::abs((*inputMat)(i, j) - (*originalMat)(i, j)) < 1e-4);
         }
     }
@@ -1090,14 +1029,14 @@ void testDecoderBlockBackward() {
     int hiddenDim = 8;
     int seqLen = 3;
     float epsilon = 1e-4f;
-    float tolerance = 1e-1f;
+    float tolerance = 1e-2f;
     DecoderBlock decoder(modelDim, hiddenDim, seqLen);
     // Create dummy input and dummy encoder output
-    auto input = std::make_shared<Matrix>(modelDim, seqLen);
+    auto input = std::make_shared<Matrix>(seqLen, modelDim);
     std::vector<int> paddingMask(seqLen, 1);
     // Fill with small random values
-    for (int i = 0; i < modelDim; ++i) {
-        for (int j = 0; j < seqLen; ++j) {
+    for (int i = 0; i < seqLen; ++i) {
+        for (int j = 0; j < modelDim; ++j) {
             (*input)(i, j) = 0.1f * (i + 1) + 0.01f * (j + 1);
         }
     }
@@ -1105,10 +1044,10 @@ void testDecoderBlockBackward() {
     auto output = decoder.forward(input, paddingMask);
 
     // Analytical gradient: dL/dOutput is all ones
-    auto gradOutput = std::make_shared<Matrix>(output->rows, output->cols, 1.0f);
+    auto gradOutput = std::make_shared<Matrix>(output->rows,output->cols, 1.0f);
 
     // Backward pass: get dL/dInput
-    auto gradInput = decoder.backward(gradOutput, 0.0f); // learningRate=0 to avoid weight update
+    auto gradInput = decoder.backward(gradOutput, 0, 0.0f); // learningRate=0 to avoid weight update  // 0 is bad we don't use mask
     // Numerical gradient check for a single input element
     int test_i = 0, test_j = 0;
     float orig = (*input)(test_i, test_j);
@@ -1138,16 +1077,16 @@ void runAllUnitTests() {
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "RUNNING COMPREHENSIVE UNIT TESTS" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
-
-    test_embeddingblock_gpu_update();
+    
     testMatrixClass();
     testNeuralNetworkClass();
     testAttentionBlockClass();
     testLayerNormClass();
     testDecoderBlockClass();
+    test_embeddingblock_gpu_update();
     test_positional_encoding();
     testDecoderBlockBackward();
-
+    
     std::cout << "\n" << std::string(60, '=') << std::endl;
     std::cout << "UNIT TESTS COMPLETED" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
@@ -1170,19 +1109,18 @@ void runAllUnitTests() {
     LOG_INFO("GPU state reset completed");
 }
 
-void gptransformer_simplified() {
-    // Simple GPTransformer (GPT-style, decoder-only) overfit test on multiple examples
+void gptransformer_from_file() {
     std::srand(42);
-    std::cout << "=== Simple GPTransformer Overfit Test (10 sentences) ===" << std::endl;
-    int d_model = 512;  // Increased for complex text
+    std::cout << "=== GPTransformer Training from File (Individual Sentences) ===" << std::endl;
+
+    int d_model = 768;
     int d_hidden = d_model * 2;
-    int seq_len = 32;   // Longer sequence for complex text
+    int seq_len = 1024;
 
-
-    std::string bpe_file = "bpe50k.checkpoint";
-    if(false)
+    std::string bpe_file = "bpe50k_v2.checkpoint";
+    if (false)
     {
-        std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt", "english3.txt", "pg76287.txt","english3.txt", "pg76287.txt" };
+        std::vector<std::string> filenames = { "english3.txt", "pg76287.txt", "pg51161.txt", "english3.txt", "pg76287.txt", "pg51161.txt", "english3.txt", "pg76287.txt", "pg51161.txt" };
         std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(1024 * 10);
 
 
@@ -1203,217 +1141,471 @@ void gptransformer_simplified() {
         bpe->save(bpe_file);
     }
 
+
+    // Load BPE (assuming it's already trained)
     std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(1024 * 10);
     bpe->load(bpe_file);
 
+    // Read training data from file
+    std::string training_file = "pg51161.txt";
+    std::vector<std::string> training_data;
+    std::ifstream file(training_file);
 
-        // Overfit on apple-color association and QA sentences
-    std::vector<std::string> training_data = {
-        " red Apple is number one ",
-        " red and number one is Apple ",
-        " number one and red is Apple ",
-        " Apple number one has color red ",
-        " What color of Apple number one It's red ",
-          
-        " Apple number two has color green ",
-        " green Apple has number two ",
-        " green always two ",
-        " number two has green fruit ",
-        " What color of Apple number two It's green ",
-          
-        " yellow and three make an Apple ",
-        " Apple is yellow when it's three ",
-        " three when it's yellow ",
-        " Apple number three has color yellow ",
-    };
-    // Precompute tokenized prefixes for eval
-    std::vector<std::pair<std::string, std::string>> eval_prompts;
-    std::vector<std::string> test_queries = {
-        " What color of Apple number one ",
-        " three when it's ",
-        " Apple number one "
-    };
-    for (const auto& query : test_queries) {
-        std::vector<std::string> tokens = bpe->tokenizeInput(query.c_str(), query.size());
-        tokens.insert(tokens.begin(), "<SOS>");
-        std::string prompt;
-        std::string display;
-        for (const auto& t : tokens) {
-            prompt += t;
-            display += "'" + t + "' ";
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open training file: " << training_file << std::endl;
+        return;
+    }
+
+    std::string line;
+    int line_count = 0;
+    while (std::getline(file, line)) {
+        line_count++;
+        // Skip empty lines and lines that are too short
+        if (line.empty() || line.length() < 3) {
+            continue;
         }
-        eval_prompts.emplace_back(display, prompt);
+
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+        if (!line.empty()) {
+            training_data.push_back(line);
+        }
+    }
+    file.close();
+
+    std::cout << "Loaded " << training_data.size() << " training sentences from " << line_count << " lines in file: " << training_file << std::endl;
+
+    if (training_data.empty()) {
+        std::cerr << "Error: No valid training data found in file!" << std::endl;
+        return;
+    }
+
+    // Preprocess training data into individual tokenized sequences
+    struct TrainingExample {
+        std::vector<std::string> tokens;  // Full sequence: < SOS > + tokens + <EOS>
+        std::string original_text;
+    };
+
+    std::vector<TrainingExample> examples;
+    int skipped_examples = 0;
+
+    for (const auto& sentence : training_data) {
+        TrainingExample example;
+        example.original_text = sentence;
+
+        // Tokenize: < SOS > + sentence_tokens + <EOS>
+        example.tokens.push_back("<SOS>");
+        std::vector<std::string> sentence_tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+
+        // Skip sentences that are too long or too short after tokenization
+        if (sentence_tokens.size() < 2 || sentence_tokens.size() > seq_len - 2) {
+            skipped_examples++;
+            continue;
+        }
+
+        example.tokens.insert(example.tokens.end(), sentence_tokens.begin(), sentence_tokens.end());
+        example.tokens.push_back("<EOS>");
+
+        examples.push_back(example);
+    }
+
+    if (skipped_examples > 0) {
+        std::cout << "Skipped " << skipped_examples << " sentences (too short/long after tokenization)" << std::endl;
+    }
+
+    if (examples.empty()) {
+        std::cerr << "Error: No valid examples after tokenization!" << std::endl;
+        return;
+    }
+
+    // Print first few tokenized examples for debugging
+    std::cout << "\nFirst " << std::min(5, (int)examples.size()) << " training examples:" << std::endl;
+    for (size_t i = 0; i < std::min(5, (int)examples.size()); ++i) {
+        std::cout << "  " << i << ": \"" << examples[i].original_text << "\" -> [";
+        for (size_t j = 0; j < examples[i].tokens.size(); ++j) {
+            std::cout << "'" << examples[i].tokens[j] << "'";
+            if (j < examples[i].tokens.size() - 1) std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    // Create evaluation prompts (first half of each sentence)
+    std::vector<std::pair<std::string, std::string>> eval_prompts;
+    int max_eval_prompts = std::min(20, (int)examples.size()); // Limit evaluation prompts for performance
+
+    for (int i = 0; i < max_eval_prompts; ++i) {
+        const auto& example = examples[i];
+        if (example.tokens.size() > 2) { // Must have at least < SOS > + 1 token + <EOS>
+            std::string prompt;
+            std::string display;
+
+            // Take first half of tokens (excluding <EOS>)
+            size_t prefix_len = std::max(1, (int)(example.tokens.size() - 1) / 2);
+            for (size_t j = 0; j < prefix_len; ++j) {
+                prompt += example.tokens[j];
+                if (j == 0) {
+                    display += "'" + example.tokens[j] + "' ";
+                }
+                else {
+                    display += "'" + example.tokens[j] + "' ";
+                }
+            }
+            eval_prompts.emplace_back(display, prompt);
+        }
     }
 
     std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(bpe_file, d_model, d_hidden, seq_len);
 
-    // Build the training sequence: <SOS> tokens... <EOS> for each sentence, concatenated
-    std::vector<std::string> sequence;
-    for (const auto& sentence : training_data) {
-        sequence.push_back("<SOS>");
-        std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
-        sequence.insert(sequence.end(), tokens.begin(), tokens.end());
-        sequence.push_back("<EOS>");
-    }
+    std::cout << "\n=== Training (Individual Sentence Learning) ===" << std::endl;
+    std::cout << "Training on " << examples.size() << " examples" << std::endl;
+    std::cout << "Using " << eval_prompts.size() << " evaluation prompts" << std::endl;
 
-    // Print sequence for debugging
-    std::cout << "Training sequence: [";
-    for (size_t i = 0; i < sequence.size(); ++i) {
-        std::cout << "'" << sequence[i] << "'";
-        if (i < sequence.size() - 1) std::cout << ", ";
-    }
-    std::cout << "]" << std::endl;
+    int epochs = 10000;
+    float initial_learning_rate = 0.0001f;
+    int progress_interval = 50; // Print progress every N trained lines
 
-    std::cout << "\n=== Training (Overfitting on 10 Sentences) ===" << std::endl;
-    int epochs = 1000000;
-    float initial_learning_rate = 0.000001f; // Reduced for more stable learning
-    
-    // Early stopping variables
+    // Training tracking
+    float best_loss = std::numeric_limits<float>::infinity();
     int epochs_without_improvement = 0;
-    
-    // Training loop: train on each sentence independently
+    std::vector<float> epoch_losses;
+    int total_lines_trained = 0;
+    float running_loss_sum = 0.0f;
+    int running_loss_count = 0, tokenesTrained = 0;
+    NNGL::Timer timer_info("Time to process:" + std::to_string(progress_interval) + "lines", NNGL::LogLevel::LL_INFO);
     for (int epoch = 0; epoch < epochs; ++epoch) {
-        float learning_rate = initial_learning_rate * std::pow(0.98f, epoch / (epochs / 100.0f));
+        // Learning rate decay
+        float learning_rate = initial_learning_rate * std::pow(0.95f, epoch / 50.0f);
+
         float total_loss = 0.0f;
-        int num_tokens = 0;
-        for (const auto& sentence : training_data) {
-            std::vector<std::string> tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
-            tokens.insert(tokens.begin(), "<SOS>");
-            tokens.push_back("<EOS>");
-            for (size_t i = tokens.size() / 3; i < tokens.size(); ++i) {
-                std::vector<std::string> context(tokens.begin(), tokens.begin() + i);
-                std::string target = tokens[i];
+        int total_predictions = 0;
+
+        // Shuffle training examples each epoch for better learning
+        std::vector<size_t> indices(examples.size());
+        std::iota(indices.begin(), indices.end(), 0);
+
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::shuffle(indices.begin(), indices.end(), gen);
+
+        // Train on each sentence independently
+        for (size_t idx : indices) {
+            const auto& example = examples[idx];
+            // Train next-token prediction for each position in this sentence
+            for (size_t i = 1; i < example.tokens.size(); ++i) {
+                std::vector<std::string> context(example.tokens.begin(), example.tokens.begin() + i);
+                std::string target = example.tokens[i];
+                tokenesTrained++;
                 float loss = gpt->trainNextToken(context, target, learning_rate);
+                if (loss == -1) continue; //means this run didn't check loss 
+
                 total_loss += loss;
-                num_tokens++;
+                total_predictions++;
+
+                // Track running loss for progress reporting
+                running_loss_sum += loss;
+                running_loss_count++;
+
             }
-        }
-        // Print progress every 2 epochs
-        if ((epoch + 1) % 2 == 0 || epoch == 0) {
-            float avg_loss = total_loss / num_tokens;
-            std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss 
-                      << " | LR = " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
-            for (const auto& eval_pair : eval_prompts) {
-                std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
-            }
-            if (epoch == 0 || (epoch + 1) % 100 == 0) {
-                std::cout << "  Number of training examples per epoch: " << num_tokens << std::endl;
-                std::cout << "  Loss history size: " << gpt->getLossHistory().size() << std::endl;
-                if (!gpt->getLossHistory().empty()) {
-                    float min_loss = *std::min_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
-                    float max_loss = *std::max_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
-                    std::cout << "  Loss range: [" << std::fixed << std::setprecision(4) << min_loss 
-                              << ", " << std::fixed << std::setprecision(4) << max_loss << "]" << std::endl;
+
+            total_lines_trained++;
+
+            // Print progress every N trained lines
+            if (total_lines_trained % progress_interval == 0) {
+                timer_info.reset();
+                float avg_running_loss = running_loss_sum / running_loss_count;
+                std::cout << "Lines trained: " << total_lines_trained
+                    << " | Epoch: " << (epoch + 1)
+                    //<< " | Recent avg loss: " << std::fixed << std::setprecision(4) << avg_running_loss
+                    << " | Total Tokens trained: " << tokenesTrained
+                    << " | LR: " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
+                tokenesTrained = 0;
+                // Reset running loss for next interval
+                running_loss_sum = 0.0f;
+                running_loss_count = 0;
+
+                // Show a sample prediction
+                if (!eval_prompts.empty()) {
+                    const auto& eval_pair = eval_prompts[0];
+                    std::string prediction = gpt->eval(eval_pair.second);
+                    std::cout << "  Sample: [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
                 }
             }
         }
+
+        float avg_loss = total_loss / total_predictions;
+        epoch_losses.push_back(avg_loss);
+
+        // Track best loss for early stopping
+        if (avg_loss < best_loss) {
+            best_loss = avg_loss;
+            epochs_without_improvement = 0;
+        }
+        else {
+            epochs_without_improvement++;
+        }
+
+        // Print epoch summary (less frequent now)
+        if ((epoch + 1) % 100 == 0 || epoch == 0) {
+            std::cout << "\n=== Epoch " << (epoch + 1) << " Summary ===" << std::endl;
+            std::cout << "Epoch avg loss: " << std::fixed << std::setprecision(4) << avg_loss
+                << " | Best loss: " << std::fixed << std::setprecision(4) << best_loss
+                << " | No improve: " << epochs_without_improvement << std::endl;
+
+            // Show predictions for first few evaluation prompts
+            for (size_t i = 0; i < std::min(3, (int)eval_prompts.size()); ++i) {
+                const auto& eval_pair = eval_prompts[i];
+                std::string prediction = gpt->eval(eval_pair.second);
+                std::cout << "  [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
+            }
+            std::cout << std::endl;
+        }
+
+        // Detailed progress every 500 epochs
+        if ((epoch + 1) % 500 == 0) {
+            std::cout << "=== Detailed Progress (Epoch " << (epoch + 1) << ") ===" << std::endl;
+            std::cout << "  Total lines trained so far: " << total_lines_trained << std::endl;
+            std::cout << "  Total examples: " << examples.size() << std::endl;
+            std::cout << "  Predictions per epoch: " << total_predictions << std::endl;
+            std::cout << "  Average tokens per sentence: " << std::fixed << std::setprecision(1)
+                << (float)total_predictions / examples.size() << std::endl;
+
+            // Show loss trend
+            if (epoch_losses.size() >= 10) {
+                float recent_avg = 0.0f;
+                for (int i = epoch_losses.size() - 10; i < epoch_losses.size(); ++i) {
+                    recent_avg += epoch_losses[i];
+                }
+                recent_avg /= 10;
+                std::cout << "  Recent 10-epoch avg loss: " << std::fixed << std::setprecision(4) << recent_avg << std::endl;
+            }
+
+            // Test more evaluation prompts
+            std::cout << "  Sample evaluation prompts:" << std::endl;
+            for (size_t i = 0; i < std::min(5, (int)eval_prompts.size()); ++i) {
+                const auto& eval_pair = eval_prompts[i];
+                std::string prediction = gpt->eval(eval_pair.second);
+                std::cout << "    [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
+            }
+            std::cout << std::endl;
+        }
+
+        // Early stopping
+        if (epochs_without_improvement > 500) {
+            std::cout << "Early stopping at epoch " << (epoch + 1) << " - no improvement for 500 epochs" << std::endl;
+            break;
+        }
+
+        // Stop if we achieve very low loss
+        if (avg_loss < 0.001f) {
+            std::cout << "Stopping at epoch " << (epoch + 1) << " - achieved very low loss: " << avg_loss << std::endl;
+            break;
+        }
     }
-    
-    // Test with various partial inputs
-    std::cout << "Final predictions:" << std::endl;
-    for (const auto& eval_pair : eval_prompts) {
-        std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
+
+    std::cout << "\n=== Final Evaluation ===" << std::endl;
+    std::cout << "Best loss achieved: " << std::fixed << std::setprecision(4) << best_loss << std::endl;
+
+    // Final test on evaluation prompts
+    for (size_t i = 0; i < std::min(10, (int)eval_prompts.size()); ++i) {
+        const auto& eval_pair = eval_prompts[i];
+        std::string prediction = gpt->eval(eval_pair.second);
+        std::cout << "Final " << i << ": [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
+        std::cout << "  Original: \"" << examples[i].original_text << "\"" << std::endl;
     }
-    
-    // Training summary
-    std::cout << "\n=== Training Summary ===" << std::endl;
-    std::cout << "Total training steps: " << gpt->getTrainingSteps() << std::endl;
-    std::cout << "Loss history size: " << gpt->getLossHistory().size() << std::endl;
-    if (!gpt->getLossHistory().empty()) {
-        float min_loss = *std::min_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
-        float max_loss = *std::max_element(gpt->getLossHistory().begin(), gpt->getLossHistory().end());
-        float avg_loss = std::accumulate(gpt->getLossHistory().begin(), gpt->getLossHistory().end(), 0.0f) / gpt->getLossHistory().size();
-        std::cout << "Loss statistics:" << std::endl;
-        std::cout << "  Min: " << std::fixed << std::setprecision(4) << min_loss << std::endl;
-        std::cout << "  Max: " << std::fixed << std::setprecision(4) << max_loss << std::endl;
-        std::cout << "  Avg: " << std::fixed << std::setprecision(4) << avg_loss << std::endl;
-    }
+
+    std::cout << "\n=== Training Complete ===" << std::endl;
+    std::cout << "Trained on " << examples.size() << " sentences from file: " << training_file << std::endl;
 }
 
-void gptransformer_pg76287() {
+void gptransformer_simplified() {
     std::srand(42);
-    std::cout << "=== GPTransformer Training on pg76287.txt ===" << std::endl;
+    std::cout << "=== Improved GPTransformer Training (Individual Sentences) ===" << std::endl;
+
     int d_model = 256;
     int d_hidden = d_model * 4;
     int seq_len = 64;
+
     std::string bpe_file = "bpe50k.checkpoint";
-    std::string text_file = "pg76287.txt";
+
+    // Load BPE (assuming it's already trained)
     std::shared_ptr<NNGL::BPE> bpe = std::make_shared<NNGL::BPE>(1024 * 10);
     bpe->load(bpe_file);
-    std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(bpe_file, d_model, d_hidden, seq_len);
-    // Build the training sequence from the first 100 valid lines for eval prompts, but use all lines for training
-    std::ifstream infile(text_file);
-    if (!infile.is_open()) {
-        std::cerr << "Failed to open file: " << text_file << std::endl;
-        return;
+
+    // Training data - each sentence is treated independently
+    std::vector<std::string> training_data = {
+        "What color of Apple number two It's green"
+    };
+
+    // Preprocess training data into individual tokenized sequences
+    struct TrainingExample {
+        std::vector<std::string> tokens;  // Full sequence: <SOS> + tokens + <EOS>
+        std::string original_text;
+    };
+
+    std::vector<TrainingExample> examples;
+    for (const auto& sentence : training_data) {
+        TrainingExample example;
+        example.original_text = sentence;
+
+        // Tokenize: <SOS> + sentence_tokens + <EOS>
+        example.tokens.push_back("<SOS>");
+        std::vector<std::string> sentence_tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+        example.tokens.insert(example.tokens.end(), sentence_tokens.begin(), sentence_tokens.end());
+        example.tokens.push_back("<EOS>");
+
+        examples.push_back(example);
     }
-    std::vector<std::string> sequence;
-    std::vector<std::vector<std::string>> valid_lines_tokens; // Store tokens for evaluation
-    std::string line;
-    int eval_max_lines = 100;
-    int eval_lineCount = 0;
-    int total_lineCount = 0;
-    while (std::getline(infile, line)) {
-        // Clean line: trim whitespace
-        line.erase(0, line.find_first_not_of(" \t\n\r"));
-        line.erase(line.find_last_not_of(" \t\n\r") + 1);
-        // Skip empty or non-alphabetic lines
-        if (line.empty()) continue;
-        bool hasAlpha = false;
-        for (char c : line) { if (std::isalpha(static_cast<unsigned char>(c))) { hasAlpha = true; break; } }
-        if (!hasAlpha) continue;
-        // Tokenize line
-        std::vector<std::string> tokens = bpe->tokenizeInput(line.data(), line.size());
-        if (tokens.empty()) continue;
-        sequence.push_back("<SOS>");
-        sequence.insert(sequence.end(), tokens.begin(), tokens.end());
-        sequence.push_back("<EOS>");
-        if (eval_lineCount < eval_max_lines) {
-            valid_lines_tokens.push_back(tokens);
-            ++eval_lineCount;
+
+    // Print tokenized examples for debugging
+    std::cout << "Training examples:" << std::endl;
+    for (size_t i = 0; i < examples.size(); ++i) {
+        std::cout << "  " << i << ": \"" << examples[i].original_text << "\" -> [";
+        for (size_t j = 0; j < examples[i].tokens.size(); ++j) {
+            std::cout << "'" << examples[i].tokens[j] << "'";
+            if (j < examples[i].tokens.size() - 1) std::cout << ", ";
         }
-        ++total_lineCount;
+        std::cout << "]" << std::endl;
     }
-    std::cout << "[GPTransformer] Training sequence built with " << sequence.size() << " tokens from " << total_lineCount << " lines." << std::endl;
-    // Sample evaluation prompts randomly from the first 100 valid lines
+
+    // Create evaluation prompts (first half of each sentence)
     std::vector<std::pair<std::string, std::string>> eval_prompts;
-    std::mt19937 rng(42);
-    std::uniform_int_distribution<size_t> dist(0, valid_lines_tokens.size() - 1);
-    int num_eval_prompts = std::min(3, (int)valid_lines_tokens.size());
-    for (int i = 0; i < num_eval_prompts; ++i) {
-        size_t idx = dist(rng);
-        std::vector<std::string> context = valid_lines_tokens[idx];
-        context.insert(context.begin(), "<SOS>");
-        // Pad/truncate to seq_len
-        if (context.size() > (size_t)seq_len) context.resize(seq_len);
-        else if (context.size() < (size_t)seq_len) context.insert(context.begin(), seq_len - context.size(), "<PAD>");
-        std::string prompt, display;
-        for (const auto& t : context) { if (t != "<PAD>") { prompt += t; display += "'" + t + "' "; } }
-        eval_prompts.emplace_back(display, prompt);
-    }
-    // Training loop: single pass over sequence, evaluate every 100 tokens
-    float initial_learning_rate = 0.0001f;
-    float learning_rate = initial_learning_rate;
-    float total_loss = 0.0f;
-    int num_tokens = 0;
-    int eval_interval = 100;
-    for (size_t i = seq_len; i < sequence.size(); ++i) {
-        std::vector<std::string> context(sequence.begin() + i - seq_len, sequence.begin() + i);
-        std::string target = sequence[i];
-        float loss = gpt->trainNextToken(context, target, learning_rate);
-        total_loss += loss;
-        num_tokens++;
-        if (0 && num_tokens % eval_interval == 0) {
-            float avg_loss = total_loss / num_tokens;
-            std::cout << "\n================ EVALUATION AFTER " << num_tokens << " TOKENS ================\n";
-            std::cout << "Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss
-                      << " | LR = " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
-            for (const auto& eval_pair : eval_prompts) {
-                std::cout << "  [tokens: " << eval_pair.first << "] -> '" << gpt->eval(eval_pair.second) << "'" << std::endl;
+    for (const auto& example : examples) {
+        if (example.tokens.size() > 2) { // Must have at least <SOS> + 1 token + <EOS>
+            std::string prompt;
+            std::string display;
+
+            // Take first half of tokens (excluding <EOS>)
+            size_t prefix_len = std::max(1, (int)(example.tokens.size() - 1) / 2);
+            for (size_t i = 0; i < prefix_len; ++i) {
+                prompt += example.tokens[i];
+                display += "'" + example.tokens[i] + "' ";
             }
-            std::cout << "============================================================\n";
+            eval_prompts.emplace_back(display, prompt);
         }
     }
+
+    std::shared_ptr<NNGL::GPTransformer> gpt = std::make_shared<NNGL::GPTransformer>(bpe_file, d_model, d_hidden, seq_len);
+
+    std::cout << "\n=== Training (Individual Sentence Learning) ===" << std::endl;
+
+    int epochs = 10000;
+    float initial_learning_rate = 0.0001f;
+
+    // Training tracking
+    float best_loss = std::numeric_limits<float>::infinity();
+    int epochs_without_improvement = 0;
+    std::vector<float> epoch_losses;
+
+    for (int epoch = 0; epoch < epochs; ++epoch) {
+        // Learning rate decay
+        float learning_rate = initial_learning_rate * std::pow(0.95f, epoch / 50.0f);
+
+        float total_loss = 0.0f;
+        int total_predictions = 0;
+
+        // Shuffle training examples each epoch for better learning
+        std::vector<size_t> indices(examples.size());
+        std::iota(indices.begin(), indices.end(), 0);
+
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::shuffle(indices.begin(), indices.end(), gen);
+
+        // Train on each sentence independently
+        for (size_t idx : indices) {
+            const auto& example = examples[idx];
+
+            // Train next-token prediction for each position in this sentence
+            for (size_t i = 1; i < example.tokens.size(); ++i) {
+                std::vector<std::string> context(example.tokens.begin(), example.tokens.begin() + i);
+                std::string target = example.tokens[i];
+
+                float loss = gpt->trainNextToken(context, target, learning_rate);
+                total_loss += loss;
+                total_predictions++;
+            }
+        }
+
+        float avg_loss = total_loss / total_predictions;
+        epoch_losses.push_back(avg_loss);
+
+        // Track best loss for early stopping
+        if (avg_loss < best_loss) {
+            best_loss = avg_loss;
+            epochs_without_improvement = 0;
+        }
+        else {
+            epochs_without_improvement++;
+        }
+
+        // Print progress
+        if ((epoch + 1) % 50 == 0 || epoch == 0) {
+            std::cout << "Epoch " << (epoch + 1) << ": Avg Loss = " << std::fixed << std::setprecision(4) << avg_loss
+                << " | LR = " << std::fixed << std::setprecision(6) << learning_rate
+                << " | Best = " << std::fixed << std::setprecision(4) << best_loss
+                << " | No improve: " << epochs_without_improvement << std::endl;
+
+            // Show predictions for evaluation prompts
+            for (size_t i = 0; i < std::min(5, (int)eval_prompts.size()); ++i) {
+                const auto& eval_pair = eval_prompts[i];
+                std::string prediction = gpt->eval(eval_pair.second);
+                std::cout << "  [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
+            }
+        }
+
+        // Detailed progress every 200 epochs
+        if ((epoch + 1) % 200 == 0) {
+            std::cout << "  Training details:" << std::endl;
+            std::cout << "    Total examples: " << examples.size() << std::endl;
+            std::cout << "    Predictions per epoch: " << total_predictions << std::endl;
+            std::cout << "    Average tokens per sentence: " << std::fixed << std::setprecision(1)
+                << (float)total_predictions / examples.size() << std::endl;
+
+            // Show loss trend
+            if (epoch_losses.size() >= 10) {
+                float recent_avg = 0.0f;
+                for (int i = epoch_losses.size() - 10; i < epoch_losses.size(); ++i) {
+                    recent_avg += epoch_losses[i];
+                }
+                recent_avg /= 10;
+                std::cout << "    Recent 10-epoch avg loss: " << std::fixed << std::setprecision(4) << recent_avg << std::endl;
+            }
+
+            // Test all evaluation prompts
+            std::cout << "  All evaluation prompts:" << std::endl;
+            for (const auto& eval_pair : eval_prompts) {
+                std::string prediction = gpt->eval(eval_pair.second);
+                std::cout << "    [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
+            }
+        }
+
+        // Early stopping
+        if (epochs_without_improvement > 500) {
+            std::cout << "Early stopping at epoch " << (epoch + 1) << " - no improvement for 500 epochs" << std::endl;
+            break;
+        }
+
+        // Stop if we achieve very low loss
+        if (avg_loss < 0.001f) {
+            //std::cout << "Stopping at epoch " << (epoch + 1) << " - achieved very low loss: " << avg_loss << std::endl;
+            //break;
+        }
+    }
+
+    std::cout << "\n=== Final Evaluation ===" << std::endl;
+    std::cout << "Best loss achieved: " << std::fixed << std::setprecision(4) << best_loss << std::endl;
+
+    // Final test on all prompts
+    for (size_t i = 0; i < eval_prompts.size(); ++i) {
+        const auto& eval_pair = eval_prompts[i];
+        std::string prediction = gpt->eval(eval_pair.second);
+        std::cout << "Final " << i << ": [" << eval_pair.first << "] -> '" << prediction << "'" << std::endl;
+        std::cout << "  Original: \"" << examples[i].original_text << "\"" << std::endl;
+    }
+
+    std::cout << "\n=== Training Complete ===" << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -1440,10 +1632,8 @@ int main(int argc, char** argv) {
     glfwMakeContextCurrent(window);
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { LOG_ERROR("Failed to initialize GLAD!"); return -1; }
 
-
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    int choice = 1; // Change this to test different functions
-    //runAllUnitTests();
+    int choice = 2; // Change this to test different functions
 
     switch (choice) {
         case 0:
@@ -1461,9 +1651,9 @@ int main(int argc, char** argv) {
             break;
         case 2:
             LOG_INFO("");
-            LOG_INFO("RUNNING GPTRANSFORMER ON PG76287.TXT");
+            LOG_INFO("RUNNING GPT TRANSLATION FROM FILE");
             LOG_INFO(std::string(60, '='));
-            gptransformer_pg76287();
+            gptransformer_from_file();
             break;
         default:
             LOG_ERROR("Invalid choice, running simple EOS prediction...");

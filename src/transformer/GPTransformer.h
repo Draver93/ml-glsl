@@ -19,9 +19,7 @@ namespace NNGL {
     class GPTransformer {
     public:
         GPTransformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen);
-
         float trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate);
-
         std::string eval(const std::string& inputText);
 
         float calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode = LossMode::CrossEntropy);
@@ -37,8 +35,8 @@ namespace NNGL {
         std::shared_ptr<Matrix> getCachedEmbedding(const std::vector<int>& tokens);
         void printGradientHeatmap(std::shared_ptr<Matrix> mat);
         const std::vector<float>& getLossHistory() const { return m_LossHistory; }
-    int getTrainingSteps() const { return m_TrainingSteps; }
-    float getCurrentLoss() const { return m_CurrentLoss; }
+        int getTrainingSteps() const { return m_TrainingSteps; }
+        float getCurrentLoss() const { return m_CurrentLoss; }
     private:
         std::shared_ptr<Matrix> forwardPass(const std::vector<std::string>& inputTokens);
         void backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate);
@@ -54,5 +52,7 @@ namespace NNGL {
         std::mutex m_CacheMutex;
         std::unordered_map<std::string, std::shared_ptr<Matrix>> m_EmbeddingCache;
         std::shared_ptr<Matrix> m_TargetMat;
+
+        GLuint m_GradMaskBuffer;
     };
 } 

@@ -19,7 +19,11 @@ namespace NNGL {
     public:
         DecoderBlock(int modelDim, int hiddenDim, int seqLen);
         
-        std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> input, const std::vector<int>& paddingMask);
-        std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, float learningRate, int colIdx = -1);
+        std::shared_ptr<Matrix> forward(
+            std::shared_ptr<Matrix> input,
+            const std::vector<int>& paddingMask
+        );
+        
+        std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, const GLuint gradMaskBuffer, float learningRate);
     };
 }

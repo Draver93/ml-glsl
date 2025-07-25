@@ -1,14 +1,11 @@
 #include "NeuralNetwork.h"
 #include "Logger.h"
 #include "ShaderCPUAnalogs.h"
-#include "Matrix.h"
-#include <memory>
-#include <iostream>
-#include <iomanip>
-#include <algorithm>
 
 #include <execution>
+#include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <string>
 #include <tuple>
 
@@ -27,11 +24,10 @@ namespace NNGL {
         if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
 
         if(!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
+
     };
 
-	NeuralNetwork::~NeuralNetwork() {
-
-    }
+	NeuralNetwork::~NeuralNetwork() { }
 
 	void NeuralNetwork::addLayer(int width, int height,  ActivationFnType type) {
 		if (!m_Layers.empty() && m_Layers.back()->getSize().y != width)
@@ -42,14 +38,14 @@ namespace NNGL {
         //we changed layer structure so we need to update mat's
         m_InputBatchMat = nullptr;
         m_OutputBatchMat = nullptr;
-        m_InputGradMat = nullptr;
 	}
 
-	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat) {
+	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat, int use_col_idx) {
+		GLuint currentInput = inputBatchMat->buffer;
 
-        GLuint currentInput = inputBatchMat->buffer;
 		for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto &layer = m_Layers[layerIdx];
+
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
             m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
             m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
@@ -60,13 +56,14 @@ namespace NNGL {
             m_ForwardPassCompute->setUniform("output_size", (int)layer->getSize().y);
             m_ForwardPassCompute->setUniform("batch_size", m_BatchSize);
             m_ForwardPassCompute->setUniform("activation_type", layer->m_ActivationFnType);
+            m_ForwardPassCompute->setUniform("use_batch_idx", currentInput == inputBatchMat->buffer ? use_col_idx : -1);
 
 			// Safe workgroup calculation with bounds checking
 			int workgroupsX = std::min((int)ceil(m_BatchSize / 16.0f), 65535);
 			int workgroupsY = std::min((int)ceil(layer->getSize().y / 16.0f), 65535);
             m_ForwardPassCompute->dispatch(workgroupsX, workgroupsY, 1);
-
-            currentInput = layer->m_ActivationMat->buffer;
+ 
+			currentInput = layer->m_ActivationMat->buffer;
 		}
 
 		// Unbind buffers for this layer
@@ -118,9 +115,8 @@ namespace NNGL {
 	}
 
 	// Update weights and biases for all layers
-	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate) {
+	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate, int use_col_idx) {
         NNGL::Timer timer("NeuralNetwork::weightsAndBiasesUpdate");
-
         GLuint currentInput = inputBatchMat->buffer;
 
         for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
@@ -141,6 +137,7 @@ namespace NNGL {
                 m_WeightsCompute->setUniform("ADAM_beta1", 0.9f);
                 m_WeightsCompute->setUniform("ADAM_beta2", 0.999f);
                 m_WeightsCompute->setUniform("ADAM_timestep", m_ADAM_Timestep);
+                m_WeightsCompute->setUniform("use_batch_idx", currentInput == inputBatchMat->buffer ? use_col_idx : -1);
 
                 // Dispatch compute for weight updates
                 int workgroupsX = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
@@ -187,12 +184,8 @@ namespace NNGL {
         }
 
         m_TrainBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
-        m_InputBatchMat->uploadToGPU();
-        m_OutputBatchMat->uploadToGPU();
 
         forwardPass(m_InputBatchMat);
-        m_Layers.back()->m_ActivationMat->downloadFromGPU();
-        printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
         targetLayerLossCalc(m_OutputBatchMat);
 
@@ -203,56 +196,70 @@ namespace NNGL {
     }
 
     float NeuralNetwork::eval(int samplesToTest, bool doSoftmax) {
+
+        //if we changed layers on the fly 
         if (!m_InputBatchMat || !m_OutputBatchMat) {
             m_InputBatchMat = std::make_shared<Matrix>(m_Layers.front()->getSize().x, m_BatchSize);
             m_OutputBatchMat = std::make_shared<Matrix>(m_Layers.back()->getSize().y, m_BatchSize);
         }
 
-        int totalSamples = samplesToTest;
-        int batchSize = m_BatchSize;
-        int numBatches = (totalSamples + batchSize - 1) / batchSize;
-        int outputSize = m_Layers.back()->getSize().y;
-        int correct = 0;
-        int processed = 0;
+        int origBatchSize = m_BatchSize;
+        m_BatchSize = 1;
 
-        for (int batchIdx = 0; batchIdx < numBatches; ++batchIdx) {
-            int currentBatchSize = std::min(batchSize, totalSamples - processed);
-            // Fill batch
-            m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, currentBatchSize);
-            m_InputBatchMat->uploadToGPU();
-            m_OutputBatchMat->uploadToGPU();
+        float totalRegressionError = 0.0f;
+        float confidenceSum = 0.0f;
+        int classificationSamples = 0;
+
+        for (int i = 0; i < samplesToTest; i++) {
+            m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
             forwardPass(m_InputBatchMat);
-            m_Layers.back()->m_ActivationMat->downloadFromGPU();
-            // Evaluate all samples in the batch
-            for (int col = 0; col < currentBatchSize; ++col) {
-                // Get predicted class
-                int pred = 0;
-                float maxVal = (*m_Layers.back()->m_ActivationMat)(0, col);
-                for (int row = 1; row < outputSize; ++row) {
-                    float val = (*m_Layers.back()->m_ActivationMat)(row, col);
-                    if (val > maxVal) { maxVal = val; pred = row; }
+
+            int outputSize = m_Layers.back()->getSize().y;
+            std::vector<float> results(outputSize);
+            std::vector<float> expected(outputSize);
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_ActivationMat->buffer);
+            float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+            if (mapped) {
+                for (int j = 0; j < outputSize; ++j) {
+                    results[j] = mapped[j];
                 }
-                // Get true class
-                int trueClass = 0;
-                for (int row = 0; row < outputSize; ++row) {
-                    if ((*m_OutputBatchMat)(row, col) == 1.0f) { trueClass = row; break; }
-                }
-                if (pred == trueClass) correct++;
+                glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+                
+                // Log GPU data read for testing
+                LOG_TRACE("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
+                    " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
             }
-            processed += currentBatchSize;
+
+            for (int j = 0; j < outputSize; ++j)
+                expected[j] = (*m_OutputBatchMat)(j, 0);
+
+            if(doSoftmax) results = softmax(results);
+
+            int trueClass = std::distance(expected.begin(), std::max_element(expected.begin(), expected.end()));
+            int resultClass = std::distance(results.begin(), std::max_element(results.begin(), results.end()));
+
+            // Accumulate probability assigned to the true class
+            if(trueClass == resultClass)confidenceSum += 1;
+            classificationSamples++;
         }
-        float accuracy = 100.0f * correct / totalSamples;
-        return accuracy;
+
+        m_BatchSize = origBatchSize;
+
+        // Mean confidence over all classification samples, as % (0-100)
+        float meanConfidence = (classificationSamples > 0) ? (confidenceSum / classificationSamples) * 100.0f : 0.0f;
+        return meanConfidence;
     }
 
-    std::shared_ptr<Matrix> NeuralNetwork::forward(std::shared_ptr<Matrix> inputMat) {
+    std::shared_ptr<Matrix> NeuralNetwork::forward(std::shared_ptr<Matrix> inputMat, int use_col_idx) {
         NNGL::Timer timer("NeuralNetwork::forward");
         
         // Cache the input for backward pass
         m_CachedInput = inputMat;
-        forwardPass(inputMat);
+        
+        forwardPass(inputMat, use_col_idx);
 
-        return  m_Layers.back()->m_ActivationMat;
+        return m_Layers.back()->m_ActivationMat;
     }
 
     void NeuralNetwork::inputGradientCalc() {
@@ -260,7 +267,7 @@ namespace NNGL {
 
         if (!m_InputGradMat) {
 
-            m_InputGradMat = std::make_shared<Matrix>(firstLayer->getSize().x, m_BatchSize); 
+            m_InputGradMat = std::make_shared<Matrix>(m_BatchSize, firstLayer->getSize().x);
             m_InputGradMat->uploadToGPU();
 
             LOG_TRACE("[GPU BUFFER] Created input grad buffer " + std::to_string(m_InputGradMat->buffer) +
@@ -280,14 +287,15 @@ namespace NNGL {
         for (int j = 0; j < 3; j++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, j, 0);
     }
 
-    std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate) {
+    std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate, int use_col_idx) {
         NNGL::Timer timer("NeuralNetwork::backward");
-        forward(inputMat);
+        forward(inputMat, use_col_idx);
         targetLayerLossCalc(outputMat);
         hiddenLayersLossCalc();
-        weightsAndBiasesUpdate(inputMat, learningRate);
+        weightsAndBiasesUpdate(inputMat, learningRate, use_col_idx);
         inputGradientCalc();
 
+        // Get matrix from pool and download GPU data into it
         return m_InputGradMat;
     }
 
@@ -314,7 +322,6 @@ namespace NNGL {
 
 
     void NeuralNetwork::setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss) {
-        targetLoss->downloadFromGPU();
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->rows * targetLoss->cols * sizeof(float), targetLoss->getFlatVec().data(), GL_DYNAMIC_DRAW);
         
@@ -378,7 +385,6 @@ namespace NNGL {
                 // Generate random batch of 1
                 m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
                 forwardPass(m_InputBatchMat);
-                printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
                 // Read results from GPU
                 int outputSize = m_Layers.back()->getSize().y;
@@ -389,13 +395,12 @@ namespace NNGL {
                 float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                 if (mapped) {
                     for (int i = 0; i < outputSize; i++) {
-                        results[i] = mapped[i * m_BatchSize + 0];
+                        results[i] = mapped[i];
                     }
                     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-                    printMatrixSlice("Output after GPU download", m_Layers.back()->m_ActivationMat);
                     
                     // Log GPU data read for testing
-                    LOG_TRACE("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
+                    LOG("[GPU DOWNLOAD] Test results (" + std::to_string(outputSize * sizeof(float)) + 
                         " bytes) downloaded from activation buffer " + std::to_string(m_Layers.back()->m_ActivationMat->buffer));
                 }
                 results = softmax(results);
@@ -468,7 +473,6 @@ namespace NNGL {
                     for (int i = 0; i < n; i++) {
                         m_TestBatchProvider(m_InputBatchMat, m_OutputBatchMat, m_BatchSize);
                         forwardPass(m_InputBatchMat);
-                        printMatrixSlice("Activations after forwardPass", m_Layers.back()->m_ActivationMat);
 
                         std::vector<float> results(outputSize);
                         std::vector<float> expected(outputSize);
@@ -477,7 +481,7 @@ namespace NNGL {
                         float* mapped = (float*)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
                         if (mapped) {
                             for (int j = 0; j < outputSize; j++) {
-                                results[j] = mapped[j * m_BatchSize + 0];
+                                results[j] = mapped[j];
                             }
                             glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
                         }

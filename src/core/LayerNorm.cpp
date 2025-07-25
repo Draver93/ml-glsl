@@ -4,8 +4,6 @@
 #include <algorithm>
 #include "ShaderCPUAnalogs.h"
 
-static bool g_LayerNormDebug = false;
-
 namespace NNGL {
     LayerNorm::LayerNorm(int normalizedShape, float epsilon)
         : m_NormalizedShape(normalizedShape), m_Epsilon(epsilon) {
@@ -23,33 +21,30 @@ namespace NNGL {
 
     std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual) {
         NNGL::Timer timer("LayerNorm::forward");
-        int seqLen = input->cols;
-        int modelDim = input->rows;
+        int seqLen = input->rows;
+        int modelDim = input->cols;
         m_CachedInput = input;
         m_CachedResidual = residual;
         
         // Prepare output: reuse m_CachedOutput if possible
-        if (!m_CachedOutput || m_CachedOutput->rows != modelDim || m_CachedOutput->cols != seqLen) {
-            m_CachedOutput = std::make_shared<Matrix>(modelDim, seqLen);
+        if (!m_CachedOutput || m_CachedOutput->rows != seqLen || m_CachedOutput->cols != modelDim) {
+            m_CachedOutput = std::make_shared<Matrix>(seqLen, modelDim);
             m_CachedOutput->uploadToGPU();
         }
 
-        m_ForwardShader->bindBuffer(0, "InputA", DEBUG_VALIDATION(input));
-        m_ForwardShader->bindBuffer(1, "InputB", DEBUG_VALIDATION(residual));
-        m_ForwardShader->bindBuffer(2, "Gamma", DEBUG_VALIDATION(m_Gamma));
-        m_ForwardShader->bindBuffer(3, "Beta", m_Beta->buffer); //ment to be 0
+        m_ForwardShader->bindBuffer(0, "InputA", input->buffer);
+        m_ForwardShader->bindBuffer(1, "InputB", residual->buffer);
+        m_ForwardShader->bindBuffer(2, "Gamma", m_Gamma->buffer);
+        m_ForwardShader->bindBuffer(3, "Beta", m_Beta->buffer);
         m_ForwardShader->bindBuffer(4, "Output", m_CachedOutput->buffer);
         m_ForwardShader->setUniform("seq_len", seqLen);
         m_ForwardShader->setUniform("model_dim", modelDim);
         m_ForwardShader->setUniform("epsilon", m_Epsilon);
+
         // Use correct workgroup count for local_size_x = 32
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_ForwardShader->dispatch(outputWorkgroupsX, 1, 1);
-
-        // Unbind buffers
         for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-
-        DEBUG_VALIDATION(m_CachedOutput);
 
         return m_CachedOutput;
     }
@@ -58,18 +53,19 @@ namespace NNGL {
         const std::shared_ptr<Matrix>& gradOutput,
         const std::shared_ptr<Matrix>& input,
         const std::shared_ptr<Matrix>& residual,
-        int colIdx
+        const GLuint gradMaskBuffer
     ) {
         NNGL::Timer timer("LayerNorm::backward");
-        int seqLen = input->cols;
-        int modelDim = input->rows;
+        int seqLen = input->rows;
+        int modelDim = input->cols;
+
         // Reuse gradient matrices if possible
-        if (!m_GradInput || m_GradInput->rows != modelDim || m_GradInput->cols != seqLen) {
-            m_GradInput = std::make_shared<Matrix>(modelDim, seqLen);
+        if (!m_GradInput || m_GradInput->rows != seqLen || m_GradInput->cols != modelDim) {
+            m_GradInput = std::make_shared<Matrix>(seqLen, modelDim);
             m_GradInput->uploadToGPU();
         }
-        if (!m_GradResidual || m_GradResidual->rows != modelDim || m_GradResidual->cols != seqLen) {
-            m_GradResidual = std::make_shared<Matrix>(modelDim, seqLen);
+        if (!m_GradResidual || m_GradResidual->rows != seqLen || m_GradResidual->cols != modelDim) {
+            m_GradResidual = std::make_shared<Matrix>(seqLen, modelDim);
             m_GradResidual->uploadToGPU();
         }
         // Allocate grad gamma/beta as (modelDim, seqLen) for per-position accumulation
@@ -82,30 +78,30 @@ namespace NNGL {
             m_GradBeta->uploadToGPU();
         }
 
-        m_BackwardShader->bindBuffer(0, "GradOutput", DEBUG_VALIDATION(gradOutput));
-        m_BackwardShader->bindBuffer(1, "InputA", DEBUG_VALIDATION(input));
-        m_BackwardShader->bindBuffer(2, "InputB", DEBUG_VALIDATION(residual));
-        m_BackwardShader->bindBuffer(3, "Gamma", DEBUG_VALIDATION(m_Gamma));
+        m_BackwardShader->bindBuffer(0, "GradOutput", gradOutput->buffer);
+        m_BackwardShader->bindBuffer(1, "InputA", input->buffer);
+        m_BackwardShader->bindBuffer(2, "InputB", residual->buffer);
+        m_BackwardShader->bindBuffer(3, "Gamma", m_Gamma->buffer);
         m_BackwardShader->bindBuffer(4, "Beta", m_Beta->buffer);
         m_BackwardShader->bindBuffer(5, "GradInputA", m_GradInput->buffer);
         m_BackwardShader->bindBuffer(6, "GradInputB", m_GradResidual->buffer);
         m_BackwardShader->bindBuffer(7, "GradGamma", m_GradGamma->buffer);
         m_BackwardShader->bindBuffer(8, "GradBeta", m_GradBeta->buffer);
+        if(gradMaskBuffer) 
+            m_BackwardShader->bindBuffer(9, "GradOutputMask", gradMaskBuffer);
+        m_BackwardShader->setUniform("use_mask", gradMaskBuffer != 0);
+
         m_BackwardShader->setUniform("seq_len", seqLen);
         m_BackwardShader->setUniform("model_dim", modelDim);
         m_BackwardShader->setUniform("epsilon", m_Epsilon);
-        m_BackwardShader->setUniform("col_idx", colIdx);
+
+
+
+        // Use correct workgroup count for local_size_x = 32
         int outputWorkgroupsX = (seqLen + 31) / 32;
         m_BackwardShader->dispatch(outputWorkgroupsX, 1, 1);
 
         // Unbind buffers
-        for (int i = 0; i <= 8; ++i) {
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
-        }
-
-        DEBUG_VALIDATION(m_GradInput);
-        DEBUG_VALIDATION(m_GradResidual);
-        DEBUG_VALIDATION(m_GradGamma);
-        DEBUG_VALIDATION(m_GradBeta);
+        for (int i = 0; i <= 9; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }
 } 

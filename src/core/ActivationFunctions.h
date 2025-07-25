@@ -4,53 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
-#include <iostream>
-#include <iomanip>
-#include <algorithm>
-#include "Matrix.h"
 
 namespace NNGL {
-    // Helper to print a 5x5 slice of a matrix
-    static void printMatrixSlice(const std::string& name, const std::shared_ptr<NNGL::Matrix>& mat) {
-        return;
-        if (!mat) { std::cout << name << ": nullptr" << std::endl; return; }
-        std::cout << "[DEBUG] " << name << " shape=[" << mat->rows << "," << mat->cols << "]\n";
-        int max_rows = std::min(5, mat->rows);
-        int max_cols = std::min(5, mat->cols);
-        // Print first 5 rows
-        for (int r = 0; r < max_rows; ++r) {
-            std::cout << "  ";
-            for (int c = 0; c < max_cols; ++c) {
-                std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-            }
-            if (mat->cols > 5) std::cout << "... ";
-            // Print last 5 columns if matrix is wide
-            if (mat->cols > 10) {
-                for (int c = mat->cols - 5; c < mat->cols; ++c) {
-                    std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-                }
-            }
-            std::cout << std::endl;
-        }
-        if (mat->rows > 5) std::cout << "  ..." << std::endl;
-        // Print last 5 rows if matrix is tall
-        if (mat->rows > 10) {
-            for (int r = mat->rows - 5; r < mat->rows; ++r) {
-                std::cout << "  ";
-                for (int c = 0; c < max_cols; ++c) {
-                    std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-                }
-                if (mat->cols > 5) std::cout << "... ";
-                if (mat->cols > 10) {
-                    for (int c = mat->cols - 5; c < mat->cols; ++c) {
-                        std::cout << std::setw(8) << std::setprecision(4) << (*mat)(r, c) << " ";
-                    }
-                }
-                std::cout << std::endl;
-            }
-        }
-    }
-
     static std::vector<float> softmax(const std::vector<float>& input) {
         std::vector<float> output(input.size());
 

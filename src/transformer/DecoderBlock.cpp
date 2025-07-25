@@ -28,19 +28,18 @@ namespace NNGL {
 
         // 2. Feed-forward network with residual connection
         auto mlpOut = m_FeedForward->forward(addNorm1Out);
-
         auto addNorm2Out = m_AddNorm2->forward(mlpOut, addNorm1Out);
 
         return addNorm2Out;
     }
 
-    std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, float learningRate, int colIdx) {
+    std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, const GLuint gradMaskBuffer, float learningRate) {
         NNGL::Timer timer("DecoderOnlyBlock::backward");
 
         // Backprop through addNorm2 (main: mlpOut, residual: addNorm1Out)
-        m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput(), colIdx);
+        m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput(), gradMaskBuffer);
         auto gradFFNInput = m_FeedForward->backward(m_AddNorm2->getGradInput(), learningRate);
-
+        
         // Backprop through addNorm1 (main: maskedOut, residual: input)
         m_AddNorm1->backward(gradFFNInput, m_MaskedSelfAttn->getCachedOutput(), m_CachedInput);
         auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(m_AddNorm1->getGradInput(), nullptr, learningRate);

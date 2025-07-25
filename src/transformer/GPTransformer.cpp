@@ -23,71 +23,91 @@ namespace NNGL {
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
-
+       
         m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
 
+        {
+            std::vector<int> gradMask(seqLen, 0);
+            gradMask[seqLen - 1] = 1;
+            glGenBuffers(1, &m_GradMaskBuffer);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_GradMaskBuffer);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, gradMask.size() * sizeof(int), gradMask.data(), GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        }
 
         m_TrainingSteps = 0;
         m_CurrentLoss = 0.0f;
     }
 
     float GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
-        // Fix padding logic: keep most recent tokens at the end, pad from the beginning
+        NNGL::Timer timer("GPTransformer::trainNextToken============================================================");
+
         std::vector<std::string> paddedContext = contextTokens;
-        if (paddedContext.size() > m_SeqLen) {
-            // Keep most recent tokens
-            paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
-        }
-        while (paddedContext.size() < m_SeqLen) {
-            // Pad from the beginning (left side) - this is correct for causal LM
-            paddedContext.insert(paddedContext.begin(), "<PAD>");
-        }
-        float loss = 1;
+        if (paddedContext.size() > m_SeqLen) paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
+        while (paddedContext.size() < m_SeqLen)  paddedContext.insert(paddedContext.begin(), "<PAD>");
+        
+        float loss = -1;
         int runCounter = 0;
-
         static int logCounter = 0;
-        logCounter++;
 
-        while (loss > 0 && runCounter < 2) {
+        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
+        m_TargetMat->clear();
+        m_TargetMat->set(0, targetTokenId, 1.0f);
+        m_TargetMat->uploadToGPU();
+
+        logCounter++;
+        if (0 && logCounter % 1000 == 0) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
-            printMatrixSlice("Logits after forwardPass", logits);
-
-            int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
-
             loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
+
             m_CurrentLoss = loss;
             m_TrainingSteps++;
             m_LossHistory.push_back(loss);
             if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
             int predictedTokenId = predictToken(logits);
             std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
-            if (logCounter % 10 == 0) {
-                std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
-                    << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
-                    << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
-                    << " | Context: [";
 
-                // Show the last 5 tokens (most recent context) instead of first 5
-                size_t startIdx = (paddedContext.size() > 5) ? paddedContext.size() - 5 : 0;
-                for (size_t i = startIdx; i < paddedContext.size(); ++i) {
-                    if (i > startIdx) std::cout << ", ";
-                    std::cout << "'" << paddedContext[i] << "'";
-                }
-                if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
-                std::cout << "]" << std::endl;
+            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
+                << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
+                << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
+                << " | Context: [";
+
+            // Show the last 5 tokens (most recent context) instead of first 5
+            size_t startIdx = (paddedContext.size() > 5) ? paddedContext.size() - 5 : 0;
+            for (size_t i = startIdx; i < paddedContext.size(); ++i) {
+                if (i > startIdx) std::cout << ", ";
+                std::cout << "'" << paddedContext[i] << "'";
             }
+            if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
+            std::cout << "]" << std::endl;
 
-            m_TargetMat->clear();
-            m_TargetMat->set(0, targetTokenId, 1.0f);
-            m_TargetMat->uploadToGPU();
+        }
+        {
+            NNGL::Timer timer("GPTransformer::glFenceSync WAITING");
+            GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
             backwardPass(paddedContext, m_TargetMat, learningRate);
-            runCounter++;
+
+            while (true) {
+                GLenum result = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000); // wait up to 0.1ms
+                if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED)
+                    break;
+            }
+            glDeleteSync(fence);
         }
+ 
+
+
+        //if (++refreshCounter % 500 == 0) {
+        //    std::this_thread::sleep_for(std::chrono::microseconds(5000000));  // ~0.5ms
+        //}
+        runCounter++;
 
         return loss;
     }
+
+
 
     std::string GPTransformer::eval(const std::string& inputText) {
         // 1. Tokenize input text
@@ -133,13 +153,11 @@ namespace NNGL {
             }
         }
         
-        
         return result;
     }
 
-
     float GPTransformer::calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode) {
-        //if (std::isnan((*logits)(0, 0))) throw std::runtime_error("logits is nan(");
+        if (std::isnan((*logits)(0, 0))) throw std::runtime_error("logits is nan(");
 
         std::vector<float> probabilities(m_VocabSize);
         float maxLogit = (*logits)(0, 0);
@@ -210,14 +228,16 @@ namespace NNGL {
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
-        decOutputMat->downloadFromGPU();
-        printMatrixSlice("Decoder output after forward", decOutputMat);
-        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->rows, 1);
-        for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(i, decOutputMat->cols - 1);
-        printMatrixSlice("Last token representation before upload", lastTokenRep);
-        lastTokenRep->uploadToGPU();
 
-        return m_OutputProjection->forward(lastTokenRep);
+        //std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->rows);
+        //{
+        //    NNGL::Timer timer("GPTransformer::forwardPass:1");
+        //    decOutputMat->downloadFromGPU();
+        //    for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(i, decOutputMat->cols - 1);
+        //    lastTokenRep->uploadToGPU();
+        //} OLD cpu logic not we spec  decOutputMat->cols - 1
+
+        return m_OutputProjection->forward(decOutputMat, decOutputMat->cols - 1);
     }
 
     void GPTransformer::backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate) {
@@ -231,19 +251,18 @@ namespace NNGL {
 
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
+        
+        //std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->rows);
+        //{
+        //    NNGL::Timer timer("GPTransformer::backwardPass:1");
+        //    decOutputMat->downloadFromGPU();
+        //    for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(i, decOutputMat->cols - 1);
+        //    lastTokenRep->uploadToGPU();
+        //} OLD cpu logic not we spec  decOutputMat->cols - 1
+  
+        std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(decOutputMat, targetMat, learningRate, decOutputMat->cols - 1);
 
-        decOutputMat->downloadFromGPU();
-        printMatrixSlice("Decoder output after forward", decOutputMat);
-        std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(decOutputMat->rows, 1);
-        for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(i, 0) = (*decOutputMat)(i, decOutputMat->cols - 1);
-        printMatrixSlice("Last token representation before upload", lastTokenRep);
-        lastTokenRep->uploadToGPU();
-
-        std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(lastTokenRep, targetMat, learningRate);
-
-        // Use last column directly for backward
-        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(outputGrad, learningRate, decOutputMat->cols - 1);
-        DEBUG_VALIDATION(decGrad);
+        std::shared_ptr<Matrix> decGrad = m_Decoder->backward(outputGrad, m_GradMaskBuffer, learningRate);
         m_Embedder->removePositionalEncoding(decGrad, paddingMask);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }
@@ -302,11 +321,13 @@ namespace NNGL {
         int padTokenId = getPadTokenId();
         
         // Find the first padding token to determine actual sequence length
-        len = 0; // Default to full length
+        len = tokenIds.size(); // Default to full length
         for (size_t i = 0; i < tokenIds.size(); ++i) {
             if (tokenIds[i] != padTokenId) {
                 mask[i] = 1; // Mark as valid token
-                len++;
+            } else {
+                len = i; // Found first padding token
+                break;
             }
         }
         
@@ -363,5 +384,4 @@ namespace NNGL {
         }
         std::cout << colors[COLOR_COUNT] << std::endl;
     }
-
 } 

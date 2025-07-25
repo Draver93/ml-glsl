@@ -8,12 +8,7 @@ extern "C" {
 #include <memory>
 #include <queue>
 #include <mutex>
-#include <queue>
-#include <string>
-
 #include <cmath>
-#include <stdexcept>
-#include "Matrix.h"
 
 namespace NNGL {
     class Matrix {
@@ -80,30 +75,5 @@ namespace NNGL {
 
         // Dirty state
         bool isDirty() const { return m_Dirty; }
-
-        // Sets all elements in rows where mask[i] == 0 to zero
-        void maskRows(const std::vector<int>& mask) {
-            if (mask.size() != static_cast<size_t>(rows)) throw std::runtime_error("maskRows: mask size does not match number of rows");
-            for (int i = 0; i < rows; ++i) {
-                if (mask[i] == 0) {
-                    for (int j = 0; j < cols; ++j) {
-                        (*this)(i, j) = 0.0f;
-                    }
-                }
-            }
-        }
     };
-//#define DEBUG_MATRIX_VALIDATION
-#ifdef DEBUG_MATRIX_VALIDATION
-    inline GLuint DEBUG_VALIDATION(const std::shared_ptr<Matrix>& mat) {
-        mat->downloadFromGPU();
-        float norm = mat->getNorm();
-        if (norm == 0.0f || std::isinf(norm) || std::isnan(norm))
-            throw std::runtime_error("Matrix norm is invalid in DEBUG_VALIDATION: " + std::to_string(norm));
-        return mat->buffer;
-    }
-#else
-#define DEBUG_VALIDATION(mat) ((mat)->buffer)
-#endif
 }
-
