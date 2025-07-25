@@ -14,8 +14,6 @@ layout(std430) writeonly buffer OutputV { float output_v[]; };  // [seq_len, mod
 uniform int seq_len;
 uniform int input_dim;
 uniform int model_dim;
-uniform int head_dim;
-uniform int num_heads;
 
 void main() {
     uint global_idx = gl_GlobalInvocationID.x;

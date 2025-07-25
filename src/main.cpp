@@ -1264,7 +1264,7 @@ void gptransformer_from_file() {
 
     int epochs = 10000;
     float initial_learning_rate = 0.0001f;
-    int progress_interval = 100; // Print progress every N trained lines
+    int progress_interval = 500; // Print progress every N trained lines
 
     // Training tracking
     float best_loss = std::numeric_limits<float>::infinity();
@@ -1397,8 +1397,8 @@ void gptransformer_from_file() {
 
         // Stop if we achieve very low loss
         if (avg_loss < 0.001f) {
-            //std::cout << "Stopping at epoch " << (epoch + 1) << " - achieved very low loss: " << avg_loss << std::endl;
-            //break;
+            std::cout << "Stopping at epoch " << (epoch + 1) << " - achieved very low loss: " << avg_loss << std::endl;
+            break;
         }
     }
 
@@ -1631,7 +1631,7 @@ int main(int argc, char** argv) {
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) { LOG_ERROR("Failed to initialize GLAD!"); return -1; }
 
     std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    int choice = 1; // Change this to test different functions
+    int choice = 2; // Change this to test different functions
 
     switch (choice) {
         case 0:

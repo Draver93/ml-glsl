@@ -84,7 +84,6 @@ namespace NNGL {
 
         m_EmbeddingForwardCompute->setUniform("vocab_size", (int)m_VocabSize);
         m_EmbeddingForwardCompute->setUniform("model_dim", (int)m_ModelDim);
-        m_EmbeddingForwardCompute->setUniform("max_seq_len", (int)m_MaxSeqLen);
         m_EmbeddingForwardCompute->setUniform("seq_len", (int)tokens.size());
 
         int localSizeX = 16;

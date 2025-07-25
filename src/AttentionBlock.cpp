@@ -129,9 +129,7 @@ namespace NNGL {
             m_ForwardPassWeightsCompute->bindBuffer(6, "OutputK", m_CachedK->buffer);
             m_ForwardPassWeightsCompute->bindBuffer(7, "OutputV", m_CachedV->buffer);
 
-            m_ForwardPassWeightsCompute->setUniform("head_dim", m_HeadDim);
             m_ForwardPassWeightsCompute->setUniform("model_dim", m_ModelDim);
-            m_ForwardPassWeightsCompute->setUniform("num_heads", m_NumHeads);
             m_ForwardPassWeightsCompute->setUniform("input_dim", input->cols);
             m_ForwardPassWeightsCompute->setUniform("seq_len", input->rows);
 
@@ -234,7 +232,6 @@ namespace NNGL {
 
             m_BackwardOutputCompute->setUniform("seq_len", m_SeqLen);
             m_BackwardOutputCompute->setUniform("head_dim", m_HeadDim);
-            m_BackwardOutputCompute->setUniform("num_heads", m_NumHeads);
 
             int workgroups_x = (m_SeqLen + 15) / 16;
             int workgroups_y = (m_SeqLen + 15) / 16;
@@ -252,7 +249,6 @@ namespace NNGL {
             m_BackwardScoresCompute->setUniform("has_padding_mask", !m_PaddingMask.empty());
             if (!m_PaddingMask.empty())m_BackwardScoresCompute->bindBuffer(3, "PaddingMask", m_PaddingMaskBuffer); // Bind padding mask if available
             m_BackwardScoresCompute->setUniform("seq_len", m_SeqLen);
-            m_BackwardScoresCompute->setUniform("num_heads", m_NumHeads);
             m_BackwardScoresCompute->setUniform("use_mask", m_UseMask ? 1 : 0);
 
             int workgroups_x = (m_SeqLen + 15) / 16;
@@ -270,7 +266,6 @@ namespace NNGL {
 
             m_BackwardProjectionsCompute->setUniform("seq_len", m_SeqLen);
             m_BackwardProjectionsCompute->setUniform("head_dim", m_HeadDim);
-            m_BackwardProjectionsCompute->setUniform("num_heads", m_NumHeads);
             float invSqrtHeadDim = 1.0f / std::sqrt(static_cast<float>(m_HeadDim));
             m_BackwardProjectionsCompute->setUniform("inv_sqrt_head_dim", invSqrtHeadDim);
 
@@ -334,7 +329,7 @@ namespace NNGL {
                 m_GradInputCompute->bindBuffer(2, "GradInput", gradInput->buffer);
 
                 m_GradInputCompute->setUniform("seq_len", m_SeqLen);
-                m_GradInputCompute->setUniform("model_dim", m_ModelDim);
+                m_GradInputCompute->setUniform("input_dim", m_ModelDim);
                 m_GradInputCompute->setUniform("head_dim", m_HeadDim);
                 m_GradInputCompute->setUniform("accumulate", accumulate ? 1 : 0); // Pass accumulate flag
 
@@ -353,7 +348,7 @@ namespace NNGL {
                 m_GradWeightCompute->bindBuffer(2, "GradWeight", gradWeight->buffer);
 
                 m_GradWeightCompute->setUniform("seq_len", m_SeqLen);
-                m_GradWeightCompute->setUniform("model_dim", m_ModelDim);
+                m_GradWeightCompute->setUniform("input_dim", m_ModelDim);
                 m_GradWeightCompute->setUniform("head_dim", m_HeadDim);
                 m_GradWeightCompute->setUniform("accumulate", accumulate ? 1 : 0); // Pass accumulate flag
 
