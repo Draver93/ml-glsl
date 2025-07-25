@@ -1,30 +1,31 @@
 #version 430
 layout(local_size_x = 32) in;
 
-layout(std430) readonly buffer InputQ { float input_q[]; };     // [seq_len, model_dim]
-layout(std430) readonly buffer InputKV { float input_kv[]; };   // [seq_len, model_dim]
-layout(std430) readonly buffer WeightQ { float weight_q[]; };   // [model_dim, model_dim]
-layout(std430) readonly buffer WeightK { float weight_k[]; };   // [model_dim, model_dim]
-layout(std430) readonly buffer WeightV { float weight_v[]; };   // [model_dim, model_dim]
+layout(std430) readonly buffer InputQ { float input_q[]; };     // [seq_len, input_dim]
+layout(std430) readonly buffer InputKV { float input_kv[]; };   // [seq_len, input_dim]
+layout(std430) readonly buffer WeightQ { float weight_q[]; };   // [input_dim, model_dim]
+layout(std430) readonly buffer WeightK { float weight_k[]; };   // [input_dim, model_dim]
+layout(std430) readonly buffer WeightV { float weight_v[]; };   // [input_dim, model_dim]
 
 layout(std430) writeonly buffer OutputQ { float output_q[]; };  // [seq_len, model_dim]
 layout(std430) writeonly buffer OutputK { float output_k[]; };  // [seq_len, model_dim]
 layout(std430) writeonly buffer OutputV { float output_v[]; };  // [seq_len, model_dim]
 
 uniform int seq_len;
+uniform int input_dim;
 uniform int model_dim;
-uniform int head_dim;
-uniform int num_heads;
 
 void main() {
     uint global_idx = gl_GlobalInvocationID.x;
     if (global_idx >= uint(seq_len * model_dim)) return;
 
+    // Decompose global index into sequence position and model dimension
     uint seq_pos = global_idx / uint(model_dim);  // sequence position (row index)
     uint model_dim_idx = global_idx % uint(model_dim);  // model dimension (column index)
 
+    // Compute Q projection: input_q @ weight_q
     float q_val = 0.0;
-    for (int i = 0; i < model_dim; i++) {
+    for (int i = 0; i < input_dim; i++) {
         uint input_col_major_idx = i * seq_len + seq_pos;
         uint weight_idx = i * model_dim + model_dim_idx;
         q_val += input_q[input_col_major_idx] * weight_q[weight_idx];
@@ -32,8 +33,9 @@ void main() {
     uint output_q_col_major_idx = model_dim_idx * seq_len + seq_pos;
     output_q[output_q_col_major_idx] = q_val;
 
+    // Compute K projection: input_kv @ weight_k
     float k_val = 0.0;
-    for (int i = 0; i < model_dim; i++) {
+    for (int i = 0; i < input_dim; i++) {
         uint input_col_major_idx = i * seq_len + seq_pos;
         uint weight_idx = i * model_dim + model_dim_idx;
         k_val += input_kv[input_col_major_idx] * weight_k[weight_idx];
@@ -41,8 +43,9 @@ void main() {
     uint output_k_col_major_idx = model_dim_idx * seq_len + seq_pos;
     output_k[output_k_col_major_idx] = k_val;
 
+    // Compute V projection: input_kv @ weight_v
     float v_val = 0.0;
-    for (int i = 0; i < model_dim; i++) {
+    for (int i = 0; i < input_dim; i++) {
         uint input_col_major_idx = i * seq_len + seq_pos;
         uint weight_idx = i * model_dim + model_dim_idx;
         v_val += input_kv[input_col_major_idx] * weight_v[weight_idx];

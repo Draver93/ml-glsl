@@ -30,8 +30,8 @@ void main() {
     for (int out_idx = 0; out_idx < seq_len; ++out_idx) {
         int token_idx = token_indices[out_idx];
         if (token_idx < 0 || token_idx >= vocab_size) continue;
-        uint idx = token_idx * model_dim + dim;
-        float grad = grads[out_idx * model_dim + dim];
+        uint idx = dim * model_dim + token_idx;
+        float grad = grads[dim * seq_len + out_idx];
 
         // Adam update
         adam_m[idx] = ADAM_beta1 * adam_m[idx] + (1.0 - ADAM_beta1) * grad;

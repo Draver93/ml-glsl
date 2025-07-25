@@ -1,0 +1,17 @@
+#version 430
+layout(local_size_x = 32) in;
+
+layout(std430) buffer Weight { float weight[]; };                    // [input_dim, head_dim]
+layout(std430) readonly buffer GradWeight { float grad_weight[]; };  // [input_dim, head_dim]
+
+uniform int input_dim;
+uniform int head_dim;
+uniform float learning_rate;
+
+void main() {
+    uint weight_idx = gl_GlobalInvocationID.x;  // flattened weight index
+    if (weight_idx >= uint(input_dim * head_dim)) return;
+    
+    // SGD update: weight = weight - learning_rate * grad_weight
+    weight[weight_idx] -= learning_rate * grad_weight[weight_idx];
+}

@@ -1,43 +1,48 @@
 #version 430
 layout(local_size_x = 32) in;
 
-layout(std430) readonly buffer GradScores { float grad_scores[]; };  // [num_heads * seq_len, seq_len]
-layout(std430) readonly buffer CachedQ { float cached_q[]; };        // [num_heads * seq_len, head_dim]
-layout(std430) readonly buffer CachedK { float cached_k[]; };        // [num_heads * seq_len, head_dim]
+layout(std430) readonly buffer GradScores { float grad_scores[]; };  // [seq_len, seq_len]
+layout(std430) readonly buffer CachedQ { float cached_q[]; };        // [seq_len, head_dim]
+layout(std430) readonly buffer CachedK { float cached_k[]; };        // [seq_len, head_dim]
 
-layout(std430) writeonly buffer GradQ { float grad_q[]; };           // [num_heads * seq_len, head_dim]
-layout(std430) writeonly buffer GradK { float grad_k[]; };           // [num_heads * seq_len, head_dim]
+layout(std430) writeonly buffer GradQ { float grad_q[]; };           // [seq_len, head_dim]
+layout(std430) writeonly buffer GradK { float grad_k[]; };           // [seq_len, head_dim]
 
 uniform int seq_len;
 uniform int head_dim;
-uniform int num_heads;
 uniform float inv_sqrt_head_dim;
 
 void main() {
     uint global_idx = gl_GlobalInvocationID.x;
-    if (global_idx >= uint(num_heads * seq_len * head_dim)) return;
-
-    uint head = global_idx / (seq_len * head_dim);
-    uint seq_pos = (global_idx / head_dim) % seq_len;
-    uint head_dim_idx = global_idx % head_dim;
-
-    // grad_q
+    if (global_idx >= uint(seq_len * head_dim)) return;
+    
+    // Decompose global index into sequence position and head dimension
+    uint seq_pos = global_idx / uint(head_dim);  // sequence position (row index)
+    uint head_dim_idx = global_idx % uint(head_dim);  // head dimension (column index)
+    
+    // Compute gradient w.r.t. Q: grad_Q = grad_scores @ K^T
     float grad_q_val = 0.0;
     for (int key_pos = 0; key_pos < seq_len; key_pos++) {
-        uint grad_scores_idx = (head * seq_len + seq_pos) * seq_len + key_pos;
-        uint cached_k_idx = (head * seq_len + key_pos) * head_dim + head_dim_idx;
-        grad_q_val += grad_scores[grad_scores_idx] * cached_k[cached_k_idx];
+        // grad_scores indexing: [query_pos * seq_len + key_pos]
+        uint grad_scores_idx = seq_pos * seq_len + key_pos;
+        // cached_k indexing: [head_dimension * seq_len + sequence_position]
+        uint cached_k_col_major_idx = head_dim_idx * seq_len + key_pos;
+        grad_q_val += grad_scores[grad_scores_idx] * cached_k[cached_k_col_major_idx];
     }
-    uint grad_q_idx = (head * seq_len + seq_pos) * head_dim + head_dim_idx;
-    grad_q[grad_q_idx] = grad_q_val * inv_sqrt_head_dim;
-
-    // grad_k
+    // Store Q gradient with column-major indexing: [head_dimension * seq_len + sequence_position]
+    uint grad_q_col_major_idx = head_dim_idx * seq_len + seq_pos;
+    grad_q[grad_q_col_major_idx] = grad_q_val * inv_sqrt_head_dim;
+    
+    // Compute gradient w.r.t. K: grad_K = grad_scores^T @ Q
     float grad_k_val = 0.0;
     for (int query_pos = 0; query_pos < seq_len; query_pos++) {
-        uint grad_scores_idx = (head * seq_len + query_pos) * seq_len + seq_pos;
-        uint cached_q_idx = (head * seq_len + query_pos) * head_dim + head_dim_idx;
-        grad_k_val += grad_scores[grad_scores_idx] * cached_q[cached_q_idx];
+        // grad_scores indexing: [query_pos * seq_len + key_pos] (key_pos = seq_pos)
+        uint grad_scores_idx = query_pos * seq_len + seq_pos;
+        // cached_q indexing: [head_dimension * seq_len + sequence_position]
+        uint cached_q_col_major_idx = head_dim_idx * seq_len + query_pos;
+        grad_k_val += grad_scores[grad_scores_idx] * cached_q[cached_q_col_major_idx];
     }
-    uint grad_k_idx = (head * seq_len + seq_pos) * head_dim + head_dim_idx;
-    grad_k[grad_k_idx] = grad_k_val * inv_sqrt_head_dim;
+    // Store K gradient with column-major indexing: [head_dimension * seq_len + sequence_position]
+    uint grad_k_col_major_idx = head_dim_idx * seq_len + seq_pos;
+    grad_k[grad_k_col_major_idx] = grad_k_val * inv_sqrt_head_dim;
 }
