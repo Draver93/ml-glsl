@@ -56,7 +56,7 @@ namespace NNGL {
         m_TargetMat->uploadToGPU();
 
         logCounter++;
-        if (0 && logCounter % 10 == 0) {
+        if (0 && logCounter % 1000 == 0) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
             loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
@@ -81,26 +81,28 @@ namespace NNGL {
             }
             if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
             std::cout << "]" << std::endl;
+
         }
-
-        backwardPass(paddedContext, m_TargetMat, learningRate);
-        runCounter++;
-
-        static int refreshCounter = 0;
-        if (++refreshCounter % 100 == 0) {
+        {
             NNGL::Timer timer("GPTransformer::glFenceSync WAITING");
             GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+
+            backwardPass(paddedContext, m_TargetMat, learningRate);
+
             while (true) {
                 GLenum result = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000); // wait up to 0.1ms
                 if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED)
                     break;
             }
             glDeleteSync(fence);
-          
         }
+ 
+
+
         //if (++refreshCounter % 500 == 0) {
         //    std::this_thread::sleep_for(std::chrono::microseconds(5000000));  // ~0.5ms
         //}
+        runCounter++;
 
         return loss;
     }

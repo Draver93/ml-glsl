@@ -1113,9 +1113,9 @@ void gptransformer_from_file() {
     std::srand(42);
     std::cout << "=== GPTransformer Training from File (Individual Sentences) ===" << std::endl;
 
-    int d_model = 256;
-    int d_hidden = d_model * 4;
-    int seq_len = 64;
+    int d_model = 768;
+    int d_hidden = d_model * 2;
+    int seq_len = 1024;
 
     std::string bpe_file = "bpe50k_v2.checkpoint";
     if (false)
@@ -1264,7 +1264,7 @@ void gptransformer_from_file() {
 
     int epochs = 10000;
     float initial_learning_rate = 0.0001f;
-    int progress_interval = 500; // Print progress every N trained lines
+    int progress_interval = 50; // Print progress every N trained lines
 
     // Training tracking
     float best_loss = std::numeric_limits<float>::infinity();
@@ -1272,8 +1272,8 @@ void gptransformer_from_file() {
     std::vector<float> epoch_losses;
     int total_lines_trained = 0;
     float running_loss_sum = 0.0f;
-    int running_loss_count = 0;
-
+    int running_loss_count = 0, tokenesTrained = 0;
+    NNGL::Timer timer_info("Time to process:" + std::to_string(progress_interval) + "lines", NNGL::LogLevel::LL_INFO);
     for (int epoch = 0; epoch < epochs; ++epoch) {
         // Learning rate decay
         float learning_rate = initial_learning_rate * std::pow(0.95f, epoch / 50.0f);
@@ -1292,12 +1292,11 @@ void gptransformer_from_file() {
         // Train on each sentence independently
         for (size_t idx : indices) {
             const auto& example = examples[idx];
-
             // Train next-token prediction for each position in this sentence
             for (size_t i = 1; i < example.tokens.size(); ++i) {
                 std::vector<std::string> context(example.tokens.begin(), example.tokens.begin() + i);
                 std::string target = example.tokens[i];
-
+                tokenesTrained++;
                 float loss = gpt->trainNextToken(context, target, learning_rate);
                 if (loss == -1) continue; //means this run didn't check loss 
 
@@ -1307,18 +1306,21 @@ void gptransformer_from_file() {
                 // Track running loss for progress reporting
                 running_loss_sum += loss;
                 running_loss_count++;
+
             }
 
             total_lines_trained++;
 
             // Print progress every N trained lines
             if (total_lines_trained % progress_interval == 0) {
+                timer_info.reset();
                 float avg_running_loss = running_loss_sum / running_loss_count;
                 std::cout << "Lines trained: " << total_lines_trained
                     << " | Epoch: " << (epoch + 1)
-                    << " | Recent avg loss: " << std::fixed << std::setprecision(4) << avg_running_loss
+                    //<< " | Recent avg loss: " << std::fixed << std::setprecision(4) << avg_running_loss
+                    << " | Total Tokens trained: " << tokenesTrained
                     << " | LR: " << std::fixed << std::setprecision(6) << learning_rate << std::endl;
-
+                tokenesTrained = 0;
                 // Reset running loss for next interval
                 running_loss_sum = 0.0f;
                 running_loss_count = 0;
