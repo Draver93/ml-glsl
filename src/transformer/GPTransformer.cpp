@@ -13,20 +13,13 @@ namespace NNGL {
     GPTransformer::GPTransformer(std::string bpeFilepath, int modelDim, int hiddenDim, int seqLen) 
         : m_SeqLen(seqLen) {
 
-        m_Tokenizer = std::make_unique<BPE>();
-        m_Tokenizer->load(bpeFilepath);
-        m_Tokenizer->addToken("<PAD>");
-        m_Tokenizer->addToken("<SOS>");
-        m_Tokenizer->addToken("<EOS>");
+        m_Embedder = std::make_unique<EmbeddingBlock>(bpeFilepath, modelDim, m_SeqLen);
+        m_VocabSize = m_Embedder->getVocabSize();
 
-        m_VocabSize = m_Tokenizer->getVocabSize();
-
-        m_Embedder = std::make_unique<EmbeddingBlock>(m_VocabSize, modelDim, m_SeqLen);
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
 
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
-       
 
         m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
         {
@@ -37,45 +30,21 @@ namespace NNGL {
             glBufferData(GL_SHADER_STORAGE_BUFFER, gradMask.size() * sizeof(int), gradMask.data(), GL_DYNAMIC_DRAW);
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         }
-
-        m_TrainingSteps = 0;
-        m_CurrentLoss = 0.0f;
     }
 
     GPTransformer::GPTransformer(std::string checkpointFilepath) {
         std::ifstream file(checkpointFilepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for reading: " + checkpointFilepath);
 
-        while (file) {
-            size_t len;
-            if (!file.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
-
-            std::string tokenStr(len, '\0');
-            if (!file.read(tokenStr.data(), len)) break;
-
-            size_t usageScore;
-            if (!file.read(reinterpret_cast<char*>(&usageScore), sizeof(usageScore))) break;
-
-            auto token = std::make_shared<Token>(tokenStr[0]);
-            for (size_t i = 1; i < tokenStr.size(); ++i) {
-                auto nextChar = std::make_shared<Token>(tokenStr[i]);
-                token = std::make_shared<Token>(token, nextChar);
-            }
-        }
     }
-    void save(std::string checkpointFilepath) {
+    void GPTransformer::save(std::string checkpointFilepath) {
         std::ofstream file(checkpointFilepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for writing: " + checkpointFilepath);
-        std::vector<float> vec(100, 1.2f);
 
-        size_t len = vec.size() * sizeof(float);
-        file.write(reinterpret_cast<const char*>(&len), sizeof(len));
-        file.write(reinterpret_cast<const char*>(vec.data()), len);
+        int projection_nn_size = m_OutputProjection->getSaveSize();
+        const char *projection_nn_buffer = m_OutputProjection->save();
     }
 
-    void GPTransformer::save(std::string checkpointFilepath) {
-
-    }
 
     float GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
         NNGL::Timer timer("GPTransformer::trainNextToken============================================================");
@@ -88,7 +57,7 @@ namespace NNGL {
         int runCounter = 0;
         static int logCounter = 0;
 
-        int targetTokenId = m_Tokenizer->getTokenByName(targetToken);
+        int targetTokenId = m_Embedder->getTokenByName(targetToken);
         m_TargetMat->clear();
         m_TargetMat->set(0, targetTokenId, 1.0f);
         m_TargetMat->uploadToGPU();
@@ -99,12 +68,8 @@ namespace NNGL {
             logits->downloadFromGPU();
             loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
 
-            m_CurrentLoss = loss;
-            m_TrainingSteps++;
-            m_LossHistory.push_back(loss);
-            if (m_LossHistory.size() > 1000) m_LossHistory.erase(m_LossHistory.begin());
             int predictedTokenId = predictToken(logits);
-            std::string predictedToken = m_Tokenizer->getTokenById(predictedTokenId);
+            std::string predictedToken = m_Embedder->getTokenById(predictedTokenId);
 
             std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
                 << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
@@ -147,7 +112,7 @@ namespace NNGL {
 
     std::string GPTransformer::eval(const std::string& inputText) {
         // 1. Tokenize input text
-        std::vector<std::string> paddedContext = m_Tokenizer->tokenizeInput(inputText.data(), inputText.size());
+        std::vector<std::string> paddedContext = m_Embedder->tokenizeInput(inputText.data(), inputText.size());
         if (paddedContext.size() > m_SeqLen) {
             // Keep most recent tokens
             paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
@@ -170,7 +135,7 @@ namespace NNGL {
             // Check for EOS
             if (nextTokenId == eosTokenId) break;
             
-            std::string nextToken = m_Tokenizer->getTokenById(nextTokenId);
+            std::string nextToken = m_Embedder->getTokenById(nextTokenId);
             generatedTokens.push_back(nextToken);
             
             // Maintain full context by shifting and adding new token
@@ -248,12 +213,6 @@ namespace NNGL {
         }
     }
 
-    void GPTransformer::resetTrainingStats() {
-        m_LossHistory.clear();
-        m_TrainingSteps = 0;
-        m_CurrentLoss = 0.0f;
-    }
-
     std::shared_ptr<Matrix> GPTransformer::forwardPass(const std::vector<std::string>& inputTokens) {
 
         NNGL::Timer timer("GPTransformer::forwardPass");
@@ -323,21 +282,11 @@ namespace NNGL {
         std::vector<int> tokenIds;
         tokenIds.reserve(tokens.size());
         for (const auto& token : tokens) {
-            size_t tokenId = m_Tokenizer->getTokenByName(token);
+            size_t tokenId = m_Embedder->getTokenByName(token);
             if (tokenId >= 0 && tokenId < m_VocabSize) tokenIds.push_back(static_cast<int>(tokenId));
             else tokenIds.push_back(getPadTokenId());
         }
         return tokenIds;
-    }
-
-    std::vector<std::string> GPTransformer::tokenIdsToStrings(const std::vector<int>& tokenIds) {
-        std::vector<std::string> tokens;
-        tokens.reserve(tokenIds.size());
-        for (int tokenId : tokenIds) {
-            if (tokenId >= 0 && tokenId < m_VocabSize) tokens.push_back(m_Tokenizer->getTokenById(tokenId));
-            else tokens.push_back("<PAD>");
-        }
-        return tokens;
     }
 
     std::vector<int> GPTransformer::createPaddingMask(const std::vector<int>& tokenIds, int &len) const {
@@ -357,24 +306,7 @@ namespace NNGL {
         
         return mask;
     }
-    std::shared_ptr<Matrix> GPTransformer::getCachedEmbedding(const std::vector<int>& tokens) {
-        std::stringstream ss;
-        for (int tokenId : tokens) ss << tokenId << ",";
-        std::string cacheKey = ss.str();
-        {
-            std::lock_guard<std::mutex> lock(m_CacheMutex);
-            auto it = m_EmbeddingCache.find(cacheKey);
-            if (it != m_EmbeddingCache.end()) return it->second;
-        }
-        std::vector<std::string> tokenStrings = tokenIdsToStrings(tokens);
-        std::shared_ptr<Matrix> embedding = m_Embedder->forward(tokenStrings);
-        {
-            std::lock_guard<std::mutex> lock(m_CacheMutex);
-            if (m_EmbeddingCache.size() > 1000) m_EmbeddingCache.clear();
-            m_EmbeddingCache[cacheKey] = embedding;
-        }
-        return embedding;
-    }
+
     void GPTransformer::printGradientHeatmap(std::shared_ptr<Matrix> mat) {
         const std::string colors[] = {
             "\033[48;5;17m", "\033[48;5;18m", "\033[48;5;19m", "\033[48;5;20m", "\033[48;5;21m",

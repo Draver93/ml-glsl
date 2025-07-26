@@ -16,6 +16,7 @@ namespace NNGL {
 
 		NeuralNetwork(const char *data);
 		const char* save();
+		size_t getSaveSize() const;
 	public:
 		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat, int use_col_idx = -1);
 		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate, int use_col_idx = -1);
@@ -23,6 +24,7 @@ namespace NNGL {
 		std::shared_ptr<Matrix> getCachedOutput() { return m_Layers.back()->m_ActivationMat; }
 	public:
 		void addLayer(int width, int height, ActivationFnType type);
+		void addLayer(const char* data);
 		void train(float learningRate = 0.01f);
 		float eval(int samplesToTest, bool do_softmax = false);
 		void run();
@@ -43,6 +45,7 @@ namespace NNGL {
 		void weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate, int use_col_idx = -1);
 		void inputGradientCalc();
 
+		void loadShaders();
 	private:
 		int m_ADAM_Timestep;
 		int m_BatchSize;

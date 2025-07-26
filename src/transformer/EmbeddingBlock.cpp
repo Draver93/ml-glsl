@@ -6,18 +6,24 @@
 #include <iostream>
 #include <unordered_map> 
 #include "ActivationFunctions.h"
+
 #include "Logger.h"
 
 
 namespace NNGL {
-    EmbeddingBlock::EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen) :
-        m_VocabSize(vocabSize), 
+    EmbeddingBlock::EmbeddingBlock(std::string bpeFilepath, size_t modelDim, size_t maxSeqLen) :
         m_ModelDim(modelDim),
         m_MaxSeqLen(maxSeqLen),
         m_ADAM_Timestep(0),
         m_TotalUpdates(0),
         m_AverageGradientMagnitude(0.0f) {
 
+        m_Tokenizer = std::make_unique<BPE>();
+        m_Tokenizer->load(bpeFilepath);
+        m_Tokenizer->addToken("<PAD>");
+        m_Tokenizer->addToken("<SOS>");
+        m_Tokenizer->addToken("<EOS>");
+        m_VocabSize = m_Tokenizer->getVocabSize();
 
         // Initialize random number generator
         std::random_device rd;
@@ -39,7 +45,6 @@ namespace NNGL {
         m_EmbeddingsMat = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
         m_EmbeddingsMat->randomize(0.0f, 0.1f);
         m_EmbeddingsMat->uploadToGPU();
-        m_EmbeddingsIds.reserve(m_VocabSize);
 
         // --- Adam buffers for embeddings ---
         m_AdamMEmbeddings = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
@@ -51,13 +56,8 @@ namespace NNGL {
 
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<std::string>& tokens) {
         std::vector<int> indices(m_MaxSeqLen, 0);
-        for (int i = 0; i < tokens.size(); i++) {
-            if (m_EmbeddingsIds.find(tokens[i]) == m_EmbeddingsIds.end()) {
-                int id = m_EmbeddingsIds.size();
-                m_EmbeddingsIds[tokens[i]] = id;
-            }
-            indices[i] = m_EmbeddingsIds[tokens[i]];
-        }
+        for (int i = 0; i < tokens.size(); i++) indices[i] = m_Tokenizer->getTokenByName(tokens[i]);
+
         return getIndexBuffer(indices);
     }
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<int>& indices) {

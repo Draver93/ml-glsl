@@ -12,21 +12,69 @@
 
 namespace NNGL {
     NeuralNetwork::NeuralNetwork(int batchSize) : m_BatchSize(batchSize), m_ADAM_Timestep(0) {
-        //Neural Network run
-        if (!m_ForwardPassCompute)	m_ForwardPassCompute = ShaderManager::getInstance().getShader("shaders/forward_pass.comp");
-
-        //Backpropagation delta calc
-        if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = ShaderManager::getInstance().getShader("shaders/output_delta_loss.comp");
-        if (!m_HiddenDeltasCompute) m_HiddenDeltasCompute = ShaderManager::getInstance().getShader("shaders/hidden_delta_loss.comp");
-
-        //Backpropagation weights/biases update by delta
-        if (!m_WeightsCompute)		m_WeightsCompute = ShaderManager::getInstance().getShader("shaders/update_weights.comp");
-        if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
-
-        if(!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
-
+        loadShaders();
     };
     NeuralNetwork::NeuralNetwork(const char *data) : m_ADAM_Timestep(0) {
+        if (!data) throw std::invalid_argument("Data pointer cannot be null");
+
+        const char* ptr = data;
+
+        std::memcpy(&m_BatchSize, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        int layerCount = 0;
+        std::memcpy(&layerCount, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        for(int i = 0; i < layerCount; i++) { 
+            int size = 0;
+            std::memcpy(&size, ptr, sizeof(int));
+            ptr += sizeof(int);
+            addLayer(ptr);
+            ptr += size;
+        }
+
+        loadShaders();
+    };
+
+    const char* NeuralNetwork::save() {
+        // Allocate buffer (caller is responsible for freeing this memory)
+        char* buffer = new char[getSaveSize()];
+        char* ptr = buffer;
+
+        std::memcpy(ptr, &m_BatchSize, sizeof(int));
+        ptr += sizeof(int);
+
+        int layerCount = m_Layers.size();
+        std::memcpy(ptr, &layerCount, sizeof(int));
+        ptr += sizeof(int);
+
+        for (auto& l : m_Layers) {
+            int size = l->getSaveSize();
+            std::memcpy(ptr, &size, sizeof(int));
+            ptr += sizeof(int);
+
+            const char* data = l->save();
+            std::memcpy(ptr, data, size);
+            ptr += size;
+
+            delete[] data;
+        }
+        LOG_DEBUG("[NETWORK SAVE] Network saved successfully to binary buffer");
+
+        return buffer;
+    }
+
+    size_t NeuralNetwork::getSaveSize() const {
+        size_t header_size = 2 * sizeof(int);
+        size_t layers_data_size = 0;
+        for (const auto& l : m_Layers) layers_data_size += sizeof(int) + l->getSaveSize();
+
+        return header_size + layers_data_size;
+    }
+	NeuralNetwork::~NeuralNetwork() { }
+
+    void NeuralNetwork::loadShaders() {
         //Neural Network run
         if (!m_ForwardPassCompute)	m_ForwardPassCompute = ShaderManager::getInstance().getShader("shaders/forward_pass.comp");
 
@@ -39,18 +87,7 @@ namespace NNGL {
         if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
 
         if (!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
-
-        m_Layers;
-        m_BatchSize;
-    };
-
-    const char* NeuralNetwork::save() {
-        m_Layers;
-        m_BatchSize;
-        return nullptr;
     }
-
-	NeuralNetwork::~NeuralNetwork() { }
 
 	void NeuralNetwork::addLayer(int width, int height,  ActivationFnType type) {
 		if (!m_Layers.empty() && m_Layers.back()->getSize().y != width)
@@ -62,7 +99,14 @@ namespace NNGL {
         m_InputBatchMat = nullptr;
         m_OutputBatchMat = nullptr;
 	}
+    void NeuralNetwork::addLayer(const char *data) {
 
+        m_Layers.push_back(std::unique_ptr<NNGL::Layer>(new NNGL::Layer(data)));
+
+        //we changed layer structure so we need to update mat's
+        m_InputBatchMat = nullptr;
+        m_OutputBatchMat = nullptr;
+    }
 	void NeuralNetwork::forwardPass(std::shared_ptr<Matrix> &inputBatchMat, int use_col_idx) {
 		GLuint currentInput = inputBatchMat->buffer;
 

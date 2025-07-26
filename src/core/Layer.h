@@ -18,8 +18,12 @@ namespace NNGL {
 	private:
 		Layer(int width, int height, int batchSize, ActivationFnType type);
 
+		Layer(const char* data);
+		const char* save();
+		size_t getSaveSize() const;
+
 	public:
-		~Layer();
+		~Layer() { }
 
 		glm::uvec2 getSize() { return { m_Width , m_Height }; }
 		void printHeatmap();
@@ -35,6 +39,7 @@ namespace NNGL {
 
 		int m_Width; // aka input size
 		int m_Height; // output size
+		int m_BatchSize;
 
 		ActivationFnType m_ActivationFnType;
 

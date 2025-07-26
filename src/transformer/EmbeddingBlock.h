@@ -8,12 +8,13 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include "BPE.h"
 
 namespace NNGL {
     class EmbeddingBlock {
     private:
+        std::unique_ptr<BPE> m_Tokenizer;
         std::shared_ptr<Matrix> m_EmbeddingsMat;
-        std::unordered_map<std::string, int> m_EmbeddingsIds;
 
         
         std::mt19937 m_Generator;
@@ -48,8 +49,19 @@ namespace NNGL {
         GLuint getIndexBuffer(const std::vector<std::string>& tokens);
         GLuint getIndexBuffer(const std::vector<int>& indices);
     public:
-        EmbeddingBlock(size_t vocabSize, size_t modelDim, size_t maxSeqLen);
-        
+        EmbeddingBlock(std::string bpeFilepath, size_t modelDim, size_t maxSeqLen);
+        size_t getTokenByName(const std::string& name) {
+            return m_Tokenizer->getTokenByName(name);
+        }
+        const std::string& getTokenById(int id) {
+            return m_Tokenizer->getTokenById(id);
+        }
+        std::vector<std::string> tokenizeInput(const char* input, size_t inputLen) {
+            return m_Tokenizer->tokenizeInput(input, inputLen);
+        }
+
+        int getVocabSize() { return m_VocabSize; }
+
         std::shared_ptr<Matrix> forward(const std::vector<std::string>& tokens);
         void backward(const std::vector<std::string>& tokens, std::shared_ptr<Matrix> gradOutput, float learningRate);
         

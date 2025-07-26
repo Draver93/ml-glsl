@@ -69,7 +69,10 @@ namespace NNGL {
         std::unordered_map<char, std::unique_ptr<TrieNode>> children;
     };
 
+    class BPE;
     class TokenTrie {
+    public:
+        friend BPE;
     private:
         std::unordered_map<int, std::string> m_IdToToken;
         std::unordered_map<std::string, int> m_TokenToId;
@@ -199,19 +202,19 @@ namespace NNGL {
             rebuildMaps(&root);
         }
 
-        std::string getTokenById(int id) const {
+        const std::string& getTokenById(int id) {
             auto it = m_IdToToken.find(id);
-            if (it == m_IdToToken.end()) throw std::runtime_error("Token not found");
+            if (it == m_IdToToken.end()) 
+                throw std::runtime_error("Token not found");
             return it->second;
         }
 
-        int getIdByToken(const std::string& token) const {
+        int getIdByToken(const std::string& token) {
             auto it = m_TokenToId.find(token);
             if (it == m_TokenToId.end()) 
                 throw std::runtime_error("Token not found");
             return it->second;
         }
-
 
         size_t getTokenCount() { return m_IdToToken.size(); }
 
@@ -224,6 +227,7 @@ namespace NNGL {
     };
 
     class BPE {
+
     public:
         explicit BPE(size_t mergeLimit = 10000);
 
@@ -234,7 +238,7 @@ namespace NNGL {
         std::vector<std::string> tokenizeInput(const char* input, size_t inputLen);
         void reduceVocab(size_t maxSize) { m_TokenTrie.reduce(maxSize); };
         size_t getVocabSize() { return m_TokenTrie.getTokenCount(); }
-        std::string getTokenById(int id) { return m_TokenTrie.getTokenById(id); }
+        const std::string& getTokenById(int id) { return m_TokenTrie.getTokenById(id); }
         size_t getTokenByName(const std::string &name) { return m_TokenTrie.getIdByToken(name); }
 
         void save(const std::string& filepath) const;
