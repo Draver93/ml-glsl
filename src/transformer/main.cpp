@@ -64,9 +64,9 @@ int main(int argc, char** argv) {
         std::srand(42);
         std::cout << "=== GPTransformer Training from File (Individual Sentences) ===" << std::endl;
 
-        int d_model = 768;
+        int d_model = 256;
         int d_hidden = d_model * 2;
-        int seq_len = 64;
+        int seq_len = 16;
 
         std::string bpe_file = "bpe50k_v2.checkpoint";
         if (false)

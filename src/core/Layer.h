@@ -23,17 +23,15 @@ namespace NNGL {
 
 		glm::uvec2 getSize() { return { m_Width , m_Height }; }
 		void printHeatmap();
-		void displayLayer(const std::string& layerName);
 
 	private:
-		GLuint m_WeightBuffer;
-		GLuint m_BiasBuffer;
-		std::shared_ptr<Matrix> m_ActivationMat;
-		GLuint m_PreactivationBuffer;
-		GLuint m_DeltaBuffer;
-
-		GLuint m_ADAM_MBuffer;
-		GLuint m_ADAM_VBuffer;
+		std::shared_ptr<Matrix> 
+			m_PreactivationMat,
+			m_ActivationMat,
+			m_WeightMat,
+			m_DeltaMat,
+			m_BiasMat;
+		std::shared_ptr<Matrix> m_ADAM_M_Mat, m_ADAM_V_Mat;
 
 		int m_Width; // aka input size
 		int m_Height; // output size

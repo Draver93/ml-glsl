@@ -70,10 +70,10 @@ namespace NNGL {
             auto &layer = m_Layers[layerIdx];
 
             m_ForwardPassCompute->bindBuffer(0, "InputBuffer", currentInput);
-            m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightBuffer);
-            m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasBuffer);
+            m_ForwardPassCompute->bindBuffer(1, "WeightBuffer", layer->m_WeightMat->buffer);
+            m_ForwardPassCompute->bindBuffer(2, "BiasBuffer", layer->m_BiasMat->buffer);
             m_ForwardPassCompute->bindBuffer(3, "OutputBuffer", layer->m_ActivationMat->buffer);
-            m_ForwardPassCompute->bindBuffer(4, "PreActivationBuffer", layer->m_PreactivationBuffer);
+            m_ForwardPassCompute->bindBuffer(4, "PreActivationBuffer", layer->m_PreactivationMat->buffer);
 
             m_ForwardPassCompute->setUniform("input_size", (int)layer->getSize().x);
             m_ForwardPassCompute->setUniform("output_size", (int)layer->getSize().y);
@@ -97,8 +97,8 @@ namespace NNGL {
 
         m_OutputDeltaCompute->bindBuffer(0, "OutputBuffer", m_Layers.back()->m_ActivationMat->buffer);
         m_OutputDeltaCompute->bindBuffer(1, "TargetBuffer", outputBatchMat->buffer);
-        m_OutputDeltaCompute->bindBuffer(2, "PreActivationBuffer", m_Layers.back()->m_PreactivationBuffer);
-        m_OutputDeltaCompute->bindBuffer(3, "DeltaBuffer", m_Layers.back()->m_DeltaBuffer);
+        m_OutputDeltaCompute->bindBuffer(2, "PreActivationBuffer", m_Layers.back()->m_PreactivationMat->buffer);
+        m_OutputDeltaCompute->bindBuffer(3, "DeltaBuffer", m_Layers.back()->m_DeltaMat->buffer);
 
         m_OutputDeltaCompute->setUniform("output_size", (int)m_Layers.back()->getSize().y);
         m_OutputDeltaCompute->setUniform("batch_size", m_BatchSize);
@@ -117,10 +117,10 @@ namespace NNGL {
 	void NeuralNetwork::hiddenLayersLossCalc() {
 		for (int i = static_cast<int>(m_Layers.size()) - 2; i >= 0; i--) {
 
-            m_HiddenDeltasCompute->bindBuffer(0, "PreActivationBuffer", m_Layers[i]->m_PreactivationBuffer);
-            m_HiddenDeltasCompute->bindBuffer(1, "NextDeltaBuffer", m_Layers[i + 1]->m_DeltaBuffer);
-            m_HiddenDeltasCompute->bindBuffer(2, "WeightBuffer", m_Layers[i + 1]->m_WeightBuffer);
-            m_HiddenDeltasCompute->bindBuffer(3, "DeltaBuffer", m_Layers[i]->m_DeltaBuffer);
+            m_HiddenDeltasCompute->bindBuffer(0, "PreActivationBuffer", m_Layers[i]->m_PreactivationMat->buffer);
+            m_HiddenDeltasCompute->bindBuffer(1, "NextDeltaBuffer", m_Layers[i + 1]->m_DeltaMat->buffer);
+            m_HiddenDeltasCompute->bindBuffer(2, "WeightBuffer", m_Layers[i + 1]->m_WeightMat->buffer);
+            m_HiddenDeltasCompute->bindBuffer(3, "DeltaBuffer", m_Layers[i]->m_DeltaMat->buffer);
 
             m_HiddenDeltasCompute->setUniform("current_size", (int)m_Layers[i]->getSize().y);
             m_HiddenDeltasCompute->setUniform("next_size", (int)m_Layers[i + 1]->getSize().y);
@@ -148,10 +148,10 @@ namespace NNGL {
             // --- WEIGHTS UPDATE WITH ADAM ---
             {
                 m_WeightsCompute->bindBuffer(0, "InputBuffer", currentInput);
-                m_WeightsCompute->bindBuffer(1, "DeltaBuffer", layer->m_DeltaBuffer);
-                m_WeightsCompute->bindBuffer(2, "WeightBuffer", layer->m_WeightBuffer);
-                m_WeightsCompute->bindBuffer(3, "ADAM_MBuffer", layer->m_ADAM_MBuffer);
-                m_WeightsCompute->bindBuffer(4, "ADAM_VBuffer", layer->m_ADAM_VBuffer);
+                m_WeightsCompute->bindBuffer(1, "DeltaBuffer", layer->m_DeltaMat->buffer);
+                m_WeightsCompute->bindBuffer(2, "WeightBuffer", layer->m_WeightMat->buffer);
+                m_WeightsCompute->bindBuffer(3, "ADAM_MBuffer", layer->m_ADAM_M_Mat->buffer);
+                m_WeightsCompute->bindBuffer(4, "ADAM_VBuffer", layer->m_ADAM_V_Mat->buffer);
 
                 m_WeightsCompute->setUniform("input_size", (int)layer->getSize().x);
                 m_WeightsCompute->setUniform("output_size", (int)layer->getSize().y);
@@ -176,8 +176,8 @@ namespace NNGL {
 
             // --- BIASES UPDATE (Simple Gradient Descent) ---
             {
-                m_BiasesCompute->bindBuffer(0, "DeltaBuffer", layer->m_DeltaBuffer);
-                m_BiasesCompute->bindBuffer(1, "BiasBuffer", layer->m_BiasBuffer);
+                m_BiasesCompute->bindBuffer(0, "DeltaBuffer", layer->m_DeltaMat->buffer);
+                m_BiasesCompute->bindBuffer(1, "BiasBuffer", layer->m_BiasMat->buffer);
 
                 m_BiasesCompute->setUniform("output_size", (int)layer->getSize().y);
                 m_BiasesCompute->setUniform("batch_size", m_BatchSize);
@@ -297,8 +297,8 @@ namespace NNGL {
                 " (" + std::to_string(m_BatchSize * firstLayer->getSize().x * sizeof(float)) + " bytes)");
         }
 
-        m_InputDeltaCompute->bindBuffer(0, "NextDeltaBuffer", firstLayer->m_DeltaBuffer);
-        m_InputDeltaCompute->bindBuffer(1, "WeightBuffer", firstLayer->m_WeightBuffer);
+        m_InputDeltaCompute->bindBuffer(0, "NextDeltaBuffer", firstLayer->m_DeltaMat->buffer);
+        m_InputDeltaCompute->bindBuffer(1, "WeightBuffer", firstLayer->m_WeightMat->buffer);
         m_InputDeltaCompute->bindBuffer(2, "InputDeltaBuffer", m_InputGradMat->buffer);
         m_InputDeltaCompute->setUniform("input_size", (int)firstLayer->getSize().x);
         m_InputDeltaCompute->setUniform("output_size", (int)firstLayer->getSize().y);
@@ -345,12 +345,12 @@ namespace NNGL {
 
 
     void NeuralNetwork::setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss) {
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_Layers.back()->m_DeltaBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, targetLoss->rows * targetLoss->cols * sizeof(float), targetLoss->getFlatVec().data(), GL_DYNAMIC_DRAW);
+        
+        m_Layers.back()->m_DeltaMat->copyFrom(targetLoss);
+        m_Layers.back()->m_DeltaMat->uploadToGPU();
         
         // Log target loss upload
-        LOG_TRACE("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->rows * targetLoss->cols * sizeof(float)) +
-            " bytes) uploaded to delta buffer " + std::to_string(m_Layers.back()->m_DeltaBuffer));
+        LOG_TRACE("[GPU UPLOAD] Target loss data (" + std::to_string(targetLoss->rows * targetLoss->cols * sizeof(float)) + " bytes) uploaded to delta buffer " + std::to_string(m_Layers.back()->m_DeltaMat->buffer));
     }
 
 
