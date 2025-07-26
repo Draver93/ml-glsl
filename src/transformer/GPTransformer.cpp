@@ -16,11 +16,11 @@ namespace NNGL {
         m_Embedder = std::make_unique<EmbeddingBlock>(bpeFilepath, modelDim, m_SeqLen);
         m_VocabSize = m_Embedder->getVocabSize();
 
+        auto m_Embedder2 = std::make_unique<EmbeddingBlock>(m_Embedder->save());
+
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
         const char *data = m_Decoder->save();
         auto m_Decoder2 = std::make_unique<DecoderBlock>(data);
-
-
 
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);

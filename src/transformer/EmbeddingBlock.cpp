@@ -25,13 +25,9 @@ namespace NNGL {
         m_Tokenizer->addToken("<EOS>");
         m_VocabSize = m_Tokenizer->getVocabSize();
 
-        auto m_Tokenizer2 = std::make_unique<BPE>(m_Tokenizer->save(), m_Tokenizer->getSaveSize());
-        auto m_Tokenizer3 = std::make_unique<BPE>(m_Tokenizer->save(), m_Tokenizer->getSaveSize());
-
-        // Initialize random number generator
-        std::random_device rd;
-        m_Generator.seed(rd());
-        m_Distribution = std::normal_distribution<float>(0.0f, 0.1f);
+        m_EmbeddingsMat = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
+        m_EmbeddingsMat->randomize(0.0f, 0.1f);
+        m_EmbeddingsMat->uploadToGPU();
 
         // Load compute shaders for positional encoding
         m_ApplyPosEncodingCompute = ShaderManager::getInstance().getShader("shaders/embedding/apply_pos_encoding.comp");
@@ -42,12 +38,8 @@ namespace NNGL {
 
         initializePositionalEncoding();
 
-        m_CachedOutput = std::make_shared<Matrix>(maxSeqLen, m_ModelDim);
+        m_CachedOutput = std::make_shared<Matrix>(m_MaxSeqLen, m_ModelDim);
         m_CachedOutput->uploadToGPU(); 
-
-        m_EmbeddingsMat = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
-        m_EmbeddingsMat->randomize(0.0f, 0.1f);
-        m_EmbeddingsMat->uploadToGPU();
 
         // --- Adam buffers for embeddings ---
         m_AdamMEmbeddings = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
@@ -57,13 +49,119 @@ namespace NNGL {
         m_AdamVEmbeddings->uploadToGPU();
     }
 
-    EmbeddingBlock::EmbeddingBlock(const char* data) {
+    EmbeddingBlock::EmbeddingBlock(const char* data) :
+        m_ADAM_Timestep(0),
+        m_TotalUpdates(0),
+        m_AverageGradientMagnitude(0.0f) {
+
+        if (!data) throw std::invalid_argument("Data pointer cannot be null");
+
+        const char* ptr = data;
+
+        // Read basic parameters
+        std::memcpy(&m_ModelDim, ptr, sizeof(size_t));
+        ptr += sizeof(size_t);
+
+        std::memcpy(&m_MaxSeqLen, ptr, sizeof(size_t));
+        ptr += sizeof(size_t);
+
+        LOG_DEBUG("[EMBEDDING LOAD] Loading EmbeddingBlock with ModelDim=" + std::to_string(m_ModelDim) + ", MaxSeqLen=" + std::to_string(m_MaxSeqLen));
+
+        {
+            size_t tokenizer_size;
+            std::memcpy(&tokenizer_size, ptr, sizeof(size_t));
+            ptr += sizeof(size_t);
+            // Load tokenizer from serialized data
+            m_Tokenizer = std::make_unique<BPE>(ptr, tokenizer_size);
+            ptr += tokenizer_size;
+
+            m_VocabSize = m_Tokenizer->getVocabSize();
+        }
+        {
+            // Load embeddings matrix
+            size_t embeddings_data_size;
+            std::memcpy(&embeddings_data_size, ptr, sizeof(size_t));
+            ptr += sizeof(size_t);
+
+            if (embeddings_data_size != m_VocabSize * m_ModelDim * sizeof(float)) {
+                throw std::runtime_error("Embeddings data size mismatch during loading");
+            }
+
+            m_EmbeddingsMat = std::make_shared<Matrix>(m_VocabSize, m_ModelDim, reinterpret_cast<const float*>(ptr));
+            ptr += embeddings_data_size;
+            m_EmbeddingsMat->uploadToGPU();
+        }
+
+        LOG_DEBUG("[EMBEDDING LOAD] Tokenizer loaded, VocabSize=" + std::to_string(m_VocabSize));
+
+        // Load compute shaders for positional encoding
+        m_ApplyPosEncodingCompute = ShaderManager::getInstance().getShader("shaders/embedding/apply_pos_encoding.comp");
+        m_RemovePosEncodingCompute = ShaderManager::getInstance().getShader("shaders/embedding/remove_pos_encoding.comp");
+
+        m_EmbeddingUpdateCompute = ShaderManager::getInstance().getShader("shaders/embedding/embedding_update.comp");
+        m_EmbeddingForwardCompute = ShaderManager::getInstance().getShader("shaders/embedding/embedding_forward.comp");
+
+        initializePositionalEncoding();
+
+        m_CachedOutput = std::make_shared<Matrix>(m_MaxSeqLen, m_ModelDim);
+        m_CachedOutput->uploadToGPU();
+
+        // --- Adam buffers for embeddings ---
+        m_AdamMEmbeddings = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
+        m_AdamMEmbeddings->uploadToGPU();
+
+        m_AdamVEmbeddings = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
+        m_AdamVEmbeddings->uploadToGPU();
+
+        LOG_DEBUG("[EMBEDDING LOAD] EmbeddingBlock loaded successfully from binary buffer");
     }
-    int EmbeddingBlock::getSaveSize() {
-        return 0;
-    }
+
     const char* EmbeddingBlock::save() {
-        return nullptr;
+        m_EmbeddingsMat->downloadFromGPU();
+
+        LOG_DEBUG("[EMBEDDING SAVE] Saving EmbeddingBlock with ModelDim=" + std::to_string(m_ModelDim) +
+            ", MaxSeqLen=" + std::to_string(m_MaxSeqLen));
+
+        // Allocate buffer (caller is responsible for freeing this memory)
+        char* buffer = new char[getSaveSize()];
+        char* ptr = buffer;
+
+        // Write basic parameters
+        std::memcpy(ptr, &m_ModelDim, sizeof(size_t));
+        ptr += sizeof(size_t);
+
+        std::memcpy(ptr, &m_MaxSeqLen, sizeof(size_t));
+        ptr += sizeof(size_t);
+
+        // Save tokenizer
+        size_t tokenizer_size = m_Tokenizer->getSaveSize();
+        std::memcpy(ptr, &tokenizer_size, sizeof(size_t));
+        ptr += sizeof(size_t);
+
+        const char* tokenizer_data = m_Tokenizer->save();
+        std::memcpy(ptr, tokenizer_data, tokenizer_size);
+        ptr += tokenizer_size;
+
+        // Write embeddings matrix
+        size_t embeddings_size = m_EmbeddingsMat->byteSize();
+        std::memcpy(ptr, &embeddings_size, sizeof(size_t));
+        ptr += sizeof(size_t);
+
+        std::memcpy(ptr, m_EmbeddingsMat->raw(), embeddings_size);
+        ptr += embeddings_size;
+
+        LOG_DEBUG("[EMBEDDING SAVE] Tokenizer data: " + std::to_string(tokenizer_size) + " bytes");
+        LOG_DEBUG("[EMBEDDING SAVE] Embeddings: " + std::to_string(embeddings_size) + " bytes");
+
+        return buffer;
+    }
+
+    int EmbeddingBlock::getSaveSize() {
+        size_t header_size = 4 * sizeof(size_t); // basic parameters
+        size_t tokenizer_size = m_Tokenizer->getSaveSize();
+        size_t embeddings_size = m_EmbeddingsMat->byteSize();
+
+        return static_cast<int>(header_size + tokenizer_size + embeddings_size);
     }
 
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<std::string>& tokens) {
@@ -72,6 +170,7 @@ namespace NNGL {
 
         return getIndexBuffer(indices);
     }
+
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<int>& indices) {
         if (!m_CachedIndexBuffer) {
             glGenBuffers(1, &m_CachedIndexBuffer);

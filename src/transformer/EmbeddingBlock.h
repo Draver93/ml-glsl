@@ -16,9 +16,6 @@ namespace NNGL {
         std::unique_ptr<BPE> m_Tokenizer;
         std::shared_ptr<Matrix> m_EmbeddingsMat;
 
-        
-        std::mt19937 m_Generator;
-        std::normal_distribution<float> m_Distribution;
 
         size_t m_VocabSize, m_ModelDim, m_MaxSeqLen;
         int m_ADAM_Timestep;
