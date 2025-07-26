@@ -14,6 +14,8 @@ namespace NNGL {
 		NeuralNetwork(int batchSize = 16);
 		~NeuralNetwork();
 
+		NeuralNetwork(const char *data);
+		const char* save();
 	public:
 		std::shared_ptr<Matrix> forward(std::shared_ptr<Matrix> inputMat, int use_col_idx = -1);
 		std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate, int use_col_idx = -1);
@@ -24,8 +26,6 @@ namespace NNGL {
 		void train(float learningRate = 0.01f);
 		float eval(int samplesToTest, bool do_softmax = false);
 		void run();
-		void load();
-		void save();
 
 		using BatchProvider = std::function<void(
 			std::shared_ptr<Matrix>& batchInputMat,		// Pre-allocated input buffer
@@ -41,10 +41,7 @@ namespace NNGL {
 		void hiddenLayersLossCalc();
 		void setTargetLayerLoss(std::shared_ptr<Matrix>& targetLoss);
 		void weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate, int use_col_idx = -1);
-
-		// Memory pooling
-		std::shared_ptr<Matrix> getMatrixFromPool(int rows, int cols);
-		void returnMatrixToPool(std::shared_ptr<Matrix> matrix);
+		void inputGradientCalc();
 
 	private:
 		int m_ADAM_Timestep;
@@ -64,12 +61,7 @@ namespace NNGL {
 			m_WeightsCompute,
 			m_BiasesCompute,
 			m_InputDeltaCompute;
-		// Memory pool for Matrix objects
-		std::queue<std::shared_ptr<Matrix>> m_MatrixPool;
-		std::mutex m_PoolMutex;
 
-	public:
 		std::vector<std::unique_ptr<NNGL::Layer>> m_Layers;
-		void inputGradientCalc();
 	};
 }

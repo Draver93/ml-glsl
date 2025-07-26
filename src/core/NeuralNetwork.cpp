@@ -26,6 +26,29 @@ namespace NNGL {
         if(!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
 
     };
+    NeuralNetwork::NeuralNetwork(const char *data) : m_ADAM_Timestep(0) {
+        //Neural Network run
+        if (!m_ForwardPassCompute)	m_ForwardPassCompute = ShaderManager::getInstance().getShader("shaders/forward_pass.comp");
+
+        //Backpropagation delta calc
+        if (!m_OutputDeltaCompute)	m_OutputDeltaCompute = ShaderManager::getInstance().getShader("shaders/output_delta_loss.comp");
+        if (!m_HiddenDeltasCompute) m_HiddenDeltasCompute = ShaderManager::getInstance().getShader("shaders/hidden_delta_loss.comp");
+
+        //Backpropagation weights/biases update by delta
+        if (!m_WeightsCompute)		m_WeightsCompute = ShaderManager::getInstance().getShader("shaders/update_weights.comp");
+        if (!m_BiasesCompute)		m_BiasesCompute = ShaderManager::getInstance().getShader("shaders/update_biases.comp");
+
+        if (!m_InputDeltaCompute)  m_InputDeltaCompute = ShaderManager::getInstance().getShader("shaders/input_delta_loss.comp");
+
+        m_Layers;
+        m_BatchSize;
+    };
+
+    const char* NeuralNetwork::save() {
+        m_Layers;
+        m_BatchSize;
+        return nullptr;
+    }
 
 	NeuralNetwork::~NeuralNetwork() { }
 
@@ -330,33 +353,6 @@ namespace NNGL {
             " bytes) uploaded to delta buffer " + std::to_string(m_Layers.back()->m_DeltaBuffer));
     }
 
-    // Memory pool implementation
-    std::shared_ptr<Matrix> NeuralNetwork::getMatrixFromPool(int rows, int cols) {
-        std::lock_guard<std::mutex> lock(m_PoolMutex);
-        
-        if (!m_MatrixPool.empty()) {
-            auto matrix = m_MatrixPool.front();
-            m_MatrixPool.pop();
-            
-            // Reset the matrix to the required dimensions
-            matrix->reset(rows, cols);
-            return matrix;
-        }
-        
-        // Create new matrix if pool is empty
-        return std::make_shared<Matrix>(rows, cols);
-    }
-
-    void NeuralNetwork::returnMatrixToPool(std::shared_ptr<Matrix> matrix) {
-        if (!matrix) return;
-        
-        std::lock_guard<std::mutex> lock(m_PoolMutex);
-        
-        // Keep pool size reasonable (max 10 matrices)
-        if (m_MatrixPool.size() < 10) {
-            m_MatrixPool.push(matrix);
-        }
-    }
 
     // Interactive Testing CLI
 	void NeuralNetwork::run() {

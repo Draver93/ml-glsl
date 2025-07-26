@@ -77,8 +77,6 @@ namespace NNGL {
         std::shared_ptr<Matrix> m_CachedScores;
         std::shared_ptr<Matrix> m_CachedAttentionWeights;
 
-        // Will be set if cross-attention
-
         // Input gradients
         std::shared_ptr<Matrix> m_GradInput;
         std::shared_ptr<Matrix> m_GradContext;

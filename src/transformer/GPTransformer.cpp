@@ -10,22 +10,25 @@
 #include <limits>
 
 namespace NNGL {
-    GPTransformer::GPTransformer(std::string tokCheckpointFilepath, int modelDim, int hiddenDim, int seqLen) : m_SeqLen(seqLen) {
+    GPTransformer::GPTransformer(std::string bpeFilepath, int modelDim, int hiddenDim, int seqLen) 
+        : m_SeqLen(seqLen) {
+
         m_Tokenizer = std::make_unique<BPE>();
-        m_Tokenizer->load(tokCheckpointFilepath);
+        m_Tokenizer->load(bpeFilepath);
         m_Tokenizer->addToken("<PAD>");
         m_Tokenizer->addToken("<SOS>");
         m_Tokenizer->addToken("<EOS>");
 
         m_VocabSize = m_Tokenizer->getVocabSize();
 
-        m_Embedder = std::make_unique<EmbeddingBlock>(m_VocabSize, modelDim, seqLen);
+        m_Embedder = std::make_unique<EmbeddingBlock>(m_VocabSize, modelDim, m_SeqLen);
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
+
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
        
-        m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
 
+        m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
         {
             std::vector<int> gradMask(seqLen, 0);
             gradMask[seqLen - 1] = 1;
@@ -37,6 +40,41 @@ namespace NNGL {
 
         m_TrainingSteps = 0;
         m_CurrentLoss = 0.0f;
+    }
+
+    GPTransformer::GPTransformer(std::string checkpointFilepath) {
+        std::ifstream file(checkpointFilepath, std::ios::binary);
+        if (!file) throw std::runtime_error("Cannot open file for reading: " + checkpointFilepath);
+
+        while (file) {
+            size_t len;
+            if (!file.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
+
+            std::string tokenStr(len, '\0');
+            if (!file.read(tokenStr.data(), len)) break;
+
+            size_t usageScore;
+            if (!file.read(reinterpret_cast<char*>(&usageScore), sizeof(usageScore))) break;
+
+            auto token = std::make_shared<Token>(tokenStr[0]);
+            for (size_t i = 1; i < tokenStr.size(); ++i) {
+                auto nextChar = std::make_shared<Token>(tokenStr[i]);
+                token = std::make_shared<Token>(token, nextChar);
+            }
+        }
+    }
+    void save(std::string checkpointFilepath) {
+        std::ofstream file(checkpointFilepath, std::ios::binary);
+        if (!file) throw std::runtime_error("Cannot open file for writing: " + checkpointFilepath);
+        std::vector<float> vec(100, 1.2f);
+
+        size_t len = vec.size() * sizeof(float);
+        file.write(reinterpret_cast<const char*>(&len), sizeof(len));
+        file.write(reinterpret_cast<const char*>(vec.data()), len);
+    }
+
+    void GPTransformer::save(std::string checkpointFilepath) {
+
     }
 
     float GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
@@ -106,8 +144,6 @@ namespace NNGL {
 
         return loss;
     }
-
-
 
     std::string GPTransformer::eval(const std::string& inputText) {
         // 1. Tokenize input text
@@ -304,18 +340,6 @@ namespace NNGL {
         return tokens;
     }
 
-    int GPTransformer::getPadTokenId() const {
-        return static_cast<int>(m_Tokenizer->getTokenByName("<PAD>"));
-    }
-    int GPTransformer::getSosTokenId() const {
-        return static_cast<int>(m_Tokenizer->getTokenByName("<SOS>"));
-    }
-    int GPTransformer::getEosTokenId() const {
-        return static_cast<int>(m_Tokenizer->getTokenByName("<EOS>"));
-    }
-    bool GPTransformer::isSpecialToken(int tokenId) const {
-        return tokenId == getPadTokenId() || tokenId == getSosTokenId() || tokenId == getEosTokenId();
-    }
     std::vector<int> GPTransformer::createPaddingMask(const std::vector<int>& tokenIds, int &len) const {
         std::vector<int> mask(tokenIds.size(), 0);
         int padTokenId = getPadTokenId();
