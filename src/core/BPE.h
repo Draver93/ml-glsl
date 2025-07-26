@@ -230,6 +230,10 @@ namespace NNGL {
 
     public:
         explicit BPE(size_t mergeLimit = 10000);
+        BPE(const char* data, size_t dataSize);
+        const char* save();
+        size_t getSaveSize();
+
 
         void processChunk(const char* chunk, size_t chunkSize);
         void trainFromFiles(const std::vector<std::string>& files, bool append = true);
@@ -241,7 +245,7 @@ namespace NNGL {
         const std::string& getTokenById(int id) { return m_TokenTrie.getTokenById(id); }
         size_t getTokenByName(const std::string &name) { return m_TokenTrie.getIdByToken(name); }
 
-        void save(const std::string& filepath) const;
+        void save(const std::string& filepath);
         void load(const std::string& filepath);
 
     private:

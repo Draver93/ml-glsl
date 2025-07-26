@@ -50,15 +50,14 @@ namespace NNGL {
         GLuint getIndexBuffer(const std::vector<int>& indices);
     public:
         EmbeddingBlock(std::string bpeFilepath, size_t modelDim, size_t maxSeqLen);
-        size_t getTokenByName(const std::string& name) {
-            return m_Tokenizer->getTokenByName(name);
-        }
-        const std::string& getTokenById(int id) {
-            return m_Tokenizer->getTokenById(id);
-        }
-        std::vector<std::string> tokenizeInput(const char* input, size_t inputLen) {
-            return m_Tokenizer->tokenizeInput(input, inputLen);
-        }
+        EmbeddingBlock(const char* data);
+        int getSaveSize();
+        const char* save();
+
+
+        size_t getTokenByName(const std::string& name) { return m_Tokenizer->getTokenByName(name); }
+        const std::string& getTokenById(int id) { return m_Tokenizer->getTokenById(id); }
+        std::vector<std::string> tokenizeInput(const char* input, size_t inputLen) {  return m_Tokenizer->tokenizeInput(input, inputLen); }
 
         int getVocabSize() { return m_VocabSize; }
 

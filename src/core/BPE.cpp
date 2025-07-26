@@ -16,6 +16,78 @@ namespace NNGL {
 
     BPE::BPE(size_t mergeLimit) : m_MergeLimit(mergeLimit) {}
 
+    const char* BPE::save() {
+        // Calculate total buffer size needed
+        size_t header_size = sizeof(size_t) + sizeof(size_t); // merge limit + tokens data size
+
+        // Allocate buffer (caller is responsible for freeing this memory)
+        char* buffer = new char[getSaveSize()];
+        char* ptr = buffer;
+
+        // Write header: merge limit
+        std::memcpy(ptr, &m_MergeLimit, sizeof(size_t));
+        ptr += sizeof(size_t);
+        
+
+        for (int i = 0; i < m_TokenTrie.getTokenCount(); i++) {
+            std::string token = m_TokenTrie.getTokenById(i);
+            size_t len = token.size();
+            std::memcpy(ptr, &len, sizeof(size_t));
+            ptr += sizeof(size_t);
+            std::memcpy(ptr, token.c_str(), len);
+            ptr += len;
+        }
+
+        return buffer;
+    }
+
+    size_t BPE::getSaveSize() {
+        size_t totalSize = sizeof(size_t); // merge limit
+
+        for (int i = 0; i < m_TokenTrie.getTokenCount(); i++) {
+            std::string token = m_TokenTrie.getTokenById(i);
+            totalSize += sizeof(size_t);        // length field
+            totalSize += token.size();         // string data
+        }
+
+        return totalSize;
+    }
+
+    BPE::BPE(const char* data, size_t dataSize) {
+        m_TokenTrie.root = TrieNode{};
+        const char* ptr = data;
+
+        // Read header: merge limit
+        if (ptr + sizeof(size_t) > data + dataSize)
+            throw std::runtime_error("BPE save corrupted");
+
+        std::memcpy(&m_MergeLimit, ptr, sizeof(size_t));
+        ptr += sizeof(m_MergeLimit);
+
+
+        const char* tokens_end = data + dataSize;
+
+        // Read token data
+        while (ptr < tokens_end) {
+            // Read token length
+            if (ptr + sizeof(size_t) > tokens_end)
+                throw std::runtime_error("BPE save corrupted");
+
+            size_t len;
+            std::memcpy(&len, ptr, sizeof(size_t));
+            ptr += sizeof(size_t);
+
+            // Read token string data
+            if (ptr + len > tokens_end)
+                throw std::runtime_error("BPE save corrupted");
+
+            std::string tokenStr(ptr, len);
+            ptr += len;
+
+            addToken(tokenStr);
+        }
+    }
+
     void BPE::processChunk(const char* chunk, size_t chunkSize) {
         std::vector<std::shared_ptr<Token>> tokens;
         tokens.reserve(chunkSize);
@@ -135,42 +207,46 @@ namespace NNGL {
         return result;
     }
 
-    void BPE::save(const std::string& filepath) const {
+    void BPE::save(const std::string& filepath) {
         std::ofstream file(filepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for writing: " + filepath);
+        const char* data = save();
+        size_t dataSize = getSaveSize();
 
-        std::function<void(const TrieNode*, const std::string&)> saveNode = [&](const TrieNode* node, const std::string& prefix) {
-            if (node->token) {
-                size_t len = prefix.size();
-                file.write(reinterpret_cast<const char*>(&len), sizeof(len));
-                file.write(prefix.c_str(), len);
-                // Save usage score
-                file.write(reinterpret_cast<const char*>(&node->usageScore), sizeof(node->usageScore));
-            }
-
-            for (const auto& [ch, child] : node->children) {
-                saveNode(child.get(), prefix + ch);
-            }
-        };
-
-        saveNode(&m_TokenTrie.root, "");
+        file.write(data, dataSize);
+        delete[] data; // Clean up allocated memory
     }
 
     void BPE::load(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for reading: " + filepath);
+        size_t data_size;
+        {
+            const auto begin = file.tellg();
+            file.seekg(0, std::ios::end);
+            const auto end = file.tellg();
+            data_size = (end - begin);
+            file.seekg(0, std::ios::beg);
+        }
 
         m_TokenTrie.root = TrieNode{};
+        size_t bytes_read = 0;
+        // Read header: merge limit
+        if (!file.read(reinterpret_cast<char*>(&m_MergeLimit), sizeof(m_MergeLimit))) {
+            throw std::runtime_error("Failed to read merge limit from file");
+        }
+        bytes_read += sizeof(m_MergeLimit);
 
-        while (file) {
+        // Read token data
+        while (bytes_read < data_size && file) {
             size_t len;
             if (!file.read(reinterpret_cast<char*>(&len), sizeof(len))) break;
+            bytes_read += sizeof(len);
 
             std::string tokenStr(len, '\0');
-            if (!file.read(tokenStr.data(), len)) break;
-
-            size_t usageScore;
-            if (!file.read(reinterpret_cast<char*>(&usageScore), sizeof(usageScore))) break;
+            if (!file.read(tokenStr.data(), len)) 
+                break;
+            bytes_read += len;
 
             auto token = std::make_shared<Token>(tokenStr[0]);
             for (size_t i = 1; i < tokenStr.size(); ++i) {
@@ -178,7 +254,8 @@ namespace NNGL {
                 token = std::make_shared<Token>(token, nextChar);
             }
 
-            m_TokenTrie.insert(tokenStr, token, usageScore);
+            addToken(tokenStr);
         }
     }
+
 }

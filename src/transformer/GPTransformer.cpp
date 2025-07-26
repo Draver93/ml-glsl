@@ -17,6 +17,10 @@ namespace NNGL {
         m_VocabSize = m_Embedder->getVocabSize();
 
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
+        const char *data = m_Decoder->save();
+        auto m_Decoder2 = std::make_unique<DecoderBlock>(data);
+
+
 
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
@@ -36,6 +40,7 @@ namespace NNGL {
         std::ifstream file(checkpointFilepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for reading: " + checkpointFilepath);
 
+
     }
     void GPTransformer::save(std::string checkpointFilepath) {
         std::ofstream file(checkpointFilepath, std::ios::binary);
@@ -43,6 +48,12 @@ namespace NNGL {
 
         int projection_nn_size = m_OutputProjection->getSaveSize();
         const char *projection_nn_buffer = m_OutputProjection->save();
+
+        int embedder_size = m_Embedder->getSaveSize();
+        const char* embedder_buffer = m_Embedder->save();
+
+        int decoder_size = m_Decoder->getSaveSize();
+        const char* decoder_buffer = m_Decoder->save();
     }
 
 
@@ -100,8 +111,6 @@ namespace NNGL {
             glDeleteSync(fence);
         }
  
-
-
         //if (++refreshCounter % 500 == 0) {
         //    std::this_thread::sleep_for(std::chrono::microseconds(5000000));  // ~0.5ms
         //}

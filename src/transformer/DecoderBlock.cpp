@@ -6,16 +6,76 @@
 
 namespace NNGL {
 
-    DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) {
-        int numHeads = 8; // Standard number of heads for transformer
+    DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) : m_ModelDim(modelDim) {
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, /*numHeads*/8, seqLen, /*isMasked=*/true);
 
-        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, numHeads, seqLen, /*isMasked=*/true);
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
         m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
         m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
 
         m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
         m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
+    }
+
+    DecoderBlock::DecoderBlock(const char* data) {
+        if (!data) throw std::invalid_argument("Data pointer cannot be null");
+
+        const char* ptr = data;
+
+        // Read basic parameters
+        std::memcpy(&m_ModelDim, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        // Load AttentionBlock from serialized data
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(ptr);
+        ptr += m_MaskedSelfAttn->getSaveSize();
+
+        // Load NeuralNetwork from serialized data
+        m_FeedForward = std::make_unique<NeuralNetwork>(ptr);
+        ptr += m_FeedForward->getSaveSize();
+
+        m_AddNorm1 = std::make_unique<LayerNorm>(m_ModelDim);
+        m_AddNorm2 = std::make_unique<LayerNorm>(m_ModelDim);
+
+        LOG_DEBUG("[DECODER LOAD] DecoderBlock loaded successfully from binary buffer");
+
+    }
+    int DecoderBlock::getSaveSize() {
+        // Basic parameters: modelDim
+        size_t basic_params_size = 1 * sizeof(int);
+
+        // Size of each component
+        size_t attention_size = m_MaskedSelfAttn->getSaveSize();
+        size_t feedforward_size = m_FeedForward->getSaveSize();
+
+        return basic_params_size + attention_size + feedforward_size;
+    }
+
+    const char* DecoderBlock::save() {
+        // Allocate buffer (caller is responsible for freeing this memory)
+        char* buffer = new char[getSaveSize()];
+        char* ptr = buffer;
+
+        // Save basic parameters
+        std::memcpy(ptr, &m_ModelDim, sizeof(int));
+        ptr += sizeof(int);
+
+        // Save AttentionBlock
+        const char* attention_data = m_MaskedSelfAttn->save();
+        std::memcpy(ptr, attention_data, m_MaskedSelfAttn->getSaveSize());
+        ptr += m_MaskedSelfAttn->getSaveSize();
+        delete[] attention_data; // Clean up the temporary buffer
+
+        // Save NeuralNetwork
+        const char* feedforward_data = m_FeedForward->save();
+        std::memcpy(ptr, feedforward_data, m_FeedForward->getSaveSize());
+        ptr += m_FeedForward->getSaveSize();
+        delete[] feedforward_data; // Clean up the temporary buffer
+
+
+        LOG_DEBUG("[DECODER SAVE] DecoderBlock saved successfully to binary buffer");
+
+        return buffer;
     }
 
     std::shared_ptr<Matrix> DecoderBlock::forward(std::shared_ptr<Matrix> input, const std::vector<int>& paddingMask) {

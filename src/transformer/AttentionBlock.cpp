@@ -88,6 +88,160 @@ namespace NNGL {
         m_OutputMat = std::make_shared<Matrix>(seqLen, modelDimensions);
         m_OutputMat->uploadToGPU();
 
+        loadShaders();
+    }
+
+    AttentionBlock::AttentionBlock(const char* data) : m_ADAM_Timestep(0) {
+        if (!data) throw std::invalid_argument("Data pointer cannot be null");
+
+        const char* ptr = data;
+
+        // Read basic parameters
+        std::memcpy(&m_ModelDim, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(&m_NumHeads, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(&m_HeadDim, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(&m_SeqLen, ptr, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(&m_UseMask, ptr, sizeof(bool));
+        ptr += sizeof(bool);
+
+        // Initialize weight matrices and load their data
+        m_WeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, reinterpret_cast<const float*>(ptr));
+        ptr += m_ModelDim * m_ModelDim * sizeof(float);
+        m_WeightQueryMat->uploadToGPU();
+
+        m_WeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, reinterpret_cast<const float*>(ptr));
+        ptr += m_ModelDim * m_ModelDim * sizeof(float);
+        m_WeightKeyMat->uploadToGPU();
+
+        m_WeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, reinterpret_cast<const float*>(ptr));
+        ptr += m_ModelDim * m_ModelDim * sizeof(float);
+        m_WeightValueMat->uploadToGPU();
+
+
+        // Initialize OpenGL buffer for padding mask
+        glGenBuffers(1, &m_PaddingMaskBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_SeqLen * sizeof(int), nullptr, GL_STATIC_DRAW);
+
+        // Initialize ADAM optimization buffers for Q, K, V weights
+        m_ADAM_M_QueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
+        m_ADAM_V_QueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
+        m_ADAM_M_KeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
+        m_ADAM_V_KeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
+        m_ADAM_M_ValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
+        m_ADAM_V_ValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
+
+        // Initialize output matrices for Q, K, V projections
+        m_OutQueryMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_OutKeyMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_OutValueMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+
+        // Initialize gradient matrices for Q, K, V projections
+        m_GradQueryInputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradKeyInputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradValueInputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+
+        // Cached forward pass values for backprop
+        m_CachedInput = nullptr;
+        m_CachedContext = nullptr;
+
+        m_CachedQ = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_CachedK = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_CachedV = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_CachedQ->uploadToGPU();
+        m_CachedK->uploadToGPU();
+        m_CachedV->uploadToGPU();
+
+        m_CachedScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
+        m_CachedScores->uploadToGPU();
+
+        m_CachedAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen);
+        m_CachedAttentionWeights->uploadToGPU();
+
+        // Input gradients
+        m_GradInput = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradContext = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+
+        // Weight gradients
+        m_GradWeightQueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
+        m_GradWeightKeyMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
+        m_GradWeightValueMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0);
+
+        // Intermediate gradients for backprop chain
+        m_GradQ = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradK = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradV = std::make_shared<Matrix>(m_SeqLen, m_ModelDim, 0);
+        m_GradScores = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
+        m_GradAttentionWeights = std::make_shared<Matrix>(m_NumHeads * m_SeqLen, m_SeqLen, 0);
+
+        // Output matrix: [seq_len, model_dim] (concatenated heads)
+        m_OutputMat = std::make_shared<Matrix>(m_SeqLen, m_ModelDim);
+        m_OutputMat->uploadToGPU();
+
+        loadShaders();
+
+        LOG_DEBUG("[ATTENTION LOAD] AttentionBlock loaded successfully from binary buffer");
+    }
+
+    int AttentionBlock::getSaveSize() {
+        // Basic parameters: 5 ints + 1 bool
+        size_t basic_params_size = 5 * sizeof(int) + sizeof(bool);
+
+        // Weight matrices: 3 matrices of size [model_dim, model_dim]
+        size_t weight_matrices_size = 3 * m_ModelDim * m_ModelDim * sizeof(float);
+
+        return basic_params_size + weight_matrices_size;
+    }
+
+    const char* AttentionBlock::save() {
+        // Allocate buffer (caller is responsible for freeing this memory)
+        char* buffer = new char[getSaveSize()];
+        char* ptr = buffer;
+
+        // Save basic parameters
+        std::memcpy(ptr, &m_ModelDim, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(ptr, &m_NumHeads, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(ptr, &m_HeadDim, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(ptr, &m_SeqLen, sizeof(int));
+        ptr += sizeof(int);
+
+        std::memcpy(ptr, &m_UseMask, sizeof(bool));
+        ptr += sizeof(bool);
+
+        // Save weight matrices
+        m_WeightQueryMat->downloadFromGPU();
+        std::memcpy(ptr, m_WeightQueryMat->raw(), m_ModelDim * m_ModelDim * sizeof(float));
+        ptr += m_ModelDim * m_ModelDim * sizeof(float);
+
+        m_WeightKeyMat->downloadFromGPU();
+        std::memcpy(ptr, m_WeightKeyMat->raw(), m_ModelDim * m_ModelDim * sizeof(float));
+        ptr += m_ModelDim * m_ModelDim * sizeof(float);
+
+        m_WeightValueMat->downloadFromGPU();
+        std::memcpy(ptr, m_WeightValueMat->raw(), m_ModelDim * m_ModelDim * sizeof(float));
+        ptr += m_ModelDim * m_ModelDim * sizeof(float);
+
+
+        LOG_DEBUG("[ATTENTION SAVE] AttentionBlock saved successfully to binary buffer");
+
+        return buffer;
+    }
+
+    void AttentionBlock::loadShaders() {
         // Load shaders
         m_ForwardPassWeightsCompute = ShaderManager::getInstance().getShader("shaders/attention/forward_weights.comp");
         m_ForwardPassScoreCompute = ShaderManager::getInstance().getShader("shaders/attention/forward_score.comp");

@@ -25,6 +25,9 @@ namespace NNGL {
         m_Tokenizer->addToken("<EOS>");
         m_VocabSize = m_Tokenizer->getVocabSize();
 
+        auto m_Tokenizer2 = std::make_unique<BPE>(m_Tokenizer->save(), m_Tokenizer->getSaveSize());
+        auto m_Tokenizer3 = std::make_unique<BPE>(m_Tokenizer->save(), m_Tokenizer->getSaveSize());
+
         // Initialize random number generator
         std::random_device rd;
         m_Generator.seed(rd());
@@ -52,6 +55,15 @@ namespace NNGL {
 
         m_AdamVEmbeddings = std::make_shared<Matrix>(m_VocabSize, m_ModelDim);
         m_AdamVEmbeddings->uploadToGPU();
+    }
+
+    EmbeddingBlock::EmbeddingBlock(const char* data) {
+    }
+    int EmbeddingBlock::getSaveSize() {
+        return 0;
+    }
+    const char* EmbeddingBlock::save() {
+        return nullptr;
     }
 
     GLuint EmbeddingBlock::getIndexBuffer(const std::vector<std::string>& tokens) {

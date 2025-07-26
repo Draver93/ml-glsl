@@ -9,12 +9,17 @@ namespace NNGL {
 		AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask = false);
         ~AttentionBlock() {};
 
-        //By spec input_kv we can replace kv for cross attention
+        AttentionBlock(const char* data);
+        int getSaveSize();
+        const char* save();
+
+        void loadShaders();
+
         std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv = nullptr);
         
-        // New overload with padding mask support
         std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv, const std::vector<int>& paddingMask);
         std::shared_ptr<Matrix> getCachedOutput() const { return m_OutputMat; }
+
         //return GradInput, GradContext
         std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> backward(const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& context, float learningRate);
  

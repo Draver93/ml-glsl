@@ -47,7 +47,6 @@ namespace NNGL {
         int m_SeqLen;
         int m_VocabSize;
         std::shared_ptr<Matrix> m_TargetMat;
-
         GLuint m_GradMaskBuffer;
     };
 } 

@@ -15,10 +15,14 @@ namespace NNGL {
         std::unique_ptr<LayerNorm> m_AddNorm1;
         std::unique_ptr<LayerNorm> m_AddNorm2;
         std::shared_ptr<Matrix> m_CachedInput;
+        int m_ModelDim;
 
     public:
         DecoderBlock(int modelDim, int hiddenDim, int seqLen);
-        
+        DecoderBlock(const char* data);
+        int getSaveSize();
+        const char* save();
+
         std::shared_ptr<Matrix> forward(
             std::shared_ptr<Matrix> input,
             const std::vector<int>& paddingMask
