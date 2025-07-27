@@ -15,13 +15,7 @@ namespace NNGL {
 
         m_Embedder = std::make_unique<EmbeddingBlock>(bpeFilepath, modelDim, m_SeqLen);
         m_VocabSize = m_Embedder->getVocabSize();
-
-        auto m_Embedder2 = std::make_unique<EmbeddingBlock>(m_Embedder->save());
-
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
-        const char *data = m_Decoder->save();
-        auto m_Decoder2 = std::make_unique<DecoderBlock>(data);
-
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
         m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
 
@@ -36,24 +30,90 @@ namespace NNGL {
         }
     }
 
+    // Complete constructor from checkpoint file
     GPTransformer::GPTransformer(std::string checkpointFilepath) {
         std::ifstream file(checkpointFilepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for reading: " + checkpointFilepath);
 
+        // Read sequence length first
+        file.read(reinterpret_cast<char*>(&m_SeqLen), sizeof(int));
 
+        // Read vocab size
+        file.read(reinterpret_cast<char*>(&m_VocabSize), sizeof(int));
+
+        // Read sizes for each component
+        int embedder_size, decoder_size, projection_nn_size;
+        file.read(reinterpret_cast<char*>(&embedder_size), sizeof(int));
+        file.read(reinterpret_cast<char*>(&decoder_size), sizeof(int));
+        file.read(reinterpret_cast<char*>(&projection_nn_size), sizeof(int));
+
+        // Load embedder
+        char* embedder_buffer = new char[embedder_size];
+        file.read(embedder_buffer, embedder_size);
+        m_Embedder = std::make_unique<EmbeddingBlock>(embedder_buffer);
+        delete[] embedder_buffer;
+
+        // Load decoder
+        char* decoder_buffer = new char[decoder_size];
+        file.read(decoder_buffer, decoder_size);
+        m_Decoder = std::make_unique<DecoderBlock>(decoder_buffer);
+        delete[] decoder_buffer;
+
+        // Load output projection
+        char* projection_buffer = new char[projection_nn_size];
+        file.read(projection_buffer, projection_nn_size);
+        m_OutputProjection = std::make_unique<NeuralNetwork>(projection_buffer);
+        delete[] projection_buffer;
+
+        // Initialize target matrix
+        m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
+
+        // Initialize gradient mask buffer
+        std::vector<int> gradMask(m_SeqLen, 0);
+        gradMask[m_SeqLen - 1] = 1;
+        glGenBuffers(1, &m_GradMaskBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_GradMaskBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, gradMask.size() * sizeof(int), gradMask.data(), GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+        file.close();
     }
+
+    // Complete save method
     void GPTransformer::save(std::string checkpointFilepath) {
         std::ofstream file(checkpointFilepath, std::ios::binary);
         if (!file) throw std::runtime_error("Cannot open file for writing: " + checkpointFilepath);
 
-        int projection_nn_size = m_OutputProjection->getSaveSize();
-        const char *projection_nn_buffer = m_OutputProjection->save();
+        // Write sequence length and vocab size first
+        file.write(reinterpret_cast<const char*>(&m_SeqLen), sizeof(int));
+        file.write(reinterpret_cast<const char*>(&m_VocabSize), sizeof(int));
 
+        // Get serialized data from components
         int embedder_size = m_Embedder->getSaveSize();
         const char* embedder_buffer = m_Embedder->save();
 
         int decoder_size = m_Decoder->getSaveSize();
         const char* decoder_buffer = m_Decoder->save();
+
+        int projection_nn_size = m_OutputProjection->getSaveSize();
+        const char* projection_nn_buffer = m_OutputProjection->save();
+
+        // Write sizes for each component
+        file.write(reinterpret_cast<const char*>(&embedder_size), sizeof(int));
+        file.write(reinterpret_cast<const char*>(&decoder_size), sizeof(int));
+        file.write(reinterpret_cast<const char*>(&projection_nn_size), sizeof(int));
+
+        // Write component data
+        file.write(embedder_buffer, embedder_size);
+        file.write(decoder_buffer, decoder_size);
+        file.write(projection_nn_buffer, projection_nn_size);
+
+        // Clean up temporary buffers
+        delete[] embedder_buffer;
+        delete[] decoder_buffer;
+        delete[] projection_nn_buffer;
+
+        file.close();
     }
 
 
