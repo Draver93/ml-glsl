@@ -16,7 +16,6 @@
 
 // Include your headers
 #include "GPTransformer.h"
-#include "BPE.h"
 #include "Logger.h"
 
 // GLFW and OpenGL headers
@@ -252,12 +251,16 @@ bool parseArguments(int argc, char** argv, Config& config) {
 
 bool validateConfig(const Config& config) {
     if (config.mode == "train") {
-        if (config.bpe_path.empty()) {
-            std::cerr << "Error: BPE tokenizer path required for training (--bpe)\n";
-            return false;
-        }
         if (config.model_path.empty()) {
             std::cerr << "Error: Model path required for training (--model)\n";
+            return false;
+        }
+        if (config.bpe_path.empty() && !std::filesystem::exists(config.model_path)) {
+            std::cerr << "Error: BPE tokenizer path required for initial training (--bpe)\n";
+            return false;
+        }
+        if (!config.bpe_path.empty() && std::filesystem::exists(config.model_path)) {
+            std::cerr << "Error: BPE tokenizer path required only for initial training (--bpe)\n";
             return false;
         }
         if (config.input_files.empty()) {
@@ -270,7 +273,7 @@ bool validateConfig(const Config& config) {
                 return false;
             }
         }
-        if (!std::filesystem::exists(config.bpe_path)) {
+        if (!config.bpe_path.empty() && !std::filesystem::exists(config.bpe_path)) {
             std::cerr << "Error: BPE file '" << config.bpe_path << "' does not exist\n";
             return false;
         }
@@ -394,15 +397,13 @@ int trainMode(const Config& config) {
     };
 
     std::vector<TrainingExample> examples;
-    auto bpe = std::make_shared<NNGL::BPE>(1024 * 10);
-    bpe->load(config.bpe_path);
 
     for (const auto& sentence : training_data) {
         TrainingExample example;
         example.original_text = sentence;
         example.tokens.push_back("<SOS>");
 
-        std::vector<std::string> sentence_tokens = bpe->tokenizeInput(sentence.c_str(), sentence.size());
+        std::vector<std::string> sentence_tokens = gpt->tokenizeInput(sentence.c_str(), sentence.size());
         if (sentence_tokens.size() < 2 || sentence_tokens.size() > config.seq_len - 2) {
             continue; // Skip sentences that are too short/long
         }
@@ -799,8 +800,6 @@ void analyzeLossTrend(const std::vector<float>& losses) {
     }
 }
 
-
-
 void signalHandler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
         g_shutdown_requested = true;
@@ -808,8 +807,30 @@ void signalHandler(int signal) {
     }
 }
 
+
+
 // Main function
 int main(int argc, char** argv) {
+    // Simulated command line arguments
+    //std::vector<const char*> args = {
+    //    "nn-glsl-transformer.exe",
+    //    "--mode",
+    //    "train",
+    //    "--model",
+    //    "model.gpt",
+    //    "--input",
+    //    "pg51161.txt"
+    //};
+    //
+    //int argc_mock = args.size();
+    //char** argv_mock = new char* [argc_mock];
+    //
+    //for (int i = 0; i < argc_mock; ++i) {
+    //    size_t len = std::strlen(args[i]);
+    //    argv_mock[i] = new char[len + 1];       // Allocate space for null-terminator
+    //    std::strcpy(argv_mock[i], args[i]);     // Copy the C-string into argv
+    //}
+
     // Set up signal handling
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);

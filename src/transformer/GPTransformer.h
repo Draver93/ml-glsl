@@ -33,6 +33,7 @@ namespace NNGL {
         int getSosTokenId() const { return static_cast<int>(m_Embedder->getTokenByName("<SOS>")); }
         int getEosTokenId() const { return static_cast<int>(m_Embedder->getTokenByName("<EOS>")); }
         bool isSpecialToken(int tokenId) const { return tokenId == getPadTokenId() || tokenId == getSosTokenId() || tokenId == getEosTokenId(); }
+        std::vector<std::string> tokenizeInput(const char* input, size_t inputLen) { return m_Embedder->tokenizeInput(input, inputLen); }
 
         std::vector<int> createPaddingMask(const std::vector<int>& tokenIds, int& len) const;
         void printGradientHeatmap(std::shared_ptr<Matrix> mat);
