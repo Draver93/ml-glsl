@@ -117,48 +117,32 @@ namespace NNGL {
     }
 
 
-    float GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
+    void GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
         NNGL::Timer timer("GPTransformer::trainNextToken============================================================");
 
         std::vector<std::string> paddedContext = contextTokens;
         if (paddedContext.size() > m_SeqLen) paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
         while (paddedContext.size() < m_SeqLen)  paddedContext.insert(paddedContext.begin(), "<PAD>");
         
-        float loss = -1;
-        int runCounter = 0;
-        static int logCounter = 0;
+        static int lossCalcInterval = 0;
 
         int targetTokenId = m_Embedder->getTokenByName(targetToken);
         m_TargetMat->clear();
         m_TargetMat->set(0, targetTokenId, 1.0f);
         m_TargetMat->uploadToGPU();
 
-        logCounter++;
-        if (0 && logCounter % 1000 == 0) {
+        lossCalcInterval++;
+        if (lossCalcInterval % 1000 == 0) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
-            loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
+            float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
 
-            int predictedTokenId = predictToken(logits);
-            std::string predictedToken = m_Embedder->getTokenById(predictedTokenId);
-
-            std::cout << "  Loss: " << std::fixed << std::setprecision(4) << loss
-                << " | Target: '" << targetToken << "' (ID:" << targetTokenId << ")"
-                << " | Predicted: '" << predictedToken << "' (ID:" << predictedTokenId << ")"
-                << " | Context: [";
-
-            // Show the last 5 tokens (most recent context) instead of first 5
-            size_t startIdx = (paddedContext.size() > 5) ? paddedContext.size() - 5 : 0;
-            for (size_t i = startIdx; i < paddedContext.size(); ++i) {
-                if (i > startIdx) std::cout << ", ";
-                std::cout << "'" << paddedContext[i] << "'";
-            }
-            if (paddedContext.size() > 5) std::cout << " (last 5 of " << paddedContext.size() << ")";
-            std::cout << "]" << std::endl;
-
+            m_LossHistory.push_back(loss);
+            while (m_LossHistory.size() > c_LossHistorySize) m_LossHistory.erase(m_LossHistory.begin());
         }
+
         {
-            NNGL::Timer timer("GPTransformer::glFenceSync WAITING");
+            NNGL::Timer timer("GPTransformer::glFenceSync WAITING", NNGL::LogLevel::LL_DEBUG);
             GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
             backwardPass(paddedContext, m_TargetMat, learningRate);
@@ -170,13 +154,6 @@ namespace NNGL {
             }
             glDeleteSync(fence);
         }
- 
-        //if (++refreshCounter % 500 == 0) {
-        //    std::this_thread::sleep_for(std::chrono::microseconds(5000000));  // ~0.5ms
-        //}
-        runCounter++;
-
-        return loss;
     }
 
     std::string GPTransformer::eval(const std::string& inputText) {
@@ -287,8 +264,7 @@ namespace NNGL {
         NNGL::Timer timer("GPTransformer::forwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
 
-        int paddingLen = 0;
-        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
@@ -309,8 +285,7 @@ namespace NNGL {
         NNGL::Timer timer("GPTransformer::backwardPass");
 
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
-        int paddingLen = 0;
-        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens), paddingLen);
+        std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
         m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
 
         // Use decoder-only architecture (no encoder, no cross-attention)
@@ -358,21 +333,16 @@ namespace NNGL {
         return tokenIds;
     }
 
-    std::vector<int> GPTransformer::createPaddingMask(const std::vector<int>& tokenIds, int &len) const {
-        std::vector<int> mask(tokenIds.size(), 0);
+    std::vector<int> GPTransformer::createPaddingMask(const std::vector<int>& tokenIds) const {
+        std::vector<int> mask(tokenIds.size(), 1);
         int padTokenId = getPadTokenId();
         
         // Find the first padding token to determine actual sequence length
-        len = tokenIds.size(); // Default to full length
         for (size_t i = 0; i < tokenIds.size(); ++i) {
-            if (tokenIds[i] != padTokenId) {
-                mask[i] = 1; // Mark as valid token
-            } else {
-                len = i; // Found first padding token
-                break;
+            if (tokenIds[i] == padTokenId) {
+                mask[i] = 0; // Mark 
             }
         }
-        
         return mask;
     }
 

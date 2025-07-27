@@ -415,11 +415,26 @@ int trainMode(const Config& config) {
 
     LOG_INFO("Prepared " + std::to_string(examples.size()) + " training examples");
 
-    // Create evaluation prompts
-    std::vector<std::pair<std::string, std::string>> eval_prompts;
-    int max_eval = std::min(config.num_eval_prompts, (int)examples.size());
-    for (int i = 0; i < max_eval; ++i) {
-        const auto& example = examples[i];
+    // Initialize random number generator
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+
+    // Keep track of last 10 trained examples for evaluation
+    std::deque<size_t> last_trained_examples;
+    const size_t MAX_LAST_EXAMPLES = 10;
+
+    // Function to get random evaluation prompt from last 10 examples
+    auto getRandomEvalPrompt = [&]() -> std::pair<std::string, std::string> {
+        if (last_trained_examples.empty()) {
+            return { "", "" };
+        }
+
+        // Pick random example from last 10
+        std::uniform_int_distribution<size_t> dist(0, last_trained_examples.size() - 1);
+        size_t random_idx = dist(gen);
+        size_t example_idx = last_trained_examples[random_idx];
+
+        const auto& example = examples[example_idx];
         if (example.tokens.size() > 2) {
             std::string prompt, display;
             size_t prefix_len = std::max(1, (int)(example.tokens.size() - 1) / 2);
@@ -427,9 +442,10 @@ int trainMode(const Config& config) {
                 prompt += example.tokens[j];
                 display += "'" + example.tokens[j] + "' ";
             }
-            eval_prompts.emplace_back(display, prompt);
+            return { display, prompt };
         }
-    }
+        return { "", "" };
+    };
 
     // Training loop
     LOG_INFO("Starting training...");
@@ -437,6 +453,9 @@ int trainMode(const Config& config) {
     int epochs_without_improvement = 0;
     std::vector<float> epoch_losses;
     int total_lines_trained = 0;
+
+    // Keep track of trained examples
+    std::vector<size_t> trained_indices;
 
     std::ofstream log_file;
     if (!config.output_file.empty()) {
@@ -448,36 +467,32 @@ int trainMode(const Config& config) {
         float learning_rate = config.learning_rate *
             std::pow(config.lr_decay, epoch / (float)config.lr_decay_steps);
 
-        float total_loss = 0.0f;
         int total_predictions = 0;
 
         // Shuffle examples
         std::vector<size_t> indices(examples.size());
         std::iota(indices.begin(), indices.end(), 0);
-
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
         std::shuffle(indices.begin(), indices.end(), gen);
 
         for (size_t idx : indices) {
             const auto& example = examples[idx];
 
             for (size_t i = 1; i < example.tokens.size(); ++i) {
-                std::vector<std::string> context(example.tokens.begin(),
-                    example.tokens.begin() + i);
+                std::vector<std::string> context(example.tokens.begin(), example.tokens.begin() + i);
                 std::string target = example.tokens[i];
+                gpt->trainNextToken(context, target, learning_rate);
+            }
 
-                float loss = gpt->trainNextToken(context, target, learning_rate);
-                if (loss != -1) {
-                    total_loss += loss;
-                    total_predictions++;
-                }
+            // Add to last trained examples (keep only last 10)
+            last_trained_examples.push_back(idx);
+            if (last_trained_examples.size() > MAX_LAST_EXAMPLES) {
+                last_trained_examples.pop_front();
             }
 
             total_lines_trained++;
 
             if (total_lines_trained % config.progress_interval == 0) {
-                float avg_loss = total_loss / std::max(1, total_predictions);
+                float avg_loss = gpt->getAvrLoss();
                 std::cout << "Lines: " << total_lines_trained
                     << " | Epoch: " << (epoch + 1)
                     << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
@@ -490,16 +505,18 @@ int trainMode(const Config& config) {
                         << total_predictions << "\n";
                 }
 
-                if (!eval_prompts.empty()) {
-                    std::string prediction = gpt->eval(eval_prompts[0].second);
-                    std::cout << "  Sample: [" << eval_prompts[0].first << "] -> '"
+                // Get random evaluation prompt from last 10 examples
+                auto eval_prompt = getRandomEvalPrompt();
+                if (!eval_prompt.first.empty()) {
+                    std::string prediction = gpt->eval(eval_prompt.second);
+                    std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
                         << prediction << "'\n";
                 }
             }
             if (g_shutdown_requested) break;
         }
 
-        float avg_loss = total_loss / std::max(1, total_predictions);
+        float avg_loss = gpt->getAvrLoss();
         epoch_losses.push_back(avg_loss);
 
         if (avg_loss < best_loss) {
@@ -513,16 +530,20 @@ int trainMode(const Config& config) {
             epochs_without_improvement++;
         }
 
-        // Detailed evaluation
+        // Detailed evaluation with random prompts from last 10 examples
         if ((epoch + 1) % config.eval_interval == 0) {
             std::cout << "\n=== Epoch " << (epoch + 1) << " Evaluation ===\n";
             std::cout << "Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
                 << " | Best: " << best_loss
                 << " | No Improve: " << epochs_without_improvement << "\n";
 
-            for (size_t i = 0; i < std::min(3, (int)eval_prompts.size()); ++i) {
-                std::string prediction = gpt->eval(eval_prompts[i].second);
-                std::cout << "  [" << eval_prompts[i].first << "] -> '" << prediction << "'\n";
+            // Show 3 different random evaluations from last 10 examples
+            for (int i = 0; i < 3; ++i) {
+                auto eval_prompt = getRandomEvalPrompt();
+                if (!eval_prompt.first.empty()) {
+                    std::string prediction = gpt->eval(eval_prompt.second);
+                    std::cout << "  [" << eval_prompt.first << "] -> '" << prediction << "'\n";
+                }
             }
             std::cout << std::endl;
         }
@@ -812,24 +833,27 @@ void signalHandler(int signal) {
 // Main function
 int main(int argc, char** argv) {
     // Simulated command line arguments
-    //std::vector<const char*> args = {
-    //    "nn-glsl-transformer.exe",
-    //    "--mode",
-    //    "train",
-    //    "--model",
-    //    "model.gpt",
-    //    "--input",
-    //    "pg51161.txt"
-    //};
-    //
-    //int argc_mock = args.size();
-    //char** argv_mock = new char* [argc_mock];
-    //
-    //for (int i = 0; i < argc_mock; ++i) {
-    //    size_t len = std::strlen(args[i]);
-    //    argv_mock[i] = new char[len + 1];       // Allocate space for null-terminator
-    //    std::strcpy(argv_mock[i], args[i]);     // Copy the C-string into argv
-    //}
+#ifdef DEBUG
+    std::vector<const char*> args = {
+        "nn-glsl-transformer.exe",
+        "--mode",
+        "train",
+        "--model",
+        "model.gpt",
+        "--input",
+        "pg51161.txt"
+    };
+
+    int argc_mock = args.size();
+    char** argv_mock = new char* [argc_mock];
+
+    for (int i = 0; i < argc_mock; ++i) {
+        size_t len = std::strlen(args[i]);
+        argv_mock[i] = new char[len + 1];       // Allocate space for null-terminator
+        std::strcpy(argv_mock[i], args[i]);     // Copy the C-string into argv
+    }
+#endif // DEBUG
+
 
     // Set up signal handling
     std::signal(SIGINT, signalHandler);
@@ -838,10 +862,11 @@ int main(int argc, char** argv) {
     Config config;
 
     // Parse command line arguments
-    if (!parseArguments(argc, argv, config)) {
-        printUsage(argv[0]);
-        return -1;
-    }
+#ifdef DEBUG
+    if (!parseArguments(argc_mock, argv_mock, config)) { printUsage(argv_mock[0]); return -1; }
+#else
+    if (!parseArguments(argc, argv, config)) { printUsage(argv[0]); return -1; }
+#endif // DEBUG
 
     if (config.help) {
         printUsage(argv[0]);
@@ -864,6 +889,10 @@ int main(int argc, char** argv) {
         // Assuming Logger has a setLevel function
         LOG_INFO("Verbose mode enabled");
     }
+
+    // Set up logging
+    NNGL::Logger::getInstance().setLogLevel(config.verbose ? NNGL::LogLevel::LL_DEBUG : NNGL::LogLevel::LL_INFO);
+    NNGL::Logger::getInstance().setEnabled(true);
 
     int result = 0;
 
