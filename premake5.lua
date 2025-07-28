@@ -1,13 +1,13 @@
-workspace "nn-glsl"
+workspace "ml-glsl"
     configurations { "Debug", "Release" }
     architecture "x86_64"
-    startproject "nn-glsl-transformer"
+    startproject "ml-glsl-transformer"
 
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
 dofile("external/glfw-premake5.lua")
 
-project "nn-glsl-core"
+project "ml-glsl-core"
     kind "StaticLib"
     language "C++"
     cppdialect "C++17"
@@ -71,7 +71,7 @@ project "nn-glsl-core"
             "glfw"
         }
 
-project "nn-glsl-tokenizer"
+project "ml-glsl-tokenizer"
     kind "ConsoleApp"
     language "C++"
     cppdialect "C++17"
@@ -114,16 +114,16 @@ project "nn-glsl-tokenizer"
     filter { "system:windows" }
         defines { "WINDOWS" }
         links {
-            "nn-glsl-core"
+            "ml-glsl-core"
         }
 
     filter { "system:linux" }
         defines { "LINUX" }
         links {
-            "nn-glsl-core"
+            "ml-glsl-core"
         }
 
-project "nn-glsl-transformer"
+project "ml-glsl-transformer"
     kind "ConsoleApp"
     language "C++"
     cppdialect "C++17"
@@ -168,13 +168,13 @@ project "nn-glsl-transformer"
         defines { "WINDOWS" }
         files { "external/glad/src/glad_wgl.c" }
         links {
-            "nn-glsl-core"
+            "ml-glsl-core"
         }
 
     filter { "system:linux" }
         defines { "LINUX" }
         files { "external/glad/src/glad_glx.c" }
         links {
-            "nn-glsl-core",
-            "nn-glsl-tokenizer"
+            "ml-glsl-core",
+            "ml-glsl-tokenizer"
         }
