@@ -5,7 +5,7 @@
 #include <future>
 #include <functional>
 
-namespace NNGL {
+namespace MLGL {
 
     void clean_word(std::vector<char>& word) {
         word.erase(std::remove_if(word.begin(), word.end(),

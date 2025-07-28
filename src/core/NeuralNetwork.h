@@ -8,7 +8,7 @@
 #include <queue>
 #include <mutex>
 
-namespace NNGL {
+namespace MLGL {
 	class NeuralNetwork {
 	public:
 		NeuralNetwork(int batchSize = 16);
@@ -65,6 +65,6 @@ namespace NNGL {
 			m_BiasesCompute,
 			m_InputDeltaCompute;
 
-		std::vector<std::unique_ptr<NNGL::Layer>> m_Layers;
+		std::vector<std::unique_ptr<MLGL::Layer>> m_Layers;
 	};
 }

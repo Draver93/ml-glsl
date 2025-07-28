@@ -3,7 +3,7 @@
 #include "NeuralNetwork.h"
 #include "Matrix.h"
 
-namespace NNGL {
+namespace MLGL {
 	class AttentionBlock {
 	public:
 		AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask = false);

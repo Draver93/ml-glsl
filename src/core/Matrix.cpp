@@ -4,7 +4,7 @@
 #include <random>
 #include <iostream>
 
-namespace NNGL {
+namespace MLGL {
     Matrix::Matrix(int r, int c, float fill) : 
         rows(r), cols(c), flatVec(r * c, fill) {
         allocateBufferGPU();

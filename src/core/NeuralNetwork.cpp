@@ -10,7 +10,7 @@
 #include <tuple>
 
 
-namespace NNGL {
+namespace MLGL {
     NeuralNetwork::NeuralNetwork(int batchSize) : m_BatchSize(batchSize), m_ADAM_Timestep(0) {
         loadShaders();
     };
@@ -93,7 +93,7 @@ namespace NNGL {
 		if (!m_Layers.empty() && m_Layers.back()->getSize().y != width)
 			throw std::runtime_error("Trying to chain layers with incompatible dementions: last height != new width");
 
-		m_Layers.push_back(std::unique_ptr<NNGL::Layer>( new NNGL::Layer(width, height, m_BatchSize, type) ));
+		m_Layers.push_back(std::unique_ptr<MLGL::Layer>( new MLGL::Layer(width, height, m_BatchSize, type) ));
 
         //we changed layer structure so we need to update mat's
         m_InputBatchMat = nullptr;
@@ -101,7 +101,7 @@ namespace NNGL {
 	}
     void NeuralNetwork::addLayer(const char *data) {
 
-        m_Layers.push_back(std::unique_ptr<NNGL::Layer>(new NNGL::Layer(data)));
+        m_Layers.push_back(std::unique_ptr<MLGL::Layer>(new MLGL::Layer(data)));
 
         //we changed layer structure so we need to update mat's
         m_InputBatchMat = nullptr;
@@ -183,7 +183,7 @@ namespace NNGL {
 
 	// Update weights and biases for all layers
 	void NeuralNetwork::weightsAndBiasesUpdate(std::shared_ptr<Matrix>& inputBatchMat, float learningRate, int use_col_idx) {
-        NNGL::Timer timer("NeuralNetwork::weightsAndBiasesUpdate");
+        MLGL::Timer timer("NeuralNetwork::weightsAndBiasesUpdate");
         GLuint currentInput = inputBatchMat->buffer;
 
         for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
@@ -319,7 +319,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> NeuralNetwork::forward(std::shared_ptr<Matrix> inputMat, int use_col_idx) {
-        NNGL::Timer timer("NeuralNetwork::forward");
+        MLGL::Timer timer("NeuralNetwork::forward");
         
         // Cache the input for backward pass
         m_CachedInput = inputMat;
@@ -355,7 +355,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> inputMat, std::shared_ptr<Matrix> outputMat, float learningRate, int use_col_idx) {
-        NNGL::Timer timer("NeuralNetwork::backward");
+        MLGL::Timer timer("NeuralNetwork::backward");
         forward(inputMat, use_col_idx);
         targetLayerLossCalc(outputMat);
         hiddenLayersLossCalc();
@@ -367,7 +367,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> NeuralNetwork::backward(std::shared_ptr<Matrix> gradOutput, float learningRate) {
-        NNGL::Timer timer("NeuralNetwork::backward (gradient)");
+        MLGL::Timer timer("NeuralNetwork::backward (gradient)");
 
         // Set the gradient as the target loss for the output layer
         setTargetLayerLoss(gradOutput);

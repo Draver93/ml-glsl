@@ -268,10 +268,10 @@ void cleanupOpenGL() {
 }
 
 int trainMode(const Config& config) {
-    NNGL::Timer timer("Training BPE model");
+    MLGL::Timer timer("Training BPE model");
     LOG_INFO("Training BPE model...");
 
-    auto bpe = std::make_shared<NNGL::BPE>(config.merge_limit);
+    auto bpe = std::make_shared<MLGL::BPE>(config.merge_limit);
 
     // Load existing checkpoint if appending
     if (config.append_mode && std::filesystem::exists(config.checkpoint_path)) {
@@ -337,10 +337,10 @@ int trainMode(const Config& config) {
 }
 
 int tokenizeMode(const Config& config) {
-    NNGL::Timer timer("Tokenization");
+    MLGL::Timer timer("Tokenization");
     LOG_INFO("Loading BPE model: " + config.checkpoint_path);
 
-    auto bpe = std::make_shared<NNGL::BPE>(1);
+    auto bpe = std::make_shared<MLGL::BPE>(1);
     try {
         bpe->load(config.checkpoint_path);
     }
@@ -400,7 +400,7 @@ int tokenizeMode(const Config& config) {
 int infoMode(const Config& config) {
     LOG_INFO("Loading BPE model: " + config.checkpoint_path);
 
-    auto bpe = std::make_shared<NNGL::BPE>(1);
+    auto bpe = std::make_shared<MLGL::BPE>(1);
     try {
         bpe->load(config.checkpoint_path);
     }
@@ -428,10 +428,10 @@ int infoMode(const Config& config) {
 }
 
 int reduceMode(const Config& config) {
-    NNGL::Timer timer("Vocabulary reduction");
+    MLGL::Timer timer("Vocabulary reduction");
     LOG_INFO("Loading BPE model: " + config.checkpoint_path);
 
-    auto bpe = std::make_shared<NNGL::BPE>(1);
+    auto bpe = std::make_shared<MLGL::BPE>(1);
     try {
         bpe->load(config.checkpoint_path);
     }
@@ -516,8 +516,8 @@ int main(int argc, char** argv) {
     }
 
     // Set up logging
-    NNGL::Logger::getInstance().setLogLevel(config.verbose ? NNGL::LogLevel::LL_DEBUG : NNGL::LogLevel::LL_INFO);
-    NNGL::Logger::getInstance().setEnabled(true);
+    MLGL::Logger::getInstance().setLogLevel(config.verbose ? MLGL::LogLevel::LL_DEBUG : MLGL::LogLevel::LL_INFO);
+    MLGL::Logger::getInstance().setEnabled(true);
 
     // Initialize OpenGL (if needed for compute operations)
     if (!initializeOpenGL()) {

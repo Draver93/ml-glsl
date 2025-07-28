@@ -5,7 +5,7 @@
 #include <string>
 #include <iostream>
 
-namespace NNGL {
+namespace MLGL {
 	Layer::Layer(int width, int height, int batchSize, ActivationFnType type) 
         : m_Width(width), m_Height(height), m_BatchSize(batchSize), m_ActivationFnType(type) {
 
@@ -15,7 +15,7 @@ namespace NNGL {
         m_WeightMat = std::make_shared<Matrix>(m_Width, m_Height);
         for (int i = 0; i < m_WeightMat->rows; i++)
             for (int j = 0; j < m_WeightMat->cols; j++)
-                m_WeightMat->set(i, j, NNGL::activationFunctions[m_ActivationFnType].weight_initializer(m_Width, m_Height));
+                m_WeightMat->set(i, j, MLGL::activationFunctions[m_ActivationFnType].weight_initializer(m_Width, m_Height));
         m_WeightMat->uploadToGPU();
         LOG_DEBUG("[GPU BUFFER] Created weight buffer " + std::to_string(m_WeightMat->buffer) + " (" + std::to_string(m_Width * m_Height * sizeof(float)) + " bytes)");
 
@@ -30,7 +30,7 @@ namespace NNGL {
 
         // Initialize biases
         m_BiasMat = std::make_shared<Matrix>(m_Height, 1);
-        for (int i = 0; i < m_BiasMat->rows; i++) m_BiasMat->set(i, 0, NNGL::activationFunctions[m_ActivationFnType].weight_initializer(m_Width, m_Height));
+        for (int i = 0; i < m_BiasMat->rows; i++) m_BiasMat->set(i, 0, MLGL::activationFunctions[m_ActivationFnType].weight_initializer(m_Width, m_Height));
         m_BiasMat->uploadToGPU();
         LOG_DEBUG("[GPU BUFFER] Created bias buffer " + std::to_string(m_BiasMat->buffer) + " (" + std::to_string(m_Height * sizeof(float)) + " bytes)");
 

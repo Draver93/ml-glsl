@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "ShaderCPUAnalogs.h"
 
-namespace NNGL {
+namespace MLGL {
     LayerNorm::LayerNorm(int normalizedShape, float epsilon)
         : m_NormalizedShape(normalizedShape), m_Epsilon(epsilon) {
 
@@ -20,7 +20,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual) {
-        NNGL::Timer timer("LayerNorm::forward");
+        MLGL::Timer timer("LayerNorm::forward");
         int seqLen = input->rows;
         int modelDim = input->cols;
         m_CachedInput = input;
@@ -55,7 +55,7 @@ namespace NNGL {
         const std::shared_ptr<Matrix>& residual,
         const GLuint gradMaskBuffer
     ) {
-        NNGL::Timer timer("LayerNorm::backward");
+        MLGL::Timer timer("LayerNorm::backward");
         int seqLen = input->rows;
         int modelDim = input->cols;
 

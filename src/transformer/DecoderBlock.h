@@ -6,7 +6,7 @@
 #include "LayerNorm.h"
 #include <memory>
 
-namespace NNGL {
+namespace MLGL {
 
     class DecoderBlock {
     private:

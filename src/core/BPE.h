@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <functional>
 
-namespace NNGL {
+namespace MLGL {
 
     struct Token {
         char c = '\0';

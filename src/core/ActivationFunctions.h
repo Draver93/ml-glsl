@@ -5,7 +5,7 @@
 #include <cmath>
 #include <vector>
 
-namespace NNGL {
+namespace MLGL {
     static std::vector<float> softmax(const std::vector<float>& input) {
         std::vector<float> output(input.size());
 

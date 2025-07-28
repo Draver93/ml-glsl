@@ -10,7 +10,7 @@ extern "C" {
 #include <mutex>
 #include <cmath>
 
-namespace NNGL {
+namespace MLGL {
     class Matrix {
     private:
         bool m_Dirty = true; // Dirty flag for GPU upload

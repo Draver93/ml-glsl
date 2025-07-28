@@ -5,7 +5,7 @@
 
 #include <memory>
 
-namespace NNGL {
+namespace MLGL {
     class LayerNorm {
     public:
         LayerNorm(int normalizedShape, float epsilon = 1e-5f);

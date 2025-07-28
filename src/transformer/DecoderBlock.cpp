@@ -4,14 +4,14 @@
 #include <memory>
 #include <iostream>
 
-namespace NNGL {
+namespace MLGL {
 
     DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) : m_ModelDim(modelDim) {
         m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, /*numHeads*/8, seqLen, /*isMasked=*/true);
 
         m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
-        m_FeedForward->addLayer(modelDim, hiddenDim, NNGL::ActivationFnType::RELU);
-        m_FeedForward->addLayer(hiddenDim, modelDim, NNGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(modelDim, hiddenDim, MLGL::ActivationFnType::RELU);
+        m_FeedForward->addLayer(hiddenDim, modelDim, MLGL::ActivationFnType::RELU);
 
         m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
         m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
@@ -79,7 +79,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> DecoderBlock::forward(std::shared_ptr<Matrix> input, const std::vector<int>& paddingMask) {
-        NNGL::Timer timer("DecoderOnlyBlock::forward");
+        MLGL::Timer timer("DecoderOnlyBlock::forward");
         m_CachedInput = input;
 
         // 1. Masked self-attention with residual connection
@@ -94,7 +94,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> DecoderBlock::backward(std::shared_ptr<Matrix> gradOutput, const GLuint gradMaskBuffer, float learningRate) {
-        NNGL::Timer timer("DecoderOnlyBlock::backward");
+        MLGL::Timer timer("DecoderOnlyBlock::backward");
 
         // Backprop through addNorm2 (main: mlpOut, residual: addNorm1Out)
         m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput(), gradMaskBuffer);

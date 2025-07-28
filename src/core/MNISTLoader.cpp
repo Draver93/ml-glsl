@@ -12,7 +12,7 @@ uint32_t readUint32(std::ifstream& ifs) {
     return val;
 }
 
-namespace NNGL {
+namespace MLGL {
     namespace MNIST {
         std::vector<std::vector<uint8_t>> loadImages(const std::string& filename) {
             std::ifstream file(filename, std::ios::binary);

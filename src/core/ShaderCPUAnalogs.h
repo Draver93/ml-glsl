@@ -12,7 +12,7 @@
 #include <string>
 #include <limits>
 
-namespace NNGL {
+namespace MLGL {
 
     // Activation functions
     enum class ActivationType {
@@ -1222,4 +1222,4 @@ namespace NNGL {
         std::cout << "\nComprehensive validation completed!" << std::endl;
     }
 
-} // namespace NNGL 
+} // namespace MLGL 

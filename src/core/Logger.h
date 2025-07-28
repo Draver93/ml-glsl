@@ -4,7 +4,7 @@
 #include <string>
 #include <chrono>
 
-namespace NNGL {
+namespace MLGL {
     enum class LogLevel {
         LL_ERROR = 0,
         LL_WARN = 1,
@@ -97,10 +97,10 @@ namespace NNGL {
     };
 
     // Convenience macros for logging
-    #define LOG(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_INFO)
-    #define LOG_ERROR(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_ERROR)
-    #define LOG_WARN(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_WARN)
-    #define LOG_INFO(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_INFO)
-    #define LOG_DEBUG(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_DEBUG)
-    #define LOG_TRACE(message) NNGL::Logger::getInstance().log(message, NNGL::LogLevel::LL_TRACE)
+    #define LOG(message) MLGL::Logger::getInstance().log(message, MLGL::LogLevel::LL_INFO)
+    #define LOG_ERROR(message) MLGL::Logger::getInstance().log(message, MLGL::LogLevel::LL_ERROR)
+    #define LOG_WARN(message) MLGL::Logger::getInstance().log(message, MLGL::LogLevel::LL_WARN)
+    #define LOG_INFO(message) MLGL::Logger::getInstance().log(message, MLGL::LogLevel::LL_INFO)
+    #define LOG_DEBUG(message) MLGL::Logger::getInstance().log(message, MLGL::LogLevel::LL_DEBUG)
+    #define LOG_TRACE(message) MLGL::Logger::getInstance().log(message, MLGL::LogLevel::LL_TRACE)
 } 

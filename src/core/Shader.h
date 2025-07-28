@@ -10,7 +10,7 @@ extern "C" {
 #include <memory>
 #include <stdexcept>
 
-namespace NNGL {
+namespace MLGL {
     class ShaderManager;
 
 	class Shader {

@@ -379,14 +379,14 @@ int trainMode(const Config& config) {
     LOG_INFO("Loaded " + std::to_string(training_data.size()) + " training examples");
 
     // Create or load model
-    std::shared_ptr<NNGL::GPTransformer> gpt;
+    std::shared_ptr<MLGL::GPTransformer> gpt;
     if (std::filesystem::exists(config.model_path)) {
         LOG_INFO("Loading existing model: " + config.model_path);
-        gpt = std::make_shared<NNGL::GPTransformer>(config.model_path);
+        gpt = std::make_shared<MLGL::GPTransformer>(config.model_path);
     }
     else {
         LOG_INFO("Creating new model with BPE: " + config.bpe_path);
-        gpt = std::make_shared<NNGL::GPTransformer>(
+        gpt = std::make_shared<MLGL::GPTransformer>(
             config.bpe_path, config.d_model, config.d_hidden, config.seq_len);
     }
 
@@ -575,7 +575,7 @@ int generateMode(const Config& config) {
     LOG_INFO("=== GPTransformer Generation Mode ===");
 
     // Load model
-    auto gpt = std::make_shared<NNGL::GPTransformer>(config.model_path);
+    auto gpt = std::make_shared<MLGL::GPTransformer>(config.model_path);
     LOG_INFO("Model loaded from: " + config.model_path);
 
     std::vector<std::string> prompts;
@@ -620,11 +620,12 @@ int generateMode(const Config& config) {
 int interactiveMode(const Config& config) {
     LOG_INFO("=== GPTransformer Interactive Mode ===");
 
-    auto gpt = std::make_shared<NNGL::GPTransformer>(config.model_path);
+    auto gpt = std::make_shared<MLGL::GPTransformer>(config.model_path);
     LOG_INFO("Model loaded. Type 'quit' or 'exit' to end session.\n");
 
     std::string input;
     while (true) {
+        if (g_shutdown_requested) break;
         std::cout << "> ";
         std::getline(std::cin, input);
 
@@ -635,9 +636,10 @@ int interactiveMode(const Config& config) {
         if (input.empty()) {
             continue;
         }
-
+        input = "<SOS>" + input;
         std::string response = gpt->eval(input);
         std::cout << response << "\n\n";
+
     }
 
     std::cout << "Interactive session ended.\n";
@@ -647,7 +649,7 @@ int interactiveMode(const Config& config) {
 int evaluateMode(const Config& config) {
     LOG_INFO("=== GPTransformer Evaluation Mode ===");
 
-    auto gpt = std::make_shared<NNGL::GPTransformer>(config.model_path);
+    auto gpt = std::make_shared<MLGL::GPTransformer>(config.model_path);
     std::vector<std::string> test_data = loadTextData(config.input_files);
 
     if (test_data.empty()) {
@@ -690,7 +692,7 @@ int infoMode(const Config& config) {
     LOG_INFO("=== GPTransformer Model Information ===");
 
     try {
-        auto gpt = std::make_shared<NNGL::GPTransformer>(config.model_path);
+        auto gpt = std::make_shared<MLGL::GPTransformer>(config.model_path);
 
         std::cout << "\nModel Information:\n";
         std::cout << "Model file: " << config.model_path << "\n";
@@ -735,7 +737,7 @@ void benchmarkModel(const Config& config) {
 
     try {
         LOG_INFO("=== Model Performance Benchmark ===");
-        auto gpt = std::make_shared<NNGL::GPTransformer>(config.model_path);
+        auto gpt = std::make_shared<MLGL::GPTransformer>(config.model_path);
 
         std::vector<std::string> test_prompts = {
             "The weather today is",
@@ -771,7 +773,7 @@ void benchmarkModel(const Config& config) {
 }
 
 // Enhanced generation with sampling parameters
-std::string generateWithSampling(NNGL::GPTransformer* gpt, const std::string& prompt,
+std::string generateWithSampling(MLGL::GPTransformer* gpt, const std::string& prompt,
     int max_tokens, float temperature, int top_k, bool use_eos) {
     // This would need to be implemented in the GPTransformer class
     // For now, using the basic eval function
@@ -891,8 +893,8 @@ int main(int argc, char** argv) {
     }
 
     // Set up logging
-    NNGL::Logger::getInstance().setLogLevel(config.verbose ? NNGL::LogLevel::LL_DEBUG : NNGL::LogLevel::LL_INFO);
-    NNGL::Logger::getInstance().setEnabled(true);
+    MLGL::Logger::getInstance().setLogLevel(config.verbose ? MLGL::LogLevel::LL_DEBUG : MLGL::LogLevel::LL_INFO);
+    MLGL::Logger::getInstance().setEnabled(true);
 
     int result = 0;
 

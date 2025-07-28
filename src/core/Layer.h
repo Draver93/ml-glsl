@@ -11,7 +11,7 @@ extern "C" {
 #include "Matrix.h"
 
 
-namespace NNGL {
+namespace MLGL {
 	class NeuralNetwork;
 
 	class Layer {

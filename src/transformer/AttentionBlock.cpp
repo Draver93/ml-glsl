@@ -3,7 +3,7 @@
 #include "ShaderCPUAnalogs.h"
 #include <iostream>
 
-namespace NNGL {
+namespace MLGL {
 
     AttentionBlock::AttentionBlock(int modelDimensions, int numHeads, int seqLen, bool mask)
         : m_ModelDim(modelDimensions), m_NumHeads(numHeads), m_HeadDim(modelDimensions / numHeads), m_SeqLen(seqLen), m_UseMask(mask), m_ADAM_Timestep(0) {
@@ -24,9 +24,9 @@ namespace NNGL {
         // Randomly initialize weights (using RELU initializer for consistency)
         for (int r = 0; r < modelDimensions; r++) {
             for (int c = 0; c < modelDimensions; c++) {
-                m_WeightQueryMat->set(r, c, NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
-                m_WeightKeyMat->set(r, c, NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
-                m_WeightValueMat->set(r, c, NNGL::activationFunctions[NNGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
+                m_WeightQueryMat->set(r, c, MLGL::activationFunctions[MLGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
+                m_WeightKeyMat->set(r, c, MLGL::activationFunctions[MLGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
+                m_WeightValueMat->set(r, c, MLGL::activationFunctions[MLGL::ActivationFnType::RELU].weight_initializer(modelDimensions, modelDimensions));
             }
         }
         m_WeightQueryMat->uploadToGPU();
@@ -258,7 +258,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& context) {
-        NNGL::Timer timer("AttentionBlock::forward");
+        MLGL::Timer timer("AttentionBlock::forward");
         // CACHE INPUT FOR BACKPROP
         m_CachedInput = input;
         if (context) m_CachedContext = context;
@@ -360,7 +360,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> AttentionBlock::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& input_kv, const std::vector<int>& paddingMask) {
-        NNGL::Timer timer("AttentionBlock::forward (with mask)");
+        MLGL::Timer timer("AttentionBlock::forward (with mask)");
         // Store padding mask for use in shaders
         m_PaddingMask = paddingMask;
         
@@ -369,7 +369,7 @@ namespace NNGL {
     }
  
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& context, float learningRate ) {
-        NNGL::Timer timer("AttentionBlock::backward");
+        MLGL::Timer timer("AttentionBlock::backward");
         
         if (!m_PaddingMask.empty()) {
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);

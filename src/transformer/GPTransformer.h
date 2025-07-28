@@ -12,7 +12,7 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace NNGL {
+namespace MLGL {
 
     enum class LossMode { CrossEntropy, Confidence, Margin, Accuracy };
 

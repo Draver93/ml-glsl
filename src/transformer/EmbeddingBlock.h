@@ -10,7 +10,7 @@
 #include <memory>
 #include "BPE.h"
 
-namespace NNGL {
+namespace MLGL {
     class EmbeddingBlock {
     private:
         std::unique_ptr<BPE> m_Tokenizer;

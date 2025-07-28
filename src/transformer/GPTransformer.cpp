@@ -9,7 +9,7 @@
 #include <iomanip>
 #include <limits>
 
-namespace NNGL {
+namespace MLGL {
     GPTransformer::GPTransformer(std::string bpeFilepath, int modelDim, int hiddenDim, int seqLen) 
         : m_SeqLen(seqLen) {
 
@@ -17,7 +17,7 @@ namespace NNGL {
         m_VocabSize = m_Embedder->getVocabSize();
         m_Decoder = std::make_unique<DecoderBlock>(modelDim, hiddenDim, seqLen);
         m_OutputProjection = std::make_unique<NeuralNetwork>(1);
-        m_OutputProjection->addLayer(modelDim, m_VocabSize, NNGL::ActivationFnType::IDENTITY);
+        m_OutputProjection->addLayer(modelDim, m_VocabSize, MLGL::ActivationFnType::IDENTITY);
 
         m_TargetMat = std::make_shared<Matrix>(1, m_VocabSize, 0);
         {
@@ -118,7 +118,7 @@ namespace NNGL {
 
 
     void GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
-        NNGL::Timer timer("GPTransformer::trainNextToken============================================================");
+        MLGL::Timer timer("GPTransformer::trainNextToken============================================================");
 
         std::vector<std::string> paddedContext = contextTokens;
         if (paddedContext.size() > m_SeqLen) paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
@@ -142,7 +142,7 @@ namespace NNGL {
         }
 
         {
-            NNGL::Timer timer("GPTransformer::glFenceSync WAITING", NNGL::LogLevel::LL_DEBUG);
+            MLGL::Timer timer("GPTransformer::glFenceSync WAITING", MLGL::LogLevel::LL_DEBUG);
             GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 
             backwardPass(paddedContext, m_TargetMat, learningRate);
@@ -261,7 +261,7 @@ namespace NNGL {
 
     std::shared_ptr<Matrix> GPTransformer::forwardPass(const std::vector<std::string>& inputTokens) {
 
-        NNGL::Timer timer("GPTransformer::forwardPass");
+        MLGL::Timer timer("GPTransformer::forwardPass");
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
 
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
@@ -271,7 +271,7 @@ namespace NNGL {
 
         //std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->rows);
         //{
-        //    NNGL::Timer timer("GPTransformer::forwardPass:1");
+        //    MLGL::Timer timer("GPTransformer::forwardPass:1");
         //    decOutputMat->downloadFromGPU();
         //    for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(i, decOutputMat->cols - 1);
         //    lastTokenRep->uploadToGPU();
@@ -282,7 +282,7 @@ namespace NNGL {
 
     void GPTransformer::backwardPass(const std::vector<std::string>& inputTokens, std::shared_ptr<Matrix> targetMat, float learningRate) {
 
-        NNGL::Timer timer("GPTransformer::backwardPass");
+        MLGL::Timer timer("GPTransformer::backwardPass");
 
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
@@ -293,7 +293,7 @@ namespace NNGL {
         
         //std::shared_ptr<Matrix> lastTokenRep = std::make_shared<Matrix>(1, decOutputMat->rows);
         //{
-        //    NNGL::Timer timer("GPTransformer::backwardPass:1");
+        //    MLGL::Timer timer("GPTransformer::backwardPass:1");
         //    decOutputMat->downloadFromGPU();
         //    for (int i = 0; i < decOutputMat->rows; ++i) (*lastTokenRep)(0, i) = (*decOutputMat)(i, decOutputMat->cols - 1);
         //    lastTokenRep->uploadToGPU();

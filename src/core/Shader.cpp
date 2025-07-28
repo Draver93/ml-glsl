@@ -6,7 +6,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace NNGL {
+namespace MLGL {
 	Shader::Shader(const std::string& filepath) {
         std::ifstream file(filepath);
         if (!file.is_open()) throw std::runtime_error("Failed to open file: " + filepath);

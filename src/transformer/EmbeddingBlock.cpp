@@ -10,7 +10,7 @@
 #include "Logger.h"
 
 
-namespace NNGL {
+namespace MLGL {
     EmbeddingBlock::EmbeddingBlock(std::string bpeFilepath, size_t modelDim, size_t maxSeqLen) :
         m_ModelDim(modelDim),
         m_MaxSeqLen(maxSeqLen),
@@ -185,7 +185,7 @@ namespace NNGL {
     }
 
     std::shared_ptr<Matrix> EmbeddingBlock::forward(const std::vector<std::string>& tokens) {
-        NNGL::Timer timer("EmbeddingBlock::forward");
+        MLGL::Timer timer("EmbeddingBlock::forward");
 
         GLuint indexBuffer = getIndexBuffer(tokens);
 
