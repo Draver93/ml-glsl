@@ -1,25 +1,18 @@
 #pragma once
 
-#include <vector>
+#define GLAD_GLX 0
 extern "C" {
 #include <glad/glad.h>
 }
-#include <cstring>
+
+#include <vector>
 #include <memory>
-#include <queue>
-#include <mutex>
+#include <cstring>
 #include <cmath>
 
 namespace MLGL {
     class Matrix {
-    private:
-        bool m_Dirty = true; // Dirty flag for GPU upload
-        std::vector<float> flatVec; // Now private: direct access forbidden, use accessors
-
     public:
-
-        int rows, cols;
-        GLuint buffer = 0;
 
         Matrix() = delete;
         Matrix(int row, int column, float fill = 0.0f);
@@ -75,5 +68,13 @@ namespace MLGL {
 
         // Dirty state
         bool isDirty() const { return m_Dirty; }
+        
+    public:
+        int rows, cols;
+        GLuint buffer = 0;
+
+    private:
+        bool m_Dirty = true; // Dirty flag for GPU upload
+        std::vector<float> flatVec;
     };
 }
