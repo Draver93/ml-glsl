@@ -175,8 +175,6 @@ The transformer supports the following modes:
 - `--verbose`
 - `--help`
 
----
-
 ## Documentation
 
 ### GLM
