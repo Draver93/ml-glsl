@@ -1,190 +1,206 @@
-# GPU-Accelerated Neural Network (NNGL)
+# ML-GLSL
 
-A high-performance neural network implementation leveraging OpenGL compute shaders for GPU acceleration. This project explores the intersection of graphics programming and machine learning, demonstrating how modern GPU compute capabilities can dramatically accelerate neural network training and inference.
+ML-GLSL is a C++ project for machine learning and graphics tasks using GLSL (OpenGL Shading Language). It provides tools for tokenizing GLSL/text data and training transformer-based language models, leveraging OpenGL compute for efficient neural network operations.
 
-## Overview
+---
 
-This project implements a fully GPU-accelerated neural network using OpenGL compute shaders. Unlike traditional CPU-based implementations or CUDA-specific solutions, this approach uses OpenGL for cross-platform GPU computing, making it accessible across different graphics hardware vendors.
+## Features
 
-<p align="center">
-<img src="example.png" alt="Cube" width="100%">
-</p>
+- **Tokenizer**: Byte Pair Encoding (BPE) tokenizer for text and code, with training, tokenization, info, and vocabulary reduction modes.
+- **Transformer**: Transformer language model for sequence prediction, text/code generation, and evaluation, with flexible training and inference options.
+- **OpenGL Compute**: Uses OpenGL and GPU acceleration for neural network computations.
+- **Extensive CLI**: Both tokenizer and transformer provide detailed command-line interfaces for all operations.
 
-### Key Features
+---
 
-- **Pure GPU Implementation**: All neural network operations (forward pass, backpropagation, weight updates) run on GPU
-- **OpenGL Compute Shaders**: Cross-platform GPU acceleration without vendor lock-in
-- **Interactive Testing Interface**: Real-time CLI for testing and benchmarking
-- **Memory Efficient**: Direct GPU buffer management with minimal CPU-GPU transfers
-- **Configurable Architecture**: Support for multiple layer types and activation functions
+## Project Structure
 
-## Architecture
+- `src/tokenizer/main.cpp` — BPE tokenizer CLI and logic.
+- `src/transformer/main.cpp` — Transformer model CLI and logic.
+- `src/old_main.cpp` — Legacy and experimental neural network and transformer code, including MNIST digit recognition and unit tests.
+- `external/` — Third-party dependencies (GLM, GLFW, Glad, etc.).
+- `build_win.bat`, `build_linux.sh` — Build scripts for Windows and Linux.
+- `premake5.lua` — Build configuration for Premake.
 
-The implementation consists of several key components:
+---
 
-### Core Classes
+## External Dependencies
 
-- **`NeuralNetwork`**: Main orchestrator handling training pipeline and GPU resource management
-- **`Layer`**: Individual network layer with GPU buffers for weights, biases, activations, and gradients
-- **`Shader`**: OpenGL compute shader wrapper for GPU kernel execution
+- **GLM**: Math library for graphics ([external/glm](external/glm))
+- **GLFW**: Window/context management ([external/glfw](external/glfw))
+- **Glad**: OpenGL loader ([external/glad](external/glad))
 
-### GPU Kernels (Compute Shaders)
+---
 
-- `forward_pass.comp` - Matrix multiplication and activation functions
-- `delta_loss.comp` - Output layer error calculation
-- `backward_pass.comp` - Hidden layer gradient computation
-- `update_weights.comp` - Weight parameter updates
-- `update_biases.comp` - Bias parameter updates
+## Build Instructions
 
-## Training Pipeline
+### Windows
 
-The GPU-accelerated training follows the standard backpropagation algorithm:
+1. Run `build_win.bat` to build with Visual Studio.
+2. Open `ml-glsl.sln` for development.
 
-1. **Forward Pass**: Input propagation through all layers with activation
-2. **Loss Calculation**: Error computation at output layer
-3. **Backward Pass**: Gradient propagation through hidden layers
-4. **Parameter Update**: Weight and bias updates using computed gradients
+### Linux
 
-All operations are parallelized across GPU compute units, with careful memory barrier synchronization between stages.
+1. Run `build_linux.sh` to build using the shell script.
+2. Ensure `cmake` and `gcc` are installed.
 
-## Example Use Case
+### Using Premake
 
-The current implementation is trained to approximate the function `f(a,b) = sin(a) * sin(b)`, demonstrating the network's ability to learn complex non-linear relationships.
+Generate project files with:
 
-## Interactive Testing
-
-The built-in CLI provides several testing modes:
-
-```bash
-nn> test 1.57 3.14          # Test specific inputs
-nn> random                  # Test random values
-nn> batch 100              # Batch test 100 samples
-nn> benchmark              # Performance benchmark
-nn> layer 0                # Inspect layer details
+```sh
+premake5 vs2019
 ```
+Replace `vs2019` with your desired platform.
 
-## Performance Characteristics
+---
 
-GPU acceleration provides significant performance improvements:
+## Usage
 
-- **Parallel Processing**: Thousands of operations executed simultaneously
-- **High Throughput**: Capable of processing thousands of inferences per second
-- **Memory Bandwidth**: Efficient utilization of GPU memory hierarchy
-- **Scalable**: Performance scales with GPU compute capability
+### Tokenizer
 
-## Technical Implementation Details
+The tokenizer supports the following modes:
 
-### Memory Management
+- **Train**: Train a new BPE model or append to an existing one.
+- **Tokenize**: Tokenize input text or files using a trained BPE model.
+- **Info**: Display information about a BPE model.
+- **Reduce**: Reduce the vocabulary size of a BPE model.
 
-The implementation uses OpenGL Shader Storage Buffer Objects (SSBOs) for efficient GPU memory management:
+#### Example Commands
 
-- Input/target data buffers for training batches
-- Per-layer weight and bias parameter storage
-- Activation and gradient buffers for forward/backward passes
-- Automatic buffer sizing and overflow protection
+- Train a new BPE model:
+  ```sh
+  ml-glsl-tokenizer --mode train --checkpoint model.bpe --input file1.txt,file2.txt
+  ```
+- Append to an existing model:
+  ```sh
+  ml-glsl-tokenizer --mode train --checkpoint model.bpe --input new_data.txt --append
+  ```
+- Tokenize text:
+  ```sh
+  ml-glsl-tokenizer --mode tokenize --checkpoint model.bpe --text "Hello world!"
+  ```
+- Tokenize a file:
+  ```sh
+  ml-glsl-tokenizer --mode tokenize --checkpoint model.bpe --input input.txt --output tokens.txt
+  ```
+- Show model info:
+  ```sh
+  ml-glsl-tokenizer --mode info --checkpoint model.bpe
+  ```
+- Reduce vocabulary size:
+  ```sh
+  ml-glsl-tokenizer --mode reduce --checkpoint model.bpe --vocab-size 10000
+  ```
+- Reduce and save to new file:
+  ```sh
+  ml-glsl-tokenizer --mode reduce --checkpoint model.bpe --vocab-size 10000 --output small_model.bpe
+  ```
 
-### Compute Workgroup Optimization
+#### Tokenizer Options
 
-Workgroup dispatch is carefully calculated to maximize GPU utilization:
+- `--mode <train|tokenize|info|reduce>`
+- `--checkpoint <path>`
+- `--input <file1,file2,...>` (for train) or `<file>` (for tokenize)
+- `--text <text>` (for tokenize)
+- `--output <file>`
+- `--append` (for train)
+- `--vocab-size <size>`
+- `--merge-limit <limit>`
+- `--no-special-tokens`
+- `--no-ascii-tokens`
+- `--verbose`
+- `--help`
 
-```cpp
-int workgroups_x = std::min((int)ceil(batch_size * input_size / 16.0f), 65535);
-int workgroups_y = std::min((int)ceil(batch_size * output_size / 16.0f), 65535);
-glDispatchCompute(workgroups_x, workgroups_y, 1);
-```
+---
 
-### Synchronization
+### Transformer
 
-Memory barriers ensure proper data dependencies between compute shader stages:
+The transformer supports the following modes:
 
-```cpp
-glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-```
+- **Train**: Train a new transformer model.
+- **Generate**: Generate text/code from a prompt.
+- **Evaluate**: Evaluate the model on test data.
+- **Interactive**: Interactive prompt/response mode.
+- **Info**: Show model information.
 
-## Requirements
+#### Example Commands
 
-### Hardware
-- GPU with OpenGL 4.3+ compute shader support
-- Minimum 1GB GPU memory recommended
+- Train a new transformer model:
+  ```sh
+  ml-glsl-transformer --mode train --bpe tokenizer.bpe --model model.gpt --input data.txt
+  ```
+- Generate text:
+  ```sh
+  ml-glsl-transformer --mode generate --model model.gpt --prompt "Once upon a time"
+  ```
+- Evaluate the model:
+  ```sh
+  ml-glsl-transformer --mode evaluate --model model.gpt --input test_data.txt
+  ```
+- Interactive mode:
+  ```sh
+  ml-glsl-transformer --mode interactive --model model.gpt
+  ```
+- Show model info:
+  ```sh
+  ml-glsl-transformer --mode info --model model.gpt
+  ```
 
-### Software Dependencies
-- OpenGL 4.3+
-- Graphics drivers with compute shader support
-- C++17 compatible compiler
+#### Transformer Options
 
-### Build Instructions
+- `--mode <train|generate|info|evaluate|interactive>`
+- `--model <path>`
+- `--bpe <path>`
+- `--input <file1,file2,...>`
+- `--output <file>`
+- `--prompt <text>`
+- `--d-model <size>`
+- `--d-hidden <size>`
+- `--seq-len <length>`
+- `--epochs <num>`
+- `--lr <rate>`
+- `--lr-decay <factor>`
+- `--lr-decay-steps <steps>`
+- `--progress-interval <steps>`
+- `--eval-interval <steps>`
+- `--early-stopping <patience>`
+- `--target-loss <loss>`
+- `--max-tokens <num>`
+- `--temperature <temp>`
+- `--top-k <k>`
+- `--no-eos`
+- `--num-prompts <num>`
+- `--show-loss-trend`
+- `--verbose`
+- `--help`
 
-```bash
-# Clone repository
-git clone <repository-url>
-cd nn-glsl-core
+---
 
-# Generate project files
-premake5 vs2019    # For Visual Studio 2019
-# or
-premake5 vs2022    # For Visual Studio 2022
-# or
-premake5 gmake2    # For Unix Makefiles
+## Testing
 
-# Windows (Visual Studio)
-# Open generated .sln file and build, or use MSBuild:
-msbuild nn-glsl-core.sln /p:Configuration=Release
+The project includes several test cases in the form of `.bmp` files (e.g., `test_case_1.bmp`, `test_case_2.bmp`). These can be used to validate the functionality of the neural network and transformer components. The legacy `old_main.cpp` also contains comprehensive unit tests for matrix operations, layer normalization, attention, and more.
 
-# Linux (Make)
-make config=release
+---
 
-# Run
-./bin/Release-<system>-x86_64/nn-glsl-core/nn-glsl-core
-```
+## Documentation
 
-## Learning Objectives
+### GLM
 
-This project explores several key concepts:
+GLM documentation is available in `external/glm/doc/api`.
 
-### GPU Computing Fundamentals
-- Compute shader programming and optimization
-- GPU memory hierarchy and access patterns
-- Parallel algorithm design considerations
+### GLFW
 
-### Neural Network Implementation
-- Backpropagation algorithm implementation
-- Gradient computation and parameter updates
-- Numerical stability in GPU floating-point operations
+GLFW documentation is available in `external/glfw/docs`.
 
-### Performance Engineering
-- GPU workload distribution and occupancy
-- Memory bandwidth optimization
-- CPU-GPU synchronization strategies
-
-## Future Enhancements
-
-Potential areas for expansion:
-
-- **Advanced Optimizers**: Adam, RMSprop implementations
-- **Regularization**: Dropout, batch normalization
-- **Layer Types**: Convolutional, LSTM layers
-- **Multi-GPU**: Distributed training across multiple GPUs
-- **Mixed Precision**: FP16 training for improved performance
-- **Dynamic Graphs**: Runtime network architecture modification
-
-
-## Research Applications
-
-This implementation serves as a foundation for exploring:
-
-- GPU compute optimization techniques
-- Parallel numerical algorithms
-- Cross-platform high-performance computing
-- Alternative ML acceleration approaches
-
-## Contributing
-
-This is a learning project focused on understanding GPU-accelerated neural networks. Contributions, optimizations, and educational improvements are welcome.
+---
 
 ## License
 
-This project is open-source and free to use for educational purposes.
+This project is proprietary and not licensed for redistribution or commercial use. All rights reserved. Third-party libraries may have their own licenses; see their respective directories for details.
 
-## Acknowledgments
+---
 
-This project demonstrates practical applications of GPU computing in machine learning, bridging graphics programming and neural network implementation.
+## Contact
+
+For questions or issues, please open an issue in the repository or contact the maintainers.
