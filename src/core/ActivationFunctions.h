@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <unordered_map>
 
 namespace MLGL {
     static std::vector<float> softmax(const std::vector<float>& input) {

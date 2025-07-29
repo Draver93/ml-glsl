@@ -5,6 +5,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <memory>
+#include <stdexcept>
 
 namespace MLGL {
 	Shader::Shader(const std::string& filepath) {
@@ -108,4 +110,18 @@ namespace MLGL {
 	GLuint Shader::get() {
         return m_Program;
 	}
+
+    ShaderManager& ShaderManager::getInstance() {
+        static ShaderManager instance;
+        return instance;
+    }
+
+    std::shared_ptr<Shader> ShaderManager::getShader(const std::string& filepath) {
+        auto it = m_Shaders.find(filepath);
+        if (it != m_Shaders.end())
+            return it->second;
+
+        m_Shaders[filepath] = std::shared_ptr<Shader>(new Shader(filepath));
+        return m_Shaders[filepath];
+    }
 }
