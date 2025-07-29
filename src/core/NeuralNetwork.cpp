@@ -1,7 +1,5 @@
 #include "NeuralNetwork.h"
 #include "Logger.h"
-#include "ShaderCPUAnalogs.h"
-
 #include <execution>
 #include <iostream>
 #include <sstream>

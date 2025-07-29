@@ -1,6 +1,5 @@
 #include "AttentionBlock.h"
 #include "Logger.h"
-#include "ShaderCPUAnalogs.h"
 #include <iostream>
 
 namespace MLGL {

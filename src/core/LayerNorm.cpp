@@ -2,7 +2,6 @@
 #include "Logger.h"
 #include <cmath>
 #include <algorithm>
-#include "ShaderCPUAnalogs.h"
 
 namespace MLGL {
     LayerNorm::LayerNorm(int normalizedShape, float epsilon)
