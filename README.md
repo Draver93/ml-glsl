@@ -177,12 +177,6 @@ The transformer supports the following modes:
 
 ---
 
-## Testing
-
-The project includes several test cases in the form of `.bmp` files (e.g., `test_case_1.bmp`, `test_case_2.bmp`). These can be used to validate the functionality of the neural network and transformer components. The legacy `old_main.cpp` also contains comprehensive unit tests for matrix operations, layer normalization, attention, and more.
-
----
-
 ## Documentation
 
 ### GLM
