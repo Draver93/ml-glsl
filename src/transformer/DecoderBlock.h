@@ -9,14 +9,6 @@
 namespace MLGL {
 
     class DecoderBlock {
-    private:
-        std::unique_ptr<AttentionBlock> m_MaskedSelfAttn;
-        std::unique_ptr<NeuralNetwork> m_FeedForward;
-        std::unique_ptr<LayerNorm> m_AddNorm1;
-        std::unique_ptr<LayerNorm> m_AddNorm2;
-        std::shared_ptr<Matrix> m_CachedInput;
-        int m_ModelDim;
-
     public:
         DecoderBlock(int modelDim, int hiddenDim, int seqLen);
         DecoderBlock(const char* data);
@@ -29,5 +21,15 @@ namespace MLGL {
         );
         
         std::shared_ptr<Matrix> backward(std::shared_ptr<Matrix> gradOutput, const GLuint gradMaskBuffer, float learningRate);
+    private:
+        std::shared_ptr<Matrix> add(std::shared_ptr<Matrix> dst, std::shared_ptr<Matrix> src);
+    private:
+        std::unique_ptr<AttentionBlock> m_MaskedSelfAttn;
+        std::unique_ptr<NeuralNetwork> m_FeedForward;
+        std::unique_ptr<LayerNorm> m_AddNorm1;
+        std::unique_ptr<LayerNorm> m_AddNorm2;
+        std::shared_ptr<Matrix> m_CachedInput;
+        int m_ModelDim, m_SeqLen;
+        std::shared_ptr<Shader> m_AddCompute;
     };
 }

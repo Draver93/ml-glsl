@@ -837,7 +837,9 @@ int main(int argc, char** argv) {
     // Simulated command line arguments
 #ifdef DEBUG
     std::vector<const char*> args = {
-        "nn-glsl-transformer.exe",
+        "ml-glsl-transformer.exe",
+        "--bpe",
+        "tokens.bpe",
         "--mode",
         "train",
         "--model",

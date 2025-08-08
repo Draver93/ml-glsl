@@ -16,6 +16,7 @@ obj/
 *.dat
 *.dylib
 *.checkpoint
+*.bpe
 
 # --- Premake-generated files ---
 Makefile

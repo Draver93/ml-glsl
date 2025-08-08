@@ -1,0 +1,29 @@
+// shaders/decoder/add_inplace_flex.comp
+#version 430
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+// In/out buffer A: [rowsA, colsA] column-major
+layout(std430) buffer InOutA { float a[]; };
+// Read-only buffer B:
+// - if transpose_b == 0: [rowsA, colsA] column-major
+// - if transpose_b == 1: [colsA, rowsA] column-major
+layout(std430) readonly buffer InB { float b[]; };
+
+uniform int rowsA;        // e.g., seq_len
+uniform int colsA;        // e.g., model_dim
+uniform int transpose_b;  // 0 = no transpose, 1 = use B^T
+
+void main() {
+    uint row = gl_GlobalInvocationID.x; // 0..rowsA-1
+    if (row >= uint(rowsA)) return;
+
+    for (int col = 0; col < colsA; ++col) {
+        uint idxA = uint(col) * uint(rowsA) + row;
+
+        uint idxB = (transpose_b == 0)
+            ? (uint(col) * uint(rowsA) + row)               // B(row, col)
+            : (row * uint(colsA) + uint(col));              // B(col, row) in col-major
+
+        a[idxA] += b[idxB];
+    }
+}

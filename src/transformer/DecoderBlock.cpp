@@ -6,15 +6,17 @@
 
 namespace MLGL {
 
-    DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) : m_ModelDim(modelDim) {
-        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, /*numHeads*/8, seqLen, /*isMasked=*/true);
+    DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) : m_ModelDim(modelDim), m_SeqLen(seqLen) {
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, /*numHeads*/8, m_SeqLen, /*isMasked=*/true);
 
-        m_FeedForward = std::make_unique<NeuralNetwork>(seqLen);
+        m_FeedForward = std::make_unique<NeuralNetwork>(m_SeqLen);
         m_FeedForward->addLayer(modelDim, hiddenDim, MLGL::ActivationFnType::RELU);
         m_FeedForward->addLayer(hiddenDim, modelDim, MLGL::ActivationFnType::RELU);
 
         m_AddNorm1 = std::make_unique<LayerNorm>(modelDim);
         m_AddNorm2 = std::make_unique<LayerNorm>(modelDim);
+
+        m_AddCompute = ShaderManager::getInstance().getShader("shaders/decoder/add_inplace.comp");
     }
 
     DecoderBlock::DecoderBlock(const char* data) {
@@ -100,12 +102,34 @@ namespace MLGL {
         m_AddNorm2->backward(gradOutput, m_FeedForward->getCachedOutput(), m_AddNorm1->getCachedOutput(), gradMaskBuffer);
         auto gradFFNInput = m_FeedForward->backward(m_AddNorm2->getGradInput(), learningRate);
         
+        gradFFNInput = add(gradFFNInput, m_AddNorm2->getGradResidual());
+
         // Backprop through addNorm1 (main: maskedOut, residual: input)
         m_AddNorm1->backward(gradFFNInput, m_MaskedSelfAttn->getCachedOutput(), m_CachedInput);
         auto [gradFromMaskedSelf, maskedGradContext] = m_MaskedSelfAttn->backward(m_AddNorm1->getGradInput(), nullptr, learningRate);
         
-        auto result = m_AddNorm1->getGradResidual();
+        auto result = add(gradFromMaskedSelf, m_AddNorm1->getGradResidual());
 
         return result;
+    }
+
+    std::shared_ptr<Matrix> DecoderBlock::add(std::shared_ptr<Matrix> dst, std::shared_ptr<Matrix> src) {
+        MLGL::Timer timer("DecoderBlock::add");
+
+        m_AddCompute->bindBuffer(0, "InOutA", dst->buffer);
+        m_AddCompute->bindBuffer(1, "InB", src->buffer);
+
+        if (dst->rows == src->rows && dst->cols == src->cols) m_AddCompute->setUniform("transpose_b", 0);
+        else if (dst->rows == src->cols && dst->cols == src->rows) m_AddCompute->setUniform("transpose_b", 1);
+        else throw std::invalid_argument("Wrong matrix dims");
+
+        m_AddCompute->setUniform("rowsA", dst->rows);
+        m_AddCompute->setUniform("colsA", dst->cols);
+
+        int workgroupsX = (dst->rows + 31) / 32;
+        m_AddCompute->dispatch(workgroupsX, 1, 1);
+        for (int i = 0; i <= 1; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+
+        return dst;
     }
 }
