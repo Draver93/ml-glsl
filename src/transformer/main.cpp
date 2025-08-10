@@ -390,27 +390,46 @@ int trainMode(const Config& config) {
             config.bpe_path, config.d_model, config.d_hidden, config.seq_len);
     }
 
-    // Prepare training examples
+    // Prepare training examples (chunk sentences into windows matching seq_len)
     struct TrainingExample {
-        std::vector<std::string> tokens;
+        std::vector<std::string> tokens;   // includes <SOS> ... <EOS>
         std::string original_text;
     };
 
     std::vector<TrainingExample> examples;
 
-    for (const auto& sentence : training_data) {
-        TrainingExample example;
-        example.original_text = sentence;
-        example.tokens.push_back("<SOS>");
+    // Build a continuous token stream across lines and pack exact-length examples (no padding).
+    const int max_inner = std::max(1, config.seq_len - 2);
+    std::vector<std::string> token_buffer;
+    token_buffer.reserve(16 * static_cast<size_t>(max_inner));
+    size_t cursor = 0;
 
+    for (const auto& sentence : training_data) {
         std::vector<std::string> sentence_tokens = gpt->tokenizeInput(sentence.c_str(), sentence.size());
-        if (sentence_tokens.size() < 2 || sentence_tokens.size() > config.seq_len - 2) {
-            continue; // Skip sentences that are too short/long
+        if (!sentence_tokens.empty()) {
+            token_buffer.insert(token_buffer.end(), sentence_tokens.begin(), sentence_tokens.end());
         }
 
-        example.tokens.insert(example.tokens.end(), sentence_tokens.begin(), sentence_tokens.end());
-        example.tokens.push_back("<EOS>");
-        examples.push_back(example);
+        // While we can fill one full example, emit it
+        while (cursor + static_cast<size_t>(max_inner) <= token_buffer.size()) {
+            TrainingExample ex;
+            ex.original_text = sentence;
+            ex.tokens.clear();
+            ex.tokens.push_back("<SOS>");
+            ex.tokens.insert(ex.tokens.end(), token_buffer.begin() + static_cast<std::ptrdiff_t>(cursor),
+                             token_buffer.begin() + static_cast<std::ptrdiff_t>(cursor + static_cast<size_t>(max_inner)));
+            ex.tokens.push_back("<EOS>");
+            if (ex.tokens.size() == static_cast<size_t>(config.seq_len)) {
+                examples.push_back(std::move(ex));
+            }
+            cursor += static_cast<size_t>(max_inner);
+
+            // Periodically compact buffer to avoid growth
+            if (cursor > token_buffer.size() / 2) {
+                token_buffer.erase(token_buffer.begin(), token_buffer.begin() + static_cast<std::ptrdiff_t>(cursor));
+                cursor = 0;
+            }
+        }
     }
 
     LOG_INFO("Prepared " + std::to_string(examples.size()) + " training examples");
@@ -841,7 +860,7 @@ int main(int argc, char** argv) {
         "--bpe", "tokens.bpe",
         "--mode", "train",
         "--verbose",
-        //"--seq-len", "1024",
+        "--seq-len", "1024",
         "--progress-interval", "500",
         "--model", "model.gpt",
         "--input", "pg51161.txt"
