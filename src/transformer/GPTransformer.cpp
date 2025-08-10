@@ -118,7 +118,7 @@ namespace MLGL {
 
 
     void GPTransformer::trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate) {
-        MLGL::Timer timer("GPTransformer::trainNextToken============================================================");
+        MLGL::Timer timer("GPTransformer::trainNextToken============================================================", LogLevel::LL_DEBUG);
 
         std::vector<std::string> paddedContext = contextTokens;
         if (paddedContext.size() > m_SeqLen) paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
@@ -132,23 +132,23 @@ namespace MLGL {
         m_TargetMat->uploadToGPU();
 
         lossCalcInterval++;
-        if (lossCalcInterval % 1000 == 0) {
+        if (lossCalcInterval % 10000 == 0) {
             std::shared_ptr<Matrix> logits = forwardPass(paddedContext);
             logits->downloadFromGPU();
             float loss = calculateLoss(logits, targetTokenId, LossMode::Margin);
-
+        
             m_LossHistory.push_back(loss);
             while (m_LossHistory.size() > c_LossHistorySize) m_LossHistory.erase(m_LossHistory.begin());
         }
 
         {
-            MLGL::Timer timer("GPTransformer::glFenceSync WAITING", MLGL::LogLevel::LL_DEBUG);
-            GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+            MLGL::Timer timer("GPTransformer::glFenceSync WAITING");
 
             backwardPass(paddedContext, m_TargetMat, learningRate);
 
+            GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
             while (true) {
-                GLenum result = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000); // wait up to 0.1ms
+                GLenum result = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 100000);
                 if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED)
                     break;
             }

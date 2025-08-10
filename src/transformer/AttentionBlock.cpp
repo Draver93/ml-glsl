@@ -14,7 +14,8 @@ namespace MLGL {
 
         glGenBuffers(1, &m_PaddingMaskBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, seqLen * sizeof(int), nullptr, GL_STATIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_SeqLen * sizeof(int), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
         // Initialize weight matrices
         m_WeightQueryMat = std::make_shared<Matrix>(modelDimensions, modelDimensions);
@@ -128,7 +129,8 @@ namespace MLGL {
         // Initialize OpenGL buffer for padding mask
         glGenBuffers(1, &m_PaddingMaskBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, m_SeqLen * sizeof(int), nullptr, GL_STATIC_DRAW);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, m_SeqLen * sizeof(int), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
         // Initialize ADAM optimization buffers for Q, K, V weights
         m_ADAM_M_QueryMat = std::make_shared<Matrix>(m_ModelDim, m_ModelDim, 0.0f);
@@ -264,10 +266,8 @@ namespace MLGL {
 
         const auto& input_kv = context ? context : input;
 
-        if (!m_PaddingMask.empty()) {
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
-        }
+        if (!m_PaddingMask.empty())
+            updatePaddingMask(m_PaddingMask);
 
         // === STEP 1: Compute Q, K, V projections ===
         {
@@ -370,10 +370,8 @@ namespace MLGL {
     std::pair<std::shared_ptr<Matrix>, std::shared_ptr<Matrix>> AttentionBlock::backward( const std::shared_ptr<Matrix>& gradOutput, const std::shared_ptr<Matrix>& context, float learningRate ) {
         MLGL::Timer timer("AttentionBlock::backward");
         
-        if (!m_PaddingMask.empty()) {
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, m_PaddingMask.size() * sizeof(int), m_PaddingMask.data(), GL_STATIC_DRAW);
-        }
+        if (!m_PaddingMask.empty()) 
+            updatePaddingMask(m_PaddingMask);
 
         // === STEP 1: Backward through final matmul (grad_output -> grad_attention_weights, grad_V) ===
         { 
@@ -470,6 +468,12 @@ namespace MLGL {
         m_WeightsUpdatePassCompute->dispatch(workgroups_x, 1, 1);
 
         for (int i = 0; i <= 3; i++) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+    }
+    
+    void AttentionBlock::updatePaddingMask(const std::vector<int>& mask) {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_PaddingMaskBuffer);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, mask.size() * sizeof(int), mask.data());
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 
     void AttentionBlock::computeProjectionGradients(const std::shared_ptr<Matrix>& gradProjection, const std::shared_ptr<Matrix>& cachedInput, const std::shared_ptr<Matrix>& weight,

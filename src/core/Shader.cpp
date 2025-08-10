@@ -97,7 +97,13 @@ namespace MLGL {
         glUseProgram(m_Program);
         glDispatchCompute(x, y, z);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-        
+        //GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        //while (true) {
+        //    GLenum result = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 100000);
+        //    if (result == GL_ALREADY_SIGNALED || result == GL_CONDITION_SATISFIED)
+        //        break;
+        //}
+        //glDeleteSync(fence);
         // Log compute shader dispatch
         LOG_TRACE("[COMPUTE DISPATCH] Executed compute shader with workgroups: " +
             std::to_string(x) + "x" + std::to_string(y) + "x" + std::to_string(z));

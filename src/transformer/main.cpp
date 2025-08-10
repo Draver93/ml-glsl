@@ -838,14 +838,13 @@ int main(int argc, char** argv) {
 #ifdef DEBUG
     std::vector<const char*> args = {
         "ml-glsl-transformer.exe",
-        "--bpe",
-        "tokens.bpe",
-        "--mode",
-        "train",
-        "--model",
-        "model.gpt",
-        "--input",
-        "pg51161.txt"
+        "--bpe", "tokens.bpe",
+        "--mode", "train",
+        "--verbose",
+        //"--seq-len", "1024",
+        "--progress-interval", "500",
+        "--model", "model.gpt",
+        "--input", "pg51161.txt"
     };
 
     int argc_mock = args.size();

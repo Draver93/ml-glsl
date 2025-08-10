@@ -184,6 +184,11 @@ namespace MLGL {
         MLGL::Timer timer("NeuralNetwork::weightsAndBiasesUpdate");
         GLuint currentInput = inputBatchMat->buffer;
 
+        const float b1 = 0.9f;
+        const float b2 = 0.999f;
+        float mCorr = 1.0f - std::pow(b1, float(m_ADAM_Timestep + 1));
+        float vCorr = 1.0f - std::pow(b2, float(m_ADAM_Timestep + 1));
+
         for (size_t layerIdx = 0; layerIdx < m_Layers.size(); ++layerIdx) {
             auto& layer = m_Layers[layerIdx];
 
@@ -199,16 +204,18 @@ namespace MLGL {
                 m_WeightsCompute->setUniform("output_size", (int)layer->getSize().y);
                 m_WeightsCompute->setUniform("batch_size", m_BatchSize);
                 m_WeightsCompute->setUniform("learning_rate", learningRate);
-                m_WeightsCompute->setUniform("ADAM_beta1", 0.9f);
-                m_WeightsCompute->setUniform("ADAM_beta2", 0.999f);
-                m_WeightsCompute->setUniform("ADAM_timestep", m_ADAM_Timestep);
+                m_WeightsCompute->setUniform("ADAM_beta1", b1);
+                m_WeightsCompute->setUniform("ADAM_beta2", b2);
                 m_WeightsCompute->setUniform("use_batch_idx", currentInput == inputBatchMat->buffer ? use_col_idx : -1);
-
-                // Dispatch compute for weight updates
-                int workgroupsX = std::min((int)ceil(m_BatchSize * layer->getSize().x / 16.0f), 65535);
-                int workgroupsY = std::min((int)ceil(m_BatchSize * layer->getSize().y / 16.0f), 65535);
-                m_WeightsCompute->dispatch(workgroupsX, workgroupsY, 1);
-
+                
+                // New (replace timestep pow in shader)
+                m_WeightsCompute->setUniform("m_correction", mCorr);
+                m_WeightsCompute->setUniform("v_correction", vCorr);
+                
+                // 16x16 tiling over (input_size, output_size)
+                int groupsX = (layer->getSize().x + 15) / 16;
+                int groupsY = (layer->getSize().y + 15) / 16;
+                m_WeightsCompute->dispatch(groupsX, groupsY, 1);
                 // Update input for next layer
                 currentInput = layer->m_ActivationMat->buffer;
 

@@ -1,62 +1,91 @@
 #version 430
+layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+// Inputs: A = inputs[batch, input_size], Δ = deltas[batch, output_size] (row-major)
+layout(std430, binding=0) readonly buffer InputBuffer  { float inputs[]; };   // idx = b*input_size + i
+layout(std430, binding=1) readonly buffer DeltaBuffer  { float deltas[]; };   // idx = b*output_size + o
 
-layout(std430) restrict readonly buffer InputBuffer { float inputs[]; };
-layout(std430) restrict readonly buffer DeltaBuffer { float deltas[]; };
+// Parameters and state
+layout(std430, binding=2)        buffer WeightBuffer { float weights[]; };    // idx = i*output_size + o
+layout(std430, binding=3)        buffer ADAM_MBuffer { float m[]; };
+layout(std430, binding=4)        buffer ADAM_VBuffer { float v[]; };
 
-layout(std430) restrict buffer WeightBuffer { float weights[]; };
-layout(std430) restrict buffer ADAM_MBuffer { float adam_m[]; };
-layout(std430) restrict buffer ADAM_VBuffer { float adam_v[]; };
-
-uniform int input_size;
-uniform int output_size;
-uniform int batch_size;
-
+uniform int   input_size;
+uniform int   output_size;
+uniform int   batch_size;
 uniform float learning_rate;
 uniform float ADAM_beta1;
 uniform float ADAM_beta2;
-uniform int ADAM_timestep;
-uniform int use_batch_idx = -1;
+uniform int   use_batch_idx = -1;   // -1: full batch; >=0: select input column only
+uniform float m_correction;         // 1 - beta1^(t+1) (precomputed on CPU)
+uniform float v_correction;         // 1 - beta2^(t+1)
 
-const float epsilon = 1e-8;
+const float EPS = 1e-8;
+
+shared float Asub[16][16];     // [i_tile, k_tile]
+shared float Bsub[16][16];     // [k_tile, o_tile]
 
 void main() {
-    uint input_neuron_idx = gl_GlobalInvocationID.x;  // input neuron index
-    uint output_neuron_idx = gl_GlobalInvocationID.y; // output neuron index
-    uint weight_idx = input_neuron_idx * output_size + output_neuron_idx;
+  // Tile coordinates in (input, output) space
+  uint iBase = gl_WorkGroupID.x * 16u;
+  uint oBase = gl_WorkGroupID.y * 16u;
 
-    if (input_neuron_idx >= input_size || output_neuron_idx >= output_size) return;
-    
-    // Compute weight gradient: dL/dw = input^T @ delta (accumulated across batch)
-    float weight_gradient = 0.0;
-    
-    // Accumulate gradients across all batch samples
-    for (int batch_idx = 0; batch_idx < batch_size; batch_idx++) {
-        // Column-major indexing: [batch_idx * input_size/output_size + input_neuron_idx/output_neuron_idx]
-        uint input_idx = batch_idx * input_size + input_neuron_idx;
-        if(use_batch_idx != -1) input_idx = use_batch_idx * input_size + input_neuron_idx;
-        
-        uint delta_idx = batch_idx * output_size + output_neuron_idx;
-        weight_gradient += inputs[input_idx] * deltas[delta_idx];
+  uint iLocal = gl_LocalInvocationID.x;  // 0..15
+  uint oLocal = gl_LocalInvocationID.y;  // 0..15
+
+  uint iIdx = iBase + iLocal;
+  uint oIdx = oBase + oLocal;
+
+  if (iIdx >= uint(input_size) || oIdx >= uint(output_size)) return;
+
+  float acc = 0.0;
+
+  if (use_batch_idx >= 0) {
+    // Single-sample update: pick input column from use_batch_idx,
+    // but deltas come from batch row 0 (your projection net has batch_size==1).
+    uint bIn    = uint(use_batch_idx);
+    uint bDelta = 0u;
+
+    float a = inputs[bIn    * uint(input_size)  + iIdx];
+    float d = deltas[bDelta * uint(output_size) + oIdx];
+    acc = a * d;   // effective batch = 1 → no averaging
+  } else {
+    // Tiled accumulation over batch K
+    for (uint t = 0; t < (uint(batch_size) + 15u) / 16u; ++t) {
+      uint k0 = t * 16u;
+
+      // Load A^T tile: Asub[i_local, k_local] = inputs[(k0 + k_local), iIdx]
+      uint kA = k0 + oLocal;
+      Asub[iLocal][oLocal] =
+          (kA < uint(batch_size)) ? inputs[kA * uint(input_size) + iIdx] : 0.0;
+
+      // Load Δ tile: Bsub[k_local, o_local] = deltas[(k0 + k_local), oIdx]
+      uint kB = k0 + iLocal;
+      Bsub[iLocal][oLocal] =
+          (kB < uint(batch_size)) ? deltas[kB * uint(output_size) + oIdx] : 0.0;
+
+      barrier();
+
+      // Multiply-accumulate over k_tile
+      for (int k = 0; k < 16; ++k) {
+        acc += Asub[iLocal][k] * Bsub[k][oLocal];
+      }
+      barrier();
     }
+    // Mean over batch
+    acc /= float(batch_size > 0 ? batch_size : 1);
+  }
 
-    // Average gradient across batch
-    weight_gradient /= float(batch_size);
+  // Fused Adam update (bias-corrected via precomputed corrections)
+  uint wIdx = iIdx * uint(output_size) + oIdx;
 
-    // ADAM optimizer update
-    adam_m[weight_idx] = ADAM_beta1 * adam_m[weight_idx] + (1.0 - ADAM_beta1) * weight_gradient;
-    adam_v[weight_idx] = ADAM_beta2 * adam_v[weight_idx] + (1.0 - ADAM_beta2) * weight_gradient * weight_gradient;
+  float gi = acc;
+  float mi = m[wIdx] = ADAM_beta1 * m[wIdx] + (1.0 - ADAM_beta1) * gi;
+  float vi = v[wIdx] = ADAM_beta2 * v[wIdx] + (1.0 - ADAM_beta2) * gi * gi;
 
-    // Bias correction for ADAM
-    float m_hat = adam_m[weight_idx] / (1.0 - pow(ADAM_beta1, ADAM_timestep + 1));
-    float v_hat = adam_v[weight_idx] / (1.0 - pow(ADAM_beta2, ADAM_timestep + 1));
+  float mhat = (m_correction > 0.0) ? (mi / m_correction) : mi;
+  float vhat = (v_correction > 0.0) ? (vi / v_correction) : vi;
+  vhat = max(vhat, EPS);
 
-    v_hat = max(v_hat, epsilon); // Prevent sqrt of zero or negative
-    float denom = sqrt(v_hat) + epsilon;
-    if (denom == 0.0) denom = epsilon;
-    weights[weight_idx] -= learning_rate * m_hat / denom;
-    
-    // NaN/Inf protection
-    if (isnan(weights[weight_idx]) || isinf(weights[weight_idx])) weights[weight_idx] = 0.0;
+  weights[wIdx] -= learning_rate * mhat / (sqrt(vhat) + EPS);
 }
