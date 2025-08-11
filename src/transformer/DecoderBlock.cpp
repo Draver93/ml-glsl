@@ -7,7 +7,7 @@
 namespace MLGL {
 
     DecoderBlock::DecoderBlock(int modelDim, int hiddenDim, int seqLen) : m_ModelDim(modelDim), m_SeqLen(seqLen) {
-        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, /*numHeads*/8, m_SeqLen, /*isMasked=*/true);
+        m_MaskedSelfAttn = std::make_unique<AttentionBlock>(modelDim, /*numHeads*/64, m_SeqLen, /*isMasked=*/true);
 
         m_FeedForward = std::make_unique<NeuralNetwork>(m_SeqLen);
         m_FeedForward->addLayer(modelDim, hiddenDim, MLGL::ActivationFnType::RELU);

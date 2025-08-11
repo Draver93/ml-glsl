@@ -49,7 +49,7 @@ struct Config {
     float learning_rate = 0.0001f;           // Initial learning rate
     float lr_decay = 0.95f;                  // Learning rate decay factor
     int lr_decay_steps = 50;                 // Steps between LR decay
-    int progress_interval = 50;              // Progress reporting interval
+    int progress_interval = 1000;              // Progress reporting interval
     int eval_interval = 100;                 // Evaluation interval
     int early_stopping = 500;                // Early stopping patience
     float target_loss = 0.001f;              // Target loss for early stopping
@@ -92,7 +92,7 @@ void printUsage(const char* program_name) {
     std::cout << "  --lr <rate>                   Initial learning rate (default: 0.0001)\n";
     std::cout << "  --lr-decay <factor>           Learning rate decay factor (default: 0.95)\n";
     std::cout << "  --lr-decay-steps <steps>      Steps between LR decay (default: 50)\n";
-    std::cout << "  --progress-interval <steps>   Progress reporting interval (default: 50)\n";
+    std::cout << "  --progress-interval <steps>   Progress reporting interval (default: 1000)\n";
     std::cout << "  --eval-interval <steps>       Evaluation interval (default: 100)\n";
     std::cout << "  --early-stopping <patience>   Early stopping patience (default: 500)\n";
     std::cout << "  --target-loss <loss>          Target loss for early stopping (default: 0.001)\n";
@@ -471,7 +471,7 @@ int trainMode(const Config& config) {
     float best_loss = std::numeric_limits<float>::infinity();
     int epochs_without_improvement = 0;
     std::vector<float> epoch_losses;
-    int total_lines_trained = 0;
+    int total_token_trained = 0;
 
     // Keep track of trained examples
     std::vector<size_t> trained_indices;
@@ -500,6 +500,30 @@ int trainMode(const Config& config) {
                 std::vector<std::string> context(example.tokens.begin(), example.tokens.begin() + i);
                 std::string target = example.tokens[i];
                 gpt->trainNextToken(context, target, learning_rate);
+                total_token_trained++;
+
+                if (total_token_trained % config.progress_interval == 0) {
+                    float avg_loss = gpt->getAvrLoss();
+                    std::cout << "Tokens: " << total_token_trained
+                        << " | Epoch: " << (epoch + 1)
+                        << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
+                        << " | LR: " << std::scientific << std::setprecision(2) << learning_rate
+                        << std::endl;
+
+                    if (log_file.is_open()) {
+                        log_file << epoch << "," << total_token_trained << ","
+                            << avg_loss << "," << learning_rate << ","
+                            << total_predictions << "\n";
+                    }
+
+                    // Get random evaluation prompt from last 10 examples
+                    auto eval_prompt = getRandomEvalPrompt();
+                    if (!eval_prompt.first.empty()) {
+                        std::string prediction = gpt->eval(eval_prompt.second);
+                        std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
+                            << prediction << "'\n";
+                    }
+                }
             }
 
             // Add to last trained examples (keep only last 10)
@@ -508,30 +532,6 @@ int trainMode(const Config& config) {
                 last_trained_examples.pop_front();
             }
 
-            total_lines_trained++;
-
-            if (total_lines_trained % config.progress_interval == 0) {
-                float avg_loss = gpt->getAvrLoss();
-                std::cout << "Lines: " << total_lines_trained
-                    << " | Epoch: " << (epoch + 1)
-                    << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
-                    << " | LR: " << std::scientific << std::setprecision(2) << learning_rate
-                    << std::endl;
-
-                if (log_file.is_open()) {
-                    log_file << epoch << "," << total_lines_trained << ","
-                        << avg_loss << "," << learning_rate << ","
-                        << total_predictions << "\n";
-                }
-
-                // Get random evaluation prompt from last 10 examples
-                auto eval_prompt = getRandomEvalPrompt();
-                if (!eval_prompt.first.empty()) {
-                    std::string prediction = gpt->eval(eval_prompt.second);
-                    std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
-                        << prediction << "'\n";
-                }
-            }
             if (g_shutdown_requested) break;
         }
 

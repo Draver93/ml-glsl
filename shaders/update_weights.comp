@@ -2,13 +2,13 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 // Inputs: A = inputs[batch, input_size], Δ = deltas[batch, output_size] (row-major)
-layout(std430, binding=0) readonly buffer InputBuffer  { float inputs[]; };   // idx = b*input_size + i
-layout(std430, binding=1) readonly buffer DeltaBuffer  { float deltas[]; };   // idx = b*output_size + o
+layout(std430) readonly buffer InputBuffer  { float inputs[]; };   // idx = b*input_size + i
+layout(std430) readonly buffer DeltaBuffer  { float deltas[]; };   // idx = b*output_size + o
 
 // Parameters and state
-layout(std430, binding=2)        buffer WeightBuffer { float weights[]; };    // idx = i*output_size + o
-layout(std430, binding=3)        buffer ADAM_MBuffer { float m[]; };
-layout(std430, binding=4)        buffer ADAM_VBuffer { float v[]; };
+layout(std430)        buffer WeightBuffer { float weights[]; };    // idx = i*output_size + o
+layout(std430)        buffer ADAM_MBuffer { float m[]; };
+layout(std430)        buffer ADAM_VBuffer { float v[]; };
 
 uniform int   input_size;
 uniform int   output_size;
