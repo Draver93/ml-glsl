@@ -450,7 +450,7 @@ int trainMode(const Config& config) {
             }
 
             LOG_DEBUG("Processing file: " + filename);
-
+            bool print_report = false;
             if (config.training_mode == "line-by-line") {
                 // Line-by-line training: build buffer of tokenized lines
                 std::vector<std::vector<std::string>> line_tokens_buffer;
@@ -498,6 +498,7 @@ int trainMode(const Config& config) {
                         std::string target = tokens[i];
                         gpt->trainNextToken(context, target, learning_rate);
                         total_token_trained++;
+                        if (!print_report) print_report = total_token_trained % config.progress_interval == 0;
                         total_predictions++;
                     }
                     
@@ -559,6 +560,7 @@ int trainMode(const Config& config) {
                     // Single prediction per window: predict the next token given the context
                     gpt->trainNextToken(context_tokens, target, learning_rate);
                     total_token_trained++;
+                    if(!print_report) print_report = total_token_trained % config.progress_interval == 0;
                     total_predictions++;
                 }
                 
@@ -574,7 +576,7 @@ int trainMode(const Config& config) {
             }
 
             // Progress reporting
-            if (total_token_trained % config.progress_interval == 0) {
+            if (print_report) {
                 float avg_loss = gpt->getAvrLoss();
                 std::cout << "Tokens: " << total_token_trained
                     << " | Epoch: " << (epoch + 1)
