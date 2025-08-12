@@ -39,6 +39,8 @@ namespace MLGL {
         m_AddNorm1 = std::make_unique<LayerNorm>(m_ModelDim);
         m_AddNorm2 = std::make_unique<LayerNorm>(m_ModelDim);
 
+        m_AddCompute = ShaderManager::getInstance().getShader("shaders/decoder/add_inplace.comp");
+
         LOG_DEBUG("[DECODER LOAD] DecoderBlock loaded successfully from binary buffer");
 
     }
