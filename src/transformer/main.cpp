@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <deque>
 #include <iomanip>
 #include <chrono>
 #include <numeric>
@@ -45,6 +46,7 @@ struct Config {
     int seq_len = 64;                        // Sequence length
 
     // Training parameters
+    std::string training_mode = "sliding";   // "line-by-line" or "sliding" window
     int epochs = 1000;                       // Number of training epochs
     float learning_rate = 0.0001f;           // Initial learning rate
     float lr_decay = 0.95f;                  // Learning rate decay factor
@@ -88,6 +90,7 @@ void printUsage(const char* program_name) {
 
     std::cout << "Training Mode Options:\n";
     std::cout << "  --input <file1,file2,...>     Input text files (comma-separated)\n";
+    std::cout << "  --training-mode <mode>        Training mode: 'line-by-line' or 'sliding' (default: sliding)\n";
     std::cout << "  --epochs <num>                Number of training epochs (default: 1000)\n";
     std::cout << "  --lr <rate>                   Initial learning rate (default: 0.0001)\n";
     std::cout << "  --lr-decay <factor>           Learning rate decay factor (default: 0.95)\n";
@@ -117,8 +120,10 @@ void printUsage(const char* program_name) {
     std::cout << "  --temperature <temp>          Sampling temperature (default: 1.0)\n\n";
 
     std::cout << "Examples:\n";
-    std::cout << "  # Train new model\n";
+    std::cout << "  # Train new model with sliding window (default)\n";
     std::cout << "  " << program_name << " --mode train --bpe tokenizer.bpe --model model.gpt --input data.txt\n\n";
+    std::cout << "  # Train new model with line-by-line mode\n";
+    std::cout << "  " << program_name << " --mode train --training-mode line-by-line --bpe tokenizer.bpe --model model.gpt --input data.txt\n\n";
     std::cout << "  # Generate text\n";
     std::cout << "  " << program_name << " --mode generate --model model.gpt --prompt \"Once upon a time\"\n\n";
     std::cout << "  # Interactive chat\n";
@@ -219,6 +224,13 @@ bool parseArguments(int argc, char** argv, Config& config) {
         }
         else if (arg == "--target-loss" && i + 1 < argc) {
             config.target_loss = std::stof(argv[++i]);
+        }
+        else if (arg == "--training-mode" && i + 1 < argc) {
+            config.training_mode = argv[++i];
+            if (config.training_mode != "line-by-line" && config.training_mode != "sliding") {
+                std::cerr << "Error: Invalid training mode '" << config.training_mode << "'. Use 'line-by-line' or 'sliding'\n";
+                return false;
+            }
         }
         else if (arg == "--max-tokens" && i + 1 < argc) {
             config.max_tokens = std::stoi(argv[++i]);
@@ -368,15 +380,7 @@ std::vector<std::string> loadTextData(const std::vector<std::string>& filenames)
 
 int trainMode(const Config& config) {
     LOG_INFO("=== GPTransformer Training Mode ===");
-
-    // Load training data
-    std::vector<std::string> training_data = loadTextData(config.input_files);
-    if (training_data.empty()) {
-        LOG_ERROR("No training data loaded!");
-        return -1;
-    }
-
-    LOG_INFO("Loaded " + std::to_string(training_data.size()) + " training examples");
+    LOG_INFO("Training mode: " + config.training_mode);
 
     // Create or load model
     std::shared_ptr<MLGL::GPTransformer> gpt;
@@ -390,56 +394,12 @@ int trainMode(const Config& config) {
             config.bpe_path, config.d_model, config.d_hidden, config.seq_len);
     }
 
-    // Prepare training examples (chunk sentences into windows matching seq_len)
-    struct TrainingExample {
-        std::vector<std::string> tokens;   // includes <SOS> ... <EOS>
-        std::string original_text;
-    };
-
-    std::vector<TrainingExample> examples;
-
-    // Build a continuous token stream across lines and pack exact-length examples (no padding).
-    const int max_inner = std::max(1, config.seq_len - 2);
-    std::vector<std::string> token_buffer;
-    token_buffer.reserve(16 * static_cast<size_t>(max_inner));
-    size_t cursor = 0;
-
-    for (const auto& sentence : training_data) {
-        std::vector<std::string> sentence_tokens = gpt->tokenizeInput(sentence.c_str(), sentence.size());
-        if (!sentence_tokens.empty()) {
-            token_buffer.insert(token_buffer.end(), sentence_tokens.begin(), sentence_tokens.end());
-        }
-
-        // While we can fill one full example, emit it
-        while (cursor + static_cast<size_t>(max_inner) <= token_buffer.size()) {
-            TrainingExample ex;
-            ex.original_text = sentence;
-            ex.tokens.clear();
-            ex.tokens.push_back("<SOS>");
-            ex.tokens.insert(ex.tokens.end(), token_buffer.begin() + static_cast<std::ptrdiff_t>(cursor),
-                             token_buffer.begin() + static_cast<std::ptrdiff_t>(cursor + static_cast<size_t>(max_inner)));
-            ex.tokens.push_back("<EOS>");
-            if (ex.tokens.size() == static_cast<size_t>(config.seq_len)) {
-                examples.push_back(std::move(ex));
-            }
-            cursor += static_cast<size_t>(max_inner);
-
-            // Periodically compact buffer to avoid growth
-            if (cursor > token_buffer.size() / 2) {
-                token_buffer.erase(token_buffer.begin(), token_buffer.begin() + static_cast<std::ptrdiff_t>(cursor));
-                cursor = 0;
-            }
-        }
-    }
-
-    LOG_INFO("Prepared " + std::to_string(examples.size()) + " training examples");
-
     // Initialize random number generator
     static std::random_device rd;
     static std::mt19937 gen(rd());
 
     // Keep track of last 10 trained examples for evaluation
-    std::deque<size_t> last_trained_examples;
+    std::deque<std::string> last_trained_examples;
     const size_t MAX_LAST_EXAMPLES = 10;
 
     // Function to get random evaluation prompt from last 10 examples
@@ -451,16 +411,12 @@ int trainMode(const Config& config) {
         // Pick random example from last 10
         std::uniform_int_distribution<size_t> dist(0, last_trained_examples.size() - 1);
         size_t random_idx = dist(gen);
-        size_t example_idx = last_trained_examples[random_idx];
-
-        const auto& example = examples[example_idx];
-        if (example.tokens.size() > 2) {
-            std::string prompt, display;
-            size_t prefix_len = std::max(1, (int)(example.tokens.size() - 1) / 2);
-            for (size_t j = 0; j < prefix_len; ++j) {
-                prompt += example.tokens[j];
-                display += "'" + example.tokens[j] + "' ";
-            }
+        const std::string& example = last_trained_examples[random_idx];
+        
+        if (example.length() > 10) {
+            size_t prefix_len = example.length() / 2;
+            std::string prompt = example.substr(0, prefix_len);
+            std::string display = "'" + prompt + "'";
             return { display, prompt };
         }
         return { "", "" };
@@ -472,9 +428,6 @@ int trainMode(const Config& config) {
     int epochs_without_improvement = 0;
     std::vector<float> epoch_losses;
     int total_token_trained = 0;
-
-    // Keep track of trained examples
-    std::vector<size_t> trained_indices;
 
     std::ofstream log_file;
     if (!config.output_file.empty()) {
@@ -488,48 +441,162 @@ int trainMode(const Config& config) {
 
         int total_predictions = 0;
 
-        // Shuffle examples
-        std::vector<size_t> indices(examples.size());
-        std::iota(indices.begin(), indices.end(), 0);
-        std::shuffle(indices.begin(), indices.end(), gen);
-
-        for (size_t idx : indices) {
-            const auto& example = examples[idx];
-
-            for (size_t i = 1; i < example.tokens.size(); ++i) {
-                std::vector<std::string> context(example.tokens.begin(), example.tokens.begin() + i);
-                std::string target = example.tokens[i];
-                gpt->trainNextToken(context, target, learning_rate);
-                total_token_trained++;
-
-                if (total_token_trained % config.progress_interval == 0) {
-                    float avg_loss = gpt->getAvrLoss();
-                    std::cout << "Tokens: " << total_token_trained
-                        << " | Epoch: " << (epoch + 1)
-                        << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
-                        << " | LR: " << std::scientific << std::setprecision(2) << learning_rate
-                        << std::endl;
-
-                    if (log_file.is_open()) {
-                        log_file << epoch << "," << total_token_trained << ","
-                            << avg_loss << "," << learning_rate << ","
-                            << total_predictions << "\n";
-                    }
-
-                    // Get random evaluation prompt from last 10 examples
-                    auto eval_prompt = getRandomEvalPrompt();
-                    if (!eval_prompt.first.empty()) {
-                        std::string prediction = gpt->eval(eval_prompt.second);
-                        std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
-                            << prediction << "'\n";
-                    }
-                }
+        // Process each input file
+        for (const auto& filename : config.input_files) {
+            std::ifstream file(filename);
+            if (!file.is_open()) {
+                LOG_ERROR("Could not open file: " + filename);
+                continue;
             }
 
-            // Add to last trained examples (keep only last 10)
-            last_trained_examples.push_back(idx);
-            if (last_trained_examples.size() > MAX_LAST_EXAMPLES) {
-                last_trained_examples.pop_front();
+            LOG_DEBUG("Processing file: " + filename);
+
+            if (config.training_mode == "line-by-line") {
+                // Line-by-line training: build buffer of tokenized lines
+                std::vector<std::vector<std::string>> line_tokens_buffer;
+                std::vector<std::string> line_texts_buffer;
+                
+                // Read file and build buffer
+                std::string line;
+                while (std::getline(file, line)) {
+                    if (line.empty() || line.length() < 3) continue;
+
+                    // Trim whitespace
+                    line.erase(0, line.find_first_not_of(" \t\r\n"));
+                    line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+                    if (!line.empty()) {
+                        std::vector<std::string> tokens = gpt->tokenizeInput(line.c_str(), line.size());
+                        if (!tokens.empty()) {
+                            // Add SOS and EOS tokens
+                            std::vector<std::string> full_tokens;
+                            full_tokens.push_back("<SOS>");
+                            full_tokens.insert(full_tokens.end(), tokens.begin(), tokens.end());
+                            full_tokens.push_back("<EOS>");
+                            
+                            line_tokens_buffer.push_back(std::move(full_tokens));
+                            line_texts_buffer.push_back(line);
+                        }
+                    }
+                }
+
+                LOG_DEBUG("Built buffer with " + std::to_string(line_tokens_buffer.size()) + " tokenized lines");
+
+                // Shuffle the buffer
+                std::vector<size_t> indices(line_tokens_buffer.size());
+                std::iota(indices.begin(), indices.end(), 0);
+                std::shuffle(indices.begin(), indices.end(), gen);
+
+                // Train on each line
+                for (size_t idx : indices) {
+                    const std::vector<std::string>& tokens = line_tokens_buffer[idx];
+                    const std::string& line_text = line_texts_buffer[idx];
+                    
+                    // Train on each token in the sequence
+                    for (size_t i = 1; i < tokens.size(); ++i) {
+                        std::vector<std::string> context(tokens.begin(), tokens.begin() + i);
+                        std::string target = tokens[i];
+                        gpt->trainNextToken(context, target, learning_rate);
+                        total_token_trained++;
+                        total_predictions++;
+                    }
+                    
+                    // Add to last trained examples for evaluation
+                    last_trained_examples.push_back(line_text);
+                    if (last_trained_examples.size() > MAX_LAST_EXAMPLES) {
+                        last_trained_examples.pop_front();
+                    }
+
+                    if (g_shutdown_requested) break;
+                }
+            }
+            else if (config.training_mode == "sliding") {
+                // Sliding window training: build continuous token buffer
+                std::vector<std::string> token_buffer;
+                std::vector<std::string> line_texts_buffer;
+                
+                // Read file and build continuous token buffer
+                std::string line;
+                while (std::getline(file, line)) {
+                    if (line.empty() || line.length() < 3) continue;
+
+                    // Trim whitespace
+                    line.erase(0, line.find_first_not_of(" \t\r\n"));
+                    line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+                    if (!line.empty()) {
+                        std::vector<std::string> tokens = gpt->tokenizeInput(line.c_str(), line.size());
+                        if (!tokens.empty()) {
+                            // Add tokens to buffer (without SOS/EOS for now)
+                            token_buffer.insert(token_buffer.end(), tokens.begin(), tokens.end());
+                            line_texts_buffer.push_back(line);
+                        }
+                    }
+                }
+
+                LOG_INFO("Built continuous token buffer with " + std::to_string(token_buffer.size()) + " tokens");
+
+                if (token_buffer.size() < 2) {
+                    LOG_WARN("Not enough tokens in buffer, skipping file");
+                    continue;
+                }
+
+                // Create sliding windows from the token buffer
+                const size_t window_size = static_cast<size_t>(config.seq_len); // -2 for SOS/EOS
+                const size_t step_size = 1; // Shift by 1 token each time
+
+                for (size_t start = 0; start + window_size < token_buffer.size(); start += step_size) {
+                    size_t end = start + window_size;
+                    
+                    std::vector<std::string> context_tokens;
+                    context_tokens.insert(context_tokens.end(), 
+                                        token_buffer.begin() + start, 
+                                        token_buffer.begin() + end);
+                    
+                    // Target is the next token after the window
+                    std::string target = token_buffer[end];
+                    
+                    // Single prediction per window: predict the next token given the context
+                    gpt->trainNextToken(context_tokens, target, learning_rate);
+                    total_token_trained++;
+                    total_predictions++;
+                }
+                
+                // Add some lines to evaluation buffer
+                for (const auto& line_text : line_texts_buffer) {
+                    last_trained_examples.push_back(line_text);
+                    if (last_trained_examples.size() > MAX_LAST_EXAMPLES) {
+                        last_trained_examples.pop_front();
+                    }
+                }
+
+                if (g_shutdown_requested) break;
+            }
+
+            // Progress reporting
+            if (total_token_trained % config.progress_interval == 0) {
+                float avg_loss = gpt->getAvrLoss();
+                std::cout << "Tokens: " << total_token_trained
+                    << " | Epoch: " << (epoch + 1)
+                    << " | File: " << filename
+                    << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
+                    << " | LR: " << std::scientific << std::setprecision(2) << learning_rate
+                    << " | Mode: " << config.training_mode
+                    << std::endl;
+
+                if (log_file.is_open()) {
+                    log_file << epoch << "," << total_token_trained << ","
+                        << avg_loss << "," << learning_rate << ","
+                        << total_predictions << "\n";
+                }
+
+                // Get random evaluation prompt from last 10 examples
+                auto eval_prompt = getRandomEvalPrompt();
+                if (!eval_prompt.first.empty()) {
+                    std::string prediction = gpt->eval(eval_prompt.second);
+                    std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
+                        << prediction << "'\n";
+                }
             }
 
             if (g_shutdown_requested) break;
@@ -554,7 +621,8 @@ int trainMode(const Config& config) {
             std::cout << "\n=== Epoch " << (epoch + 1) << " Evaluation ===\n";
             std::cout << "Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
                 << " | Best: " << best_loss
-                << " | No Improve: " << epochs_without_improvement << "\n";
+                << " | No Improve: " << epochs_without_improvement 
+                << " | Mode: " << config.training_mode << "\n";
 
             // Show 3 different random evaluations from last 10 examples
             for (int i = 0; i < 3; ++i) {
@@ -575,7 +643,6 @@ int trainMode(const Config& config) {
         }
         if (g_shutdown_requested) break;
 
-        
         if (avg_loss < config.target_loss) {
             LOG_INFO("Target loss achieved: " + std::to_string(avg_loss));
             break;
@@ -586,6 +653,7 @@ int trainMode(const Config& config) {
     gpt->save(config.model_path);
     LOG_INFO("Training completed. Model saved to: " + config.model_path);
     LOG_INFO("Best loss achieved: " + std::to_string(best_loss));
+    LOG_INFO("Total tokens trained: " + std::to_string(total_token_trained));
 
     return 0;
 }
@@ -860,6 +928,7 @@ int main(int argc, char** argv) {
         "--bpe", "tokens.bpe",
         "--mode", "train",
         "--verbose",
+        "--training-mode", "line-by-line",//"sliding",
         "--seq-len", "1024",
         "--progress-interval", "500",
         "--model", "model.gpt",
