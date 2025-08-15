@@ -265,7 +265,12 @@ namespace MLGL {
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
 
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
-        m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
+        // Find the first occurrence of target
+        auto it = std::find(paddingMask.begin(), paddingMask.end(), 1);
+        if (it == paddingMask.end()) std::cout << "Value not found in vector.\n";
+        size_t index = std::distance(paddingMask.begin(), it);
+        m_Embedder->applyPositionalEncoding(inputMat, index);
+
 
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
 
@@ -285,8 +290,14 @@ namespace MLGL {
         MLGL::Timer timer("GPTransformer::backwardPass");
 
         std::shared_ptr<Matrix> inputMat = m_Embedder->forward(inputTokens);
+
         std::vector<int> paddingMask = createPaddingMask(stringToTokenIds(inputTokens));
-        m_Embedder->applyPositionalEncoding(inputMat, paddingMask);
+        // Find the first occurrence of target
+        auto it = std::find(paddingMask.begin(), paddingMask.end(), 1);
+        if (it == paddingMask.end()) std::cout << "Value not found in vector.\n";
+        size_t index = std::distance(paddingMask.begin(), it);
+
+        m_Embedder->applyPositionalEncoding(inputMat, index);
 
         // Use decoder-only architecture (no encoder, no cross-attention)
         std::shared_ptr<Matrix> decOutputMat = m_Decoder->forward(inputMat, paddingMask);
@@ -302,7 +313,7 @@ namespace MLGL {
         std::shared_ptr<Matrix> outputGrad = m_OutputProjection->backward(decOutputMat, targetMat, learningRate, decOutputMat->cols - 1);
 
         std::shared_ptr<Matrix> decGrad = m_Decoder->backward(outputGrad, m_GradMaskBuffer, learningRate);
-        m_Embedder->removePositionalEncoding(decGrad, paddingMask);
+        m_Embedder->removePositionalEncoding(decGrad, index);
         m_Embedder->backward(inputTokens, decGrad, learningRate);
     }
 

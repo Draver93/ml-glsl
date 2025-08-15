@@ -2,19 +2,12 @@
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
-layout(std430) restrict buffer EmbeddingsBuffer {
-    float embeddings[];
-};
-
-layout(std430) readonly buffer PositionalEncodingBuffer {
-    float positional_encoding[];
-};
-
-layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
-uniform bool has_padding_mask = false;
+layout(std430) restrict buffer EmbeddingsBuffer {float embeddings[]; };
+layout(std430) readonly buffer PositionalEncodingBuffer { float positional_encoding[]; };
 
 uniform int seq_len;
 uniform int model_dim;
+uniform int first_token_idx;
 
 void main() {
     uint seq_pos = gl_GlobalInvocationID.x;  // sequence position (row index)
@@ -22,9 +15,12 @@ void main() {
     
     // Bounds check
     if (seq_pos >= seq_len || model_dim_idx >= model_dim) return;
-    if (has_padding_mask && padding_mask[seq_pos] == 0) return;
 
+    // Only apply to real tokens
+    if (seq_pos < first_token_idx) return;
+
+    uint real_pos = seq_pos - first_token_idx;
     uint idx = model_dim_idx * seq_len + seq_pos;
-    // Add positional encoding to embedding
-    embeddings[idx] += positional_encoding[idx];
+    uint pos_enc_idx = model_dim_idx * seq_len + real_pos;
+    embeddings[idx] += positional_encoding[pos_enc_idx];
 }

@@ -63,7 +63,7 @@ namespace MLGL {
         
         void applyPositionalEncoding(std::shared_ptr<Matrix> embeddings);
         void removePositionalEncoding(std::shared_ptr<Matrix> embeddings);
-        void applyPositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask);
-        void removePositionalEncoding(std::shared_ptr<Matrix> embeddings, const std::vector<int>& paddingMask);
+        void applyPositionalEncoding(std::shared_ptr<Matrix> embeddings, int first_token_idx);
+        void removePositionalEncoding(std::shared_ptr<Matrix> embeddings, int first_token_idx);
     };
 } 

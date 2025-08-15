@@ -49,7 +49,7 @@ struct Config {
     std::string training_mode = "sliding";   // "line-by-line" or "sliding" window
     int epochs = 1000;                       // Number of training epochs
     float learning_rate = 0.0001f;           // Initial learning rate
-    float lr_decay = 0.95f;                  // Learning rate decay factor
+    float lr_decay = 0.98f;                  // Learning rate decay factor
     int lr_decay_steps = 1000;               // Steps between LR decay
     int progress_interval = 1000;            // Progress reporting interval
     int eval_interval = 100;                 // Evaluation interval
@@ -93,7 +93,7 @@ void printUsage(const char* program_name) {
     std::cout << "  --training-mode <mode>        Training mode: 'line-by-line' or 'sliding' (default: sliding)\n";
     std::cout << "  --epochs <num>                Number of training epochs (default: 1000)\n";
     std::cout << "  --lr <rate>                   Initial learning rate (default: 0.0001)\n";
-    std::cout << "  --lr-decay <factor>           Learning rate decay factor (default: 0.95)\n";
+    std::cout << "  --lr-decay <factor>           Learning rate decay factor (default: 0.98)\n";
     std::cout << "  --lr-decay-steps <steps>      Steps between LR decay (default: 1000)\n";
     std::cout << "  --progress-interval <steps>   Progress reporting interval (default: 1000)\n";
     std::cout << "  --eval-interval <steps>       Evaluation interval (default: 100)\n";
