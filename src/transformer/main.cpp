@@ -50,8 +50,8 @@ struct Config {
     int epochs = 1000;                       // Number of training epochs
     float learning_rate = 0.0001f;           // Initial learning rate
     float lr_decay = 0.95f;                  // Learning rate decay factor
-    int lr_decay_steps = 50;                 // Steps between LR decay
-    int progress_interval = 1000;              // Progress reporting interval
+    int lr_decay_steps = 1000;               // Steps between LR decay
+    int progress_interval = 1000;            // Progress reporting interval
     int eval_interval = 100;                 // Evaluation interval
     int early_stopping = 500;                // Early stopping patience
     float target_loss = 0.001f;              // Target loss for early stopping
@@ -94,7 +94,7 @@ void printUsage(const char* program_name) {
     std::cout << "  --epochs <num>                Number of training epochs (default: 1000)\n";
     std::cout << "  --lr <rate>                   Initial learning rate (default: 0.0001)\n";
     std::cout << "  --lr-decay <factor>           Learning rate decay factor (default: 0.95)\n";
-    std::cout << "  --lr-decay-steps <steps>      Steps between LR decay (default: 50)\n";
+    std::cout << "  --lr-decay-steps <steps>      Steps between LR decay (default: 1000)\n";
     std::cout << "  --progress-interval <steps>   Progress reporting interval (default: 1000)\n";
     std::cout << "  --eval-interval <steps>       Evaluation interval (default: 100)\n";
     std::cout << "  --early-stopping <patience>   Early stopping patience (default: 500)\n";
@@ -435,9 +435,8 @@ int trainMode(const Config& config) {
         log_file << "epoch,line,loss,lr,tokens_trained\n";
     }
 
+
     for (int epoch = 0; epoch < config.epochs; ++epoch) {
-        float learning_rate = config.learning_rate *
-            std::pow(config.lr_decay, epoch / (float)config.lr_decay_steps);
 
         int total_predictions = 0;
 
@@ -449,8 +448,32 @@ int trainMode(const Config& config) {
                 continue;
             }
 
+            auto print_report = [&](float learning_rate) -> void {
+                float avg_loss = gpt->getAvrLoss();
+                std::cout << "Tokens: " << total_token_trained
+                    << " | Epoch: " << (epoch + 1)
+                    << " | File: " << filename
+                    << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
+                    << " | LR: " << std::scientific << std::setprecision(2) << learning_rate
+                    << " | Mode: " << config.training_mode
+                    << std::endl;
+
+                if (log_file.is_open()) {
+                    log_file << epoch << "," << total_token_trained << ","
+                        << avg_loss << "," << learning_rate << ","
+                        << total_predictions << "\n";
+                }
+
+                // Get random evaluation prompt from last 10 examples
+                auto eval_prompt = getRandomEvalPrompt();
+                if (!eval_prompt.first.empty()) {
+                    std::string prediction = gpt->eval(eval_prompt.second);
+                    std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
+                        << prediction << "'\n";
+                }
+            };
+
             LOG_DEBUG("Processing file: " + filename);
-            bool print_report = false;
             if (config.training_mode == "line-by-line") {
                 // Line-by-line training: build buffer of tokenized lines
                 std::vector<std::vector<std::string>> line_tokens_buffer;
@@ -494,11 +517,13 @@ int trainMode(const Config& config) {
                     
                     // Train on each token in the sequence
                     for (size_t i = 1; i < tokens.size(); ++i) {
+                        float learning_rate = config.learning_rate * std::pow(config.lr_decay, total_token_trained / (float)config.lr_decay_steps);
+
                         std::vector<std::string> context(tokens.begin(), tokens.begin() + i);
                         std::string target = tokens[i];
                         gpt->trainNextToken(context, target, learning_rate);
                         total_token_trained++;
-                        if (!print_report) print_report = total_token_trained % config.progress_interval == 0;
+                        if (total_token_trained % config.progress_interval == 0) print_report(learning_rate);
                         total_predictions++;
                     }
                     
@@ -547,6 +572,7 @@ int trainMode(const Config& config) {
                 const size_t step_size = 1; // Shift by 1 token each time
 
                 for (size_t start = 0; start + window_size < token_buffer.size(); start += step_size) {
+                    float learning_rate = config.learning_rate * std::pow(config.lr_decay, total_token_trained / (float)config.lr_decay_steps);
                     size_t end = start + window_size;
                     
                     std::vector<std::string> context_tokens;
@@ -560,46 +586,25 @@ int trainMode(const Config& config) {
                     // Single prediction per window: predict the next token given the context
                     gpt->trainNextToken(context_tokens, target, learning_rate);
                     total_token_trained++;
-                    if(!print_report) print_report = total_token_trained % config.progress_interval == 0;
+                    if (total_token_trained % config.progress_interval == 0) print_report(learning_rate);
+                    if (g_shutdown_requested) break;
+
+                    // Add some lines to evaluation buffer
+                    if(start % 100 == 0) for (const auto& line_text : line_texts_buffer) {
+                        last_trained_examples.push_back(line_text);
+                        if (last_trained_examples.size() > MAX_LAST_EXAMPLES) {
+                            last_trained_examples.pop_front();
+                        }
+                    }
+
                     total_predictions++;
                 }
                 
-                // Add some lines to evaluation buffer
-                for (const auto& line_text : line_texts_buffer) {
-                    last_trained_examples.push_back(line_text);
-                    if (last_trained_examples.size() > MAX_LAST_EXAMPLES) {
-                        last_trained_examples.pop_front();
-                    }
-                }
-
                 if (g_shutdown_requested) break;
             }
 
             // Progress reporting
-            if (print_report) {
-                float avg_loss = gpt->getAvrLoss();
-                std::cout << "Tokens: " << total_token_trained
-                    << " | Epoch: " << (epoch + 1)
-                    << " | File: " << filename
-                    << " | Avg Loss: " << std::fixed << std::setprecision(4) << avg_loss
-                    << " | LR: " << std::scientific << std::setprecision(2) << learning_rate
-                    << " | Mode: " << config.training_mode
-                    << std::endl;
 
-                if (log_file.is_open()) {
-                    log_file << epoch << "," << total_token_trained << ","
-                        << avg_loss << "," << learning_rate << ","
-                        << total_predictions << "\n";
-                }
-
-                // Get random evaluation prompt from last 10 examples
-                auto eval_prompt = getRandomEvalPrompt();
-                if (!eval_prompt.first.empty()) {
-                    std::string prediction = gpt->eval(eval_prompt.second);
-                    std::cout << "  Sample: [" << eval_prompt.first << "] -> '"
-                        << prediction << "'\n";
-                }
-            }
 
             if (g_shutdown_requested) break;
         }
@@ -929,11 +934,11 @@ int main(int argc, char** argv) {
         "ml-glsl-transformer.exe",
         "--bpe", "tokens.bpe",
         "--mode", "train",
-        "--verbose",
-        "--training-mode", "line-by-line",//"sliding",
+       // "--verbose",
+        "--training-mode", "sliding",//"line-by-line",//"sliding",
         "--seq-len", "1024",
-        "--progress-interval", "500",
         "--model", "model.gpt",
+        "--target-loss", "-9999",
         "--input", "pg51161.txt"
     };
 
