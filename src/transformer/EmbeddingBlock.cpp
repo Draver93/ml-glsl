@@ -253,8 +253,8 @@ namespace MLGL {
         // Dispatch compute shader
         int workgroupsX = (seqLen + 15) / 16;
         int workgroupsY = (m_ModelDim + 15) / 16;
-        m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
+        m_ApplyPosEncodingCompute->dispatch(workgroupsX, workgroupsY, 1);
 
         for (int i = 0; i <= 2; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
     }

@@ -88,11 +88,11 @@ namespace MLGL {
 
         // 1. Masked self-attention with residual connection
         auto maskedOut = m_MaskedSelfAttn->forward(input, nullptr, paddingMask);
-        auto addNorm1Out = m_AddNorm1->forward(maskedOut, input);
+        auto addNorm1Out = m_AddNorm1->forward(maskedOut, input, paddingMask);
 
         // 2. Feed-forward network with residual connection
         auto mlpOut = m_FeedForward->forward(addNorm1Out);
-        auto addNorm2Out = m_AddNorm2->forward(mlpOut, addNorm1Out);
+        auto addNorm2Out = m_AddNorm2->forward(mlpOut, addNorm1Out, paddingMask);
 
         return addNorm2Out;
     }

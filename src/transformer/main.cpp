@@ -934,12 +934,12 @@ int main(int argc, char** argv) {
         "ml-glsl-transformer.exe",
         "--bpe", "tokens.bpe",
         "--mode", "train",
-       // "--verbose",
-        "--training-mode", "sliding",//"line-by-line",//"sliding",
-        "--seq-len", "1024",
+        //"--verbose",
+        "--training-mode", "line-by-line",//"line-by-line",//"sliding",
+        "--seq-len", "32",
         "--model", "model.gpt",
         "--target-loss", "-9999",
-        "--input", "pg51161.txt"
+        "--input", "hello.txt"
     };
 
     int argc_mock = args.size();

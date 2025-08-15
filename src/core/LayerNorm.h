@@ -12,6 +12,7 @@ namespace MLGL {
         ~LayerNorm() = default;
 
         std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual);
+        std::shared_ptr<Matrix> forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual, const std::vector<int>& paddingMask);
         void backward(
             const std::shared_ptr<Matrix>& gradOutput,
             const std::shared_ptr<Matrix>& input,
@@ -28,6 +29,7 @@ namespace MLGL {
         std::shared_ptr<Matrix> getGradBeta() { return m_GradBeta; }
 
     private:
+        GLuint createPaddingMaskBuffer(const std::vector<int>& paddingMask);
         int m_NormalizedShape;
         float m_Epsilon;
 
@@ -39,6 +41,10 @@ namespace MLGL {
         std::shared_ptr<Matrix> m_CachedInput;
         std::shared_ptr<Matrix> m_CachedResidual;
         std::shared_ptr<Matrix> m_CachedOutput;
+
+        std::vector<int> m_CachedPaddingMask;
+        GLuint m_CachedPaddingMaskBuffer = 0;
+        void updatePaddingMask(int seq_len, const std::vector<int>& mask);
 
         // Gradient matrices for backprop
         std::shared_ptr<Matrix> m_GradInput;

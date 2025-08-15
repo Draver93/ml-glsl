@@ -31,6 +31,12 @@ namespace MLGL {
             m_CachedOutput->uploadToGPU();
         }
 
+        if (!m_CachedPaddingMask.empty())
+            updatePaddingMask(seqLen, m_CachedPaddingMask);
+
+
+        m_ForwardShader->setUniform("has_padding_mask", !m_CachedPaddingMask.empty());
+        if (!m_CachedPaddingMask.empty()) m_ForwardShader->bindBuffer(3, "PaddingMask", m_CachedPaddingMaskBuffer); // Bind padding mask if available
         m_ForwardShader->bindBuffer(0, "InputA", input->buffer);
         m_ForwardShader->bindBuffer(1, "InputB", residual->buffer);
         m_ForwardShader->bindBuffer(2, "Gamma", m_Gamma->buffer);
@@ -46,6 +52,15 @@ namespace MLGL {
         for (int i = 0; i <= 4; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
 
         return m_CachedOutput;
+    }
+
+    std::shared_ptr<Matrix> LayerNorm::forward(const std::shared_ptr<Matrix>& input, const std::shared_ptr<Matrix>& residual, const std::vector<int>& paddingMask) {
+        MLGL::Timer timer("LayerNorm::forward (with mask)");
+        // Store padding mask for use in shaders
+        m_CachedPaddingMask = paddingMask;
+
+        // Use the existing forward implementation
+        return forward(input, residual);
     }
 
     void LayerNorm::backward(
@@ -77,6 +92,9 @@ namespace MLGL {
             m_GradBeta->uploadToGPU();
         }
 
+        if (!m_CachedPaddingMask.empty())
+            updatePaddingMask(seqLen, m_CachedPaddingMask);
+
         m_BackwardShader->bindBuffer(0, "GradOutput", gradOutput->buffer);
         m_BackwardShader->bindBuffer(1, "InputA", input->buffer);
         m_BackwardShader->bindBuffer(2, "InputB", residual->buffer);
@@ -102,5 +120,17 @@ namespace MLGL {
 
         // Unbind buffers
         for (int i = 0; i <= 9; ++i) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, i, 0);
+    }
+    void LayerNorm::updatePaddingMask(int seq_len, const std::vector<int>& mask) {
+        if (m_CachedPaddingMaskBuffer == 0) {
+            glGenBuffers(1, &m_CachedPaddingMaskBuffer);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedPaddingMaskBuffer);
+            glBufferData(GL_SHADER_STORAGE_BUFFER, seq_len * sizeof(int), nullptr, GL_DYNAMIC_DRAW);
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        }
+
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_CachedPaddingMaskBuffer);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, mask.size() * sizeof(int), mask.data());
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     }
 } 

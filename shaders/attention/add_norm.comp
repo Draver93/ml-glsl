@@ -11,30 +11,38 @@ layout(std430) readonly buffer Gamma { float gamma[]; };    // [model_dim]
 layout(std430) readonly buffer Beta { float beta[]; };      // [model_dim]
 // Output buffer
 layout(std430) writeonly buffer Output { float output_buffer[]; }; // [seq_len, model_dim]
+layout(std430) readonly buffer PaddingMask { int padding_mask[]; };
 
 uniform int seq_len;
 uniform int model_dim;
 uniform float epsilon;
+uniform bool has_padding_mask = false;
 
 void main() {
-    uint seq_pos = gl_GlobalInvocationID.x; // sequence position (row index)
+    uint seq_pos = gl_GlobalInvocationID.x;
     if (seq_pos >= uint(seq_len)) return;
 
-    // Compute mean and variance for this sequence position
+    // Skip PAD tokens in normalization
+    if (has_padding_mask && padding_mask[seq_pos] == 0) {
+        for (int dim = 0; dim < model_dim; dim++) {
+            uint col_major_idx = dim * seq_len + seq_pos;
+            float val = input_a[col_major_idx] + input_b[col_major_idx];
+            output_buffer[col_major_idx] = val;
+        }
+        return;
+    }
+
+    // Normalization for real tokens
     float mean = 0.0;
     float variance = 0.0;
 
-    // First pass: compute mean across all dimensions for this sequence position
     for (int dim = 0; dim < model_dim; dim++) {
-        // Column-major indexing: [dimension * seq_len + sequence_position]
-        // This accesses all sequence positions for a given dimension
         uint col_major_idx = dim * seq_len + seq_pos;
         float val = input_a[col_major_idx] + input_b[col_major_idx];
         mean += val;
     }
     mean /= float(model_dim);
 
-    // Second pass: compute variance across all dimensions for this sequence position
     for (int dim = 0; dim < model_dim; dim++) {
         uint col_major_idx = dim * seq_len + seq_pos;
         float val = input_a[col_major_idx] + input_b[col_major_idx];
@@ -44,11 +52,10 @@ void main() {
     variance /= float(model_dim);
     float stddev = sqrt(variance + epsilon);
 
-    // Third pass: normalize, scale, shift, and write output
     for (int dim = 0; dim < model_dim; dim++) {
         uint col_major_idx = dim * seq_len + seq_pos;
         float val = input_a[col_major_idx] + input_b[col_major_idx];
         float norm = (val - mean) / stddev;
         output_buffer[col_major_idx] = gamma[dim] * norm + beta[dim];
     }
-} 
+}
