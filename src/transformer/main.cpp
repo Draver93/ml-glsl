@@ -412,10 +412,10 @@ int trainMode(const Config& config) {
         std::uniform_int_distribution<size_t> dist(0, last_trained_examples.size() - 1);
         size_t random_idx = dist(gen);
         const std::string& example = last_trained_examples[random_idx];
-        
-        if (example.length() > 10) {
-            size_t prefix_len = example.length() / 2;
-            std::string prompt = example.substr(0, prefix_len);
+        std::vector<std::string> tokens = gpt->tokenizeInput(example.c_str(), example.size());
+
+        if (tokens.size() > 2) {
+            std::string prompt = std::accumulate(tokens.begin(), tokens.begin() + tokens.size() / 2, std::string(""));
             std::string display = "'" + prompt + "'";
             return { display, prompt };
         }
@@ -540,7 +540,7 @@ int trainMode(const Config& config) {
                 // Sliding window training: build continuous token buffer
                 std::vector<std::string> token_buffer;
                 std::vector<std::string> line_texts_buffer;
-                
+
                 // Read file and build continuous token buffer
                 std::string line;
                 while (std::getline(file, line)) {
@@ -567,28 +567,39 @@ int trainMode(const Config& config) {
                     continue;
                 }
 
-                // Create sliding windows from the token buffer
-                const size_t window_size = static_cast<size_t>(config.seq_len); // -2 for SOS/EOS
-                const size_t step_size = 1; // Shift by 1 token each time
+                // Create sliding windows with random sequence lengths
+                const size_t max_window_size = static_cast<size_t>(config.seq_len);
+                const size_t min_window_size = std::max(1, static_cast<int>(max_window_size * 0.25)); // At least 25% of max seq_len
+                const size_t step_size = config.seq_len / 2;
 
-                for (size_t start = 0; start + window_size < token_buffer.size(); start += step_size) {
+                // Random number generator for window sizes
+                std::uniform_int_distribution<size_t> window_size_dist(min_window_size, max_window_size);
+
+                for (size_t start = 0; start < token_buffer.size(); start += step_size) {
+
                     float learning_rate = config.learning_rate * std::pow(config.lr_decay, total_token_trained / (float)config.lr_decay_steps);
-                    size_t end = start + window_size;
-                    
+                    size_t end = start + config.seq_len;
+                    if (end >= token_buffer.size()) end = token_buffer.size() - 1;
+
                     std::vector<std::string> context_tokens;
                     context_tokens.insert(context_tokens.end(), 
                                         token_buffer.begin() + start, 
                                         token_buffer.begin() + end);
-                    
-                    // Target is the next token after the window
-                    std::string target = token_buffer[end];
-                    
-                    // Single prediction per window: predict the next token given the context
-                    gpt->trainNextToken(context_tokens, target, learning_rate);
-                    total_token_trained++;
-                    if (total_token_trained % config.progress_interval == 0) print_report(learning_rate);
-                    if (g_shutdown_requested) break;
+                                        // Train on each token in the sequence
 
+                    for (size_t i = 1; i < context_tokens.size(); ++i) {
+                        float learning_rate = config.learning_rate * std::pow(config.lr_decay, total_token_trained / (float)config.lr_decay_steps);
+
+                        std::vector<std::string> context(context_tokens.begin(), context_tokens.begin() + i);
+                        std::string target = context_tokens[i];
+                        gpt->trainNextToken(context, target, learning_rate);
+                        
+                        total_token_trained++;
+                        total_predictions++;
+                        if (total_token_trained % config.progress_interval == 0) print_report(learning_rate);
+                        if (g_shutdown_requested) break;
+                    }
+       
                     // Add some lines to evaluation buffer
                     if(start % 100 == 0) for (const auto& line_text : line_texts_buffer) {
                         last_trained_examples.push_back(line_text);
@@ -596,6 +607,7 @@ int trainMode(const Config& config) {
                             last_trained_examples.pop_front();
                         }
                     }
+                    if (g_shutdown_requested) break;
 
                     total_predictions++;
                 }
@@ -730,7 +742,6 @@ int interactiveMode(const Config& config) {
         if (input.empty()) {
             continue;
         }
-        input = "<SOS>" + input;
         std::string response = gpt->eval(input);
         std::cout << response << "\n\n";
 
@@ -936,7 +947,7 @@ int main(int argc, char** argv) {
         "--mode", "train",
         //"--verbose",
         "--training-mode", "line-by-line",//"line-by-line",//"sliding",
-        "--seq-len", "32",
+        "--seq-len", "16",
         "--model", "model.gpt",
         "--target-loss", "-9999",
         "--input", "hello.txt"

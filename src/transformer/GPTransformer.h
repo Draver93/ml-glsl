@@ -23,7 +23,7 @@ namespace MLGL {
         void save(std::string checkpointFilepath);
 
         void trainNextToken(const std::vector<std::string>& contextTokens, const std::string& targetToken, float learningRate);
-        std::string eval(const std::string& inputText);
+        std::string eval(const std::string& inputText, bool include_sos = true);
 
         float calculateLoss(std::shared_ptr<Matrix> logits, int targetTokenId, LossMode mode = LossMode::CrossEntropy);
         int predictToken(std::shared_ptr<Matrix> probabilities);

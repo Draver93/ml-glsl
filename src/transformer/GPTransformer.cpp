@@ -156,9 +156,11 @@ namespace MLGL {
         }
     }
 
-    std::string GPTransformer::eval(const std::string& inputText) {
+    std::string GPTransformer::eval(const std::string& inputText, bool include_sos) {
         // 1. Tokenize input text
         std::vector<std::string> paddedContext = m_Embedder->tokenizeInput(inputText.data(), inputText.size());
+        if (include_sos) paddedContext.insert(paddedContext.begin(), "<SOS>");
+
         if (paddedContext.size() > m_SeqLen) {
             // Keep most recent tokens
             paddedContext = std::vector<std::string>(paddedContext.end() - m_SeqLen, paddedContext.end());
